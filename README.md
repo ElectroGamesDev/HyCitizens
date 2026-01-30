@@ -1,4 +1,4 @@
-# You can download the mod/plguin from [CurseForge](https://www.curseforge.com/hytale/mods/hycitizens)!
+# You can download the mod/plugin from [CurseForge](https://www.curseforge.com/hytale/mods/hycitizens)!
 
 **HyCitizens** is a full in-game NPC (Citizen) management plugin that allows you to create interactive NPCs for your server.  
 Everything can be configured directly in-game through a clean UI, with an optional developer API for full control and integration.
