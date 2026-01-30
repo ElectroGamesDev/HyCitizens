@@ -6,6 +6,7 @@ import com.electro.hycitizens.events.CitizenInteractListener;
 import com.electro.hycitizens.models.CitizenData;
 import com.electro.hycitizens.models.CommandAction;
 import com.electro.hycitizens.util.ConfigManager;
+import com.electro.hycitizens.util.SkinUtilities;
 import com.hypixel.hytale.component.AddReason;
 import com.hypixel.hytale.component.Holder;
 import com.hypixel.hytale.component.Ref;
@@ -13,13 +14,19 @@ import com.hypixel.hytale.component.RemoveReason;
 import com.hypixel.hytale.math.util.ChunkUtil;
 import com.hypixel.hytale.math.vector.Vector3d;
 import com.hypixel.hytale.math.vector.Vector3f;
+import com.hypixel.hytale.protocol.PlayerSkin;
 import com.hypixel.hytale.server.core.HytaleServer;
 import com.hypixel.hytale.server.core.asset.type.model.config.Model;
+import com.hypixel.hytale.server.core.asset.type.model.config.ModelAsset;
+import com.hypixel.hytale.server.core.cosmetics.CosmeticsModule;
 import com.hypixel.hytale.server.core.entity.UUIDComponent;
 import com.hypixel.hytale.server.core.entity.entities.ProjectileComponent;
 import com.hypixel.hytale.server.core.entity.nameplate.Nameplate;
+import com.hypixel.hytale.server.core.modules.entity.component.ModelComponent;
 import com.hypixel.hytale.server.core.modules.entity.component.TransformComponent;
+import com.hypixel.hytale.server.core.modules.entity.player.PlayerSkinComponent;
 import com.hypixel.hytale.server.core.modules.entity.tracker.NetworkId;
+import com.hypixel.hytale.server.core.universe.PlayerRef;
 import com.hypixel.hytale.server.core.universe.Universe;
 import com.hypixel.hytale.server.core.universe.world.World;
 import com.hypixel.hytale.server.core.universe.world.chunk.WorldChunk;
@@ -42,6 +49,7 @@ public class CitizensManager {
     private final ConfigManager config;
     private final Map<String, CitizenData> citizens;
     private final List<CitizenInteractListener> interactListeners = new ArrayList<>();
+    private ScheduledFuture<?> skinUpdateTask;
 
     public CitizensManager(@Nonnull HyCitizensPlugin plugin) {
         this.plugin = plugin;
@@ -49,6 +57,36 @@ public class CitizensManager {
         this.citizens = new ConcurrentHashMap<>();
 
         loadAllCitizens();
+        startSkinUpdateScheduler();
+    }
+
+    /**
+     * Starts a scheduler that updates live skins every 30 minutes.
+     */
+    private void startSkinUpdateScheduler() {
+        skinUpdateTask = HytaleServer.SCHEDULED_EXECUTOR.scheduleAtFixedRate(() -> {
+            long currentTime = System.currentTimeMillis();
+            long thirtyMinutes = 30 * 60 * 1000;
+
+            for (CitizenData citizen : citizens.values()) {
+                if (citizen.isPlayerModel() && citizen.isUseLiveSkin() && !citizen.getSkinUsername().isEmpty()) {
+                    long timeSinceLastUpdate = currentTime - citizen.getLastSkinUpdate();
+
+                    if (timeSinceLastUpdate >= thirtyMinutes) {
+                        updateCitizenSkin(citizen, true);
+                    }
+                }
+            }
+        }, 30, 30, TimeUnit.MINUTES);
+    }
+
+    /**
+     * Stops the skin update scheduler.
+     */
+    public void shutdown() {
+        if (skinUpdateTask != null && !skinUpdateTask.isCancelled()) {
+            skinUpdateTask.cancel(false);
+        }
     }
 
     private void loadAllCitizens() {
@@ -134,7 +172,17 @@ public class CitizensManager {
         UUID npcUUID = config.getUUID(basePath + ".npc-uuid");
         UUID hologramUUID = config.getUUID(basePath + ".hologram-uuid");
 
-        return new CitizenData(citizenId, name, modelId, worldUUID, position, rotation, scale, npcUUID, hologramUUID, permission, permMessage, actions);
+        // Load skin data
+        boolean isPlayerModel = config.getBoolean(basePath + ".is-player-model", false);
+        boolean useLiveSkin = config.getBoolean(basePath + ".use-live-skin", false);
+        String skinUsername = config.getString(basePath + ".skin-username", "");
+        PlayerSkin cachedSkin = config.getPlayerSkin(basePath + ".cached-skin");
+        long lastSkinUpdate = config.getLong(basePath + ".last-skin-update", 0L);
+
+        CitizenData citizenData = new CitizenData(citizenId, name, modelId, worldUUID, position, rotation, scale, npcUUID, hologramUUID,
+                permission, permMessage, actions, isPlayerModel, useLiveSkin, skinUsername, cachedSkin, lastSkinUpdate);
+        citizenData.setCreatedAt(0); // Mark as loaded from config, not newly created
+        return citizenData;
     }
 
     public void saveCitizen(@Nonnull CitizenData citizen) {
@@ -151,6 +199,13 @@ public class CitizensManager {
         config.setUUID(basePath + ".npc-uuid", citizen.getSpawnedUUID());
         config.setUUID(basePath + ".hologram-uuid", citizen.getHologramUUID());
 
+        // Save skin data
+        config.set(basePath + ".is-player-model", citizen.isPlayerModel());
+        config.set(basePath + ".use-live-skin", citizen.isUseLiveSkin());
+        config.set(basePath + ".skin-username", citizen.getSkinUsername());
+        config.setPlayerSkin(basePath + ".cached-skin", citizen.getCachedSkin());
+        config.set(basePath + ".last-skin-update", citizen.getLastSkinUpdate());
+
         // Save command actions
         List<CommandAction> actions = citizen.getCommandActions();
         config.set(basePath + ".commands.count", actions.size());
@@ -165,6 +220,8 @@ public class CitizensManager {
     }
 
     public void addCitizen(@Nonnull CitizenData citizen, boolean save) {
+        citizen.setCreatedAt(System.currentTimeMillis());
+
         citizens.put(citizen.getId(), citizen);
 
         if (save)
@@ -205,13 +262,22 @@ public class CitizensManager {
 
         String basePath = "citizens." + citizenId;
 
-        // Remove all data for this citizen
         config.set(basePath + ".name", null);
         config.set(basePath + ".model-id", null);
+        config.set(basePath + ".model-world-uuid", null);
         config.set(basePath + ".position", null);
         config.set(basePath + ".rotation", null);
+        config.set(basePath + ".scale", null);
+        config.set(basePath + ".is-player-model", null);
+        config.set(basePath + ".use-live-skin", null);
+        config.set(basePath + ".skin-username", null);
+        config.set(basePath + ".last-skin-update", null);
+        config.set(basePath + ".cached-skin", null);
+        config.set(basePath + ".npc-uuid", null);
+        config.set(basePath + ".hologram-uuid", null);
         config.set(basePath + ".permission", null);
         config.set(basePath + ".permission-message", null);
+
 
         // Remove commands
         int commandCount = config.getInt(basePath + ".commands.count", 0);
@@ -289,6 +355,13 @@ public class CitizensManager {
             return;
         }
 
+        // Handle player model with skin
+        if (citizen.isPlayerModel()) {
+            spawnPlayerModelNPC(citizen, world, save);
+            return;
+        }
+
+        // Regular model spawning
         float scale = Math.max((float)0.01, citizen.getScale());
         Map<String, String> randomAttachmentIds = new HashMap<>();
         Model citizenModel = new Model.ModelReference(citizen.getModelId(), scale, randomAttachmentIds).toModel();
@@ -318,6 +391,133 @@ public class CitizensManager {
 
             if (save)
                 saveCitizen(citizen);
+        }
+    }
+
+    /**
+     * Spawns a player model NPC with skin.
+     */
+    public void spawnPlayerModelNPC(CitizenData citizen, World world, boolean save) {
+        PlayerSkin skinToUse = determineSkin(citizen);
+
+        if (skinToUse == null) {
+            skinToUse = SkinUtilities.createDefaultSkin();
+        }
+
+        float scale = Math.max((float)0.01, citizen.getScale());
+        Model playerModel = CosmeticsModule.get().createModel(skinToUse, scale);
+
+        if (playerModel == null) {
+            getLogger().atWarning().log("Failed to create player model for citizen: " + citizen.getName());
+            return;
+        }
+
+        Pair<Ref<EntityStore>, NPCEntity> npc = NPCPlugin.get().spawnEntity(
+                world.getEntityStore().getStore(),
+                18,
+                citizen.getPosition(),
+                citizen.getRotation(),
+                playerModel,
+                null,
+                null
+        );
+
+        // Apply skin component
+        PlayerSkinComponent skinComponent = new PlayerSkinComponent(skinToUse);
+        npc.first().getStore().putComponent(npc.second().getReference(), PlayerSkinComponent.getComponentType(), skinComponent);
+
+        UUIDComponent uuidComponent = npc.first().getStore().getComponent(
+                npc.second().getReference(),
+                UUIDComponent.getComponentType()
+        );
+
+        if (uuidComponent != null) {
+            citizen.setSpawnedUUID(uuidComponent.getUuid());
+
+            if (save)
+                saveCitizen(citizen);
+        }
+    }
+
+    /**
+     * Determines which skin to use for the citizen.
+     */
+    public PlayerSkin determineSkin(CitizenData citizen) {
+        if (citizen.isUseLiveSkin() && !citizen.getSkinUsername().isEmpty()) {
+            // Fetch live skin asynchronously, but for now return cached or default
+            updateCitizenSkin(citizen, true);
+            return citizen.getCachedSkin() != null ? citizen.getCachedSkin() : SkinUtilities.createDefaultSkin();
+        } else {
+            return citizen.getCachedSkin() != null ? citizen.getCachedSkin() : SkinUtilities.createDefaultSkin();
+        }
+    }
+
+    /**
+     * Updates the citizen's skin from the API.
+     */
+    public void updateCitizenSkin(CitizenData citizen, boolean save) {
+        if (!citizen.isPlayerModel() || citizen.getSkinUsername().isEmpty()) {
+            return;
+        }
+
+        SkinUtilities.getSkin(citizen.getSkinUsername()).thenAccept(skin -> {
+            citizen.setCachedSkin(skin);
+            citizen.setLastSkinUpdate(System.currentTimeMillis());
+
+            if (save) {
+                saveCitizen(citizen);
+            }
+
+            // Update the spawned NPC if it exists
+            if (citizen.getSpawnedUUID() != null) {
+                World world = Universe.get().getWorld(citizen.getWorldUUID());
+                if (world != null) {
+                    Ref<EntityStore> npcRef = world.getEntityRef(citizen.getSpawnedUUID());
+                    if (npcRef != null && npcRef.isValid()) {
+                        world.execute(() -> {
+                            // Update skin component
+                            PlayerSkinComponent skinComponent = new PlayerSkinComponent(skin);
+                            npcRef.getStore().putComponent(npcRef, PlayerSkinComponent.getComponentType(), skinComponent);
+
+                            // Update model
+                            float scale = Math.max((float)0.01, citizen.getScale());
+                            Model newModel = CosmeticsModule.get().createModel(skin, scale);
+                            if (newModel != null) {
+                                ModelComponent modelComponent = new ModelComponent(newModel);
+                                npcRef.getStore().putComponent(npcRef, ModelComponent.getComponentType(), modelComponent);
+                            }
+                        });
+                    }
+                }
+            }
+        });
+    }
+
+    /**
+     * Updates skin for a citizen from current player's skin.
+     */
+    public void updateCitizenSkinFromPlayer(CitizenData citizen, PlayerRef playerRef, boolean save) {
+        if (!citizen.isPlayerModel()) {
+            return;
+        }
+
+        Ref<EntityStore> entityRef = playerRef.getReference();
+        if (entityRef == null || !entityRef.isValid()) {
+            return;
+        }
+
+        PlayerSkinComponent playerSkinComp = entityRef.getStore().getComponent(entityRef, PlayerSkinComponent.getComponentType());
+        if (playerSkinComp != null && playerSkinComp.getPlayerSkin() != null) {
+            citizen.setCachedSkin(playerSkinComp.getPlayerSkin());
+            citizen.setSkinUsername(""); // Clear username since we're using a custom skin
+            citizen.setUseLiveSkin(false); // Disable live skin
+            citizen.setLastSkinUpdate(System.currentTimeMillis());
+
+            if (save) {
+                saveCitizen(citizen);
+            }
+
+            updateSpawnedCitizenNPC(citizen, save);
         }
     }
 
