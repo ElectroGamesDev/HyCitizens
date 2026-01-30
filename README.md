@@ -368,9 +368,7 @@ manager.fireCitizenInteractEvent(event);
 
 If any listener cancels the event, further listeners will not be called, including the command actions.
 
-***
-
-  
+***  
 
 ## Notes
 
@@ -379,3 +377,6 @@ Citizens are spawned using the built-in NPC system and tracked using UUIDs.
 Citizens automatically spawn their hologram nameplate above them based on their scale.
 
 Citizens are designed to be fully usable in-game, while still providing a complete API for developers.
+
+## Credits
+This plugin has been made possible by [HyUI](https://www.curseforge.com/hytale/mods/hyui).
