@@ -30,6 +30,12 @@ public class PlayerAddToWorldListener {
             if (!world.getWorldConfig().getUuid().equals(citizen.getWorldUUID()))
                 continue;
 
+            // Skip citizens that were just created (within last 10 seconds) to prevent double spawning
+            long timeSinceCreation = System.currentTimeMillis() - citizen.getCreatedAt();
+            if (timeSinceCreation < 10000) {
+                continue;
+            }
+
             getLogger().atInfo().log("Spawning citizen");
             if (citizen.getSpawnedUUID() == null) {
                 getLogger().atInfo().log("Spawning citizen becuase UUID is null");
@@ -74,6 +80,11 @@ public class PlayerAddToWorldListener {
                         if (world.getEntityRef(citizen.getSpawnedUUID()) == null) {
                             getLogger().atInfo().log("Spawning citizen becuase entity with UUID is not spawned: " + citizen.getSpawnedUUID().toString());
                             plugin.getCitizensManager().spawnCitizenNPC(citizen, true);
+                        } else {
+                            // Entity exists, update skin if live skin is enabled
+                            if (citizen.isPlayerModel() && citizen.isUseLiveSkin()) {
+                                plugin.getCitizensManager().updateCitizenSkin(citizen, true);
+                            }
                         }
 
                         if (world.getEntityRef(citizen.getHologramUUID()) == null) {
@@ -106,6 +117,11 @@ public class PlayerAddToWorldListener {
                     if (world.getEntityRef(citizen.getSpawnedUUID()) == null) {
                         getLogger().atInfo().log("Spawning citizen becuase entity with UUID is not spawned: " + citizen.getSpawnedUUID().toString());
                         plugin.getCitizensManager().spawnCitizenNPC(citizen, true);
+                    } else {
+                        // Entity exists, update skin if live skin is enabled
+                        if (citizen.isPlayerModel() && citizen.isUseLiveSkin()) {
+                            plugin.getCitizensManager().updateCitizenSkin(citizen, true);
+                        }
                     }
 
                     if (world.getEntityRef(citizen.getHologramUUID()) == null) {
