@@ -6,6 +6,7 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.hypixel.hytale.math.vector.Vector3d;
 import com.hypixel.hytale.math.vector.Vector3f;
+import com.hypixel.hytale.protocol.PlayerSkin;
 
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
@@ -205,5 +206,85 @@ public class ConfigManager {
     @Nonnull
     public Map<String, Object> getAll() {
         return new HashMap<>(config);
+    }
+
+    /**
+     * Get a PlayerSkin from config.
+     */
+    @Nullable
+    public PlayerSkin getPlayerSkin(@Nonnull String path) {
+        Object value = config.get(path);
+        if (!(value instanceof Map<?, ?> map)) return null;
+
+        try {
+            return new PlayerSkin(
+                    (String) map.get("bodyCharacteristic"),
+                    (String) map.get("underwear"),
+                    (String) map.get("face"),
+                    (String) map.get("eyes"),
+                    (String) map.get("ears"),
+                    (String) map.get("mouth"),
+                    (String) map.get("facialHair"),
+                    (String) map.get("haircut"),
+                    (String) map.get("eyebrows"),
+                    (String) map.get("pants"),
+                    (String) map.get("overpants"),
+                    (String) map.get("undertop"),
+                    (String) map.get("overtop"),
+                    (String) map.get("shoes"),
+                    (String) map.get("headAccessory"),
+                    (String) map.get("faceAccessory"),
+                    (String) map.get("earAccessory"),
+                    (String) map.get("skinFeature"),
+                    (String) map.get("gloves"),
+                    (String) map.get("cape")
+            );
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /**
+     * Set a PlayerSkin in config.
+     */
+    public void setPlayerSkin(@Nonnull String path, @Nullable PlayerSkin skin) {
+        if (skin == null) {
+            config.remove(path);
+            saveConfig();
+            return;
+        }
+
+        Map<String, Object> map = new HashMap<>();
+        map.put("bodyCharacteristic", skin.bodyCharacteristic);
+        map.put("underwear", skin.underwear);
+        map.put("face", skin.face);
+        map.put("eyes", skin.eyes);
+        map.put("ears", skin.ears);
+        map.put("mouth", skin.mouth);
+        map.put("facialHair", skin.facialHair);
+        map.put("haircut", skin.haircut);
+        map.put("eyebrows", skin.eyebrows);
+        map.put("pants", skin.pants);
+        map.put("overpants", skin.overpants);
+        map.put("undertop", skin.undertop);
+        map.put("overtop", skin.overtop);
+        map.put("shoes", skin.shoes);
+        map.put("headAccessory", skin.headAccessory);
+        map.put("faceAccessory", skin.faceAccessory);
+        map.put("earAccessory", skin.earAccessory);
+        map.put("skinFeature", skin.skinFeature);
+        map.put("gloves", skin.gloves);
+        map.put("cape", skin.cape);
+
+        config.put(path, map);
+        saveConfig();
+    }
+
+    public long getLong(@Nonnull String path, long defaultValue) {
+        Object value = get(path);
+        if (value instanceof Number) {
+            return ((Number) value).longValue();
+        }
+        return defaultValue;
     }
 }
