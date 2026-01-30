@@ -3,7 +3,7 @@ plugins {
 }
 
 group = "com.electro"
-version = "1.0-SNAPSHOT"
+version = "1.0"
 
 repositories {
     mavenCentral()
@@ -29,4 +29,18 @@ tasks.withType<JavaCompile>().configureEach {
 
 tasks.test {
     useJUnitPlatform()
+}
+
+tasks.register<Jar>("fatJar") {
+    archiveBaseName.set("HyCitizens")
+    archiveVersion.set("1.0")
+    archiveClassifier.set("")
+
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    from(sourceSets.main.get().output)
+    from(configurations.runtimeClasspath.get().map { if (it.isDirectory) it else zipTree(it) })
+}
+
+tasks.build {
+    dependsOn("fatJar")
 }
