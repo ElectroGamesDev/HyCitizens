@@ -47,13 +47,21 @@ public class CitizensUI {
     }
 
     public void openCreateCitizenGUI(@Nonnull PlayerRef playerRef, @Nonnull Store<EntityStore> store) {
-        String html = buildCreateCitizenHTML();
+        openCreateCitizenGUI(playerRef, store, true, "", "", 1.0f, "", "", false, false, "");
+    }
+
+    public void openCreateCitizenGUI(@Nonnull PlayerRef playerRef, @Nonnull Store<EntityStore> store,
+                                     boolean isPlayerModel, String name, String modelId, float scale,
+                                     String permission, String permMessage, boolean useLiveSkin,
+                                     boolean preserveState, String skinUsername) {
+        String html = buildCreateCitizenHTML(isPlayerModel);
 
         PageBuilder page = PageBuilder.pageForPlayer(playerRef)
                 .withLifetime(CustomPageLifetime.CanDismiss)
                 .fromHtml(html);
 
-        setupCreateCitizenListeners(page, playerRef, store);
+        setupCreateCitizenListeners(page, playerRef, store, isPlayerModel, name, modelId, scale,
+                                   permission, permMessage, useLiveSkin, skinUsername);
 
         page.open(store);
     }
@@ -106,7 +114,7 @@ public class CitizensUI {
                 }
                 
                 .title-text {
-                    color: #00d4ff;
+                    color: #FFFFFF;
                     font-size: 22;
                     font-weight: bold;
                     text-align: center;
@@ -239,7 +247,7 @@ public class CitizensUI {
                 }
                 
                 .citizen-name {
-                    color: #00d4ff;
+                    color: #FFFFFF;
                     font-size: 16;
                     font-weight: bold;
                 }
@@ -275,7 +283,7 @@ public class CitizensUI {
                 
                 .remove-btn {
                     flex-weight: 0;
-                    anchor-width: 110;
+                    anchor-width: 130;
                     anchor-height: 38;
                 }
                 
@@ -374,7 +382,7 @@ public class CitizensUI {
             sb.append("""
                                 <div class="empty-state">
                                     <p class="empty-text">No citizens created yet.</p>
-                                    <p class="empty-text">Switch to the Create tab to add your first citizen!</p>
+                                    <p class="empty-text"> Switch to the Create tab to add your first citizen!</p>
                                 </div>
                     """);
             return sb.toString();
@@ -427,13 +435,13 @@ public class CitizensUI {
         return sb.toString();
     }
 
-    private String buildCreateCitizenHTML() {
+    private String buildCreateCitizenHTML(boolean isPlayerModel) {
         return """
             <style>
                 .form-container {
                     layout: top;
-                    anchor-width: 740;
-                    anchor-height: 600;
+                    anchor-width: 800;
+                    anchor-height: 800;
                     background-color: #1a1a2e(0.95);
                     border-radius: 8;
                 }
@@ -507,15 +515,15 @@ public class CitizensUI {
                 }
                 
                 .primary-btn {
-                    background-color: #00d4ff(0.8);
+                    
                 }
                 
                 .secondary-btn {
-                    background-color: #0f3460(0.8);
+                    
                 }
                 
                 .danger-btn {
-                    background-color: #e63946(0.8);
+                    
                 }
                 
                 .btn-spacer {
@@ -534,8 +542,48 @@ public class CitizensUI {
                 }
                 
                 .info-text {
-                    color: #00d4ff;
+                    color: #FFFFFF;
                     font-size: 11;
+                }
+
+                .toggle-buttons {
+                    layout: center;
+                    flex-weight: 0;
+                    padding-top: 8;
+                    padding-bottom: 8;
+                }
+
+                .toggle-btn {
+                    flex-weight: 0;
+                    anchor-width: 180;
+                    anchor-height: 38;
+                    
+                }
+
+                .toggle-active {
+                    
+                }
+
+                .skin-section {
+                    layout: top;
+                    flex-weight: 0;
+                    background-color: #0f3460(0.3);
+                    padding: 14;
+                    border-radius: 4;
+                    margin-left: 12;
+                    margin-right: 12;
+                }
+
+                .checkbox-row {
+                    layout: left;
+                    flex-weight: 0;
+                    padding-top: 8;
+                }
+
+                .checkbox-label {
+                    color: #ffffff;
+                    font-size: 12;
+                    padding-left: 8;
                 }
             </style>
             
@@ -564,15 +612,55 @@ public class CitizensUI {
                         </div>
                         
                         <div class="spacer-medium"></div>
-                        
-                        <!-- Model ID Input -->
+
+                        <!-- Model Type Selection -->
                         <div class="form-section">
-                            <p class="form-label">Model ID *</p>
-                            <input type="text" id="citizen-model-id" class="form-input" value="PlayerTestModel_V" 
-                                   placeholder="Enter model ID" maxlength="32" />
-                            <p class="form-hint">Player, PlayerTestModel_V, Sheep, etc.</p>
+                            <p class="form-label">Entity Type *</p>
+                            <div class="toggle-buttons">
+                                <button id="type-player" class="toggle-btn%s">Player</button>
+                                <div class="btn-spacer"></div>
+                                <button id="type-entity" class="toggle-btn%s">Other Entity</button>
+                            </div>
                         </div>
-                        
+
+                        <div class="spacer-medium"></div>
+
+                        <!-- Player Skin Section -->
+                        <div id="player-skin-section" class="form-section"%s>
+                            <div class="skin-section">
+                                <p class="form-label">Player Skin Configuration</p>
+                                <div class="spacer-small"></div>
+
+                                <!-- Username Input -->
+                                <input type="text" id="skin-username" class="form-input" value=""
+                                       placeholder="Enter username (can be offline)" />
+                                <p class="form-hint">Leave empty to use current player's skin</p>
+
+                                <div class="spacer-small"></div>
+
+                                <!-- Get Current Player Skin Button -->
+                                <div class="button-row">
+                                    <button id="get-player-skin-btn" class="action-btn secondary-btn">Use My Skin</button>
+                                </div>
+
+                                <div class="spacer-small"></div>
+
+                                <!-- Live Skin Checkbox -->
+                                <div class="checkbox-row">
+                                    <input type="checkbox" id="live-skin-check" value="false" />
+                                    <p class="checkbox-label">Enable Live Skin Updates (refreshes every 30 minutes)</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Model ID Input -->
+                        <div id="model-id-section" class="form-section"%s>
+                            <p class="form-label">Model ID *</p>
+                            <input type="text" id="citizen-model-id" class="form-input" value="PlayerTestModel_V"
+                                   placeholder="Enter model ID" maxlength="32" />
+                            <p class="form-hint">PlayerTestModel_V, Sheep, etc.</p>
+                        </div>
+
                         <div class="spacer-medium"></div>
                         
                         <!-- Scale Input -->
@@ -612,16 +700,21 @@ public class CitizensUI {
                         
                         <!-- Actions Buttons -->
                         <div class="button-row">
-                            <button id="edit-commands-btn" class="action-btn secondary-btn">Edit Commands</button>
+                            <button id="edit-commands-btn" class="action-btn secondary-btn">Commands</button>
                             <div class="btn-spacer"></div>
-                            <button id="create-btn" class="action-btn primary-btn">Create Citizen</button>
+                            <button id="create-btn" class="action-btn primary-btn">Create</button>
                             <div class="btn-spacer"></div>
                             <button id="cancel-btn" class="action-btn danger-btn">Cancel</button>
                         </div>
                     </div>
                 </div>
             </div>
-            """;
+            """.formatted(
+                isPlayerModel ? " toggle-active" : "",
+                !isPlayerModel ? " toggle-active" : "",
+                isPlayerModel ? "" : " style=\"display: none;\"",
+                !isPlayerModel ? "" : " style=\"display: none;\""
+        );
     }
 
     private String buildEditCitizenHTML(CitizenData citizen) {
@@ -632,8 +725,8 @@ public class CitizensUI {
             <style>
                 .form-container {
                     layout: top;
-                    anchor-width: 740;
-                    anchor-height: 600;
+                    anchor-width: 800;
+                    anchor-height: 750;
                     background-color: #1a1a2e(0.95);
                     border-radius: 8;
                 }
@@ -647,7 +740,7 @@ public class CitizensUI {
                 }
                 
                 .form-title {
-                    color: #00d4ff;
+                    color: #FFFFFF;
                     font-size: 20;
                     font-weight: bold;
                 }
@@ -713,57 +806,137 @@ public class CitizensUI {
                 }
                 
                 .primary-btn {
-                    background-color: #00d4ff(0.8);
+                    
                 }
                 
                 .secondary-btn {
-                    background-color: #0f3460(0.8);
+                    
                 }
                 
                 .warning-btn {
-                    background-color: #ff9500(0.8);
+                    
                 }
                 
                 .danger-btn {
-                    background-color: #e63946(0.8);
+                    
                 }
                 
                 .btn-spacer {
                     flex-weight: 0;
                     anchor-width: 10;
                 }
+
+                .toggle-buttons {
+                    layout: center;
+                    flex-weight: 0;
+                    padding-top: 8;
+                    padding-bottom: 8;
+                }
+
+                .toggle-btn {
+                    flex-weight: 0;
+                    anchor-width: 180;
+                    anchor-height: 38;
+                    
+                }
+
+                .toggle-active {
+                    
+                }
+
+                .skin-section {
+                    layout: top;
+                    flex-weight: 0;
+                    background-color: #0f3460(0.3);
+                    padding: 14;
+                    border-radius: 4;
+                    margin-left: 12;
+                    margin-right: 12;
+                }
+
+                .checkbox-row {
+                    layout: left;
+                    flex-weight: 0;
+                    padding-top: 8;
+                }
+
+                .checkbox-label {
+                    color: #ffffff;
+                    font-size: 12;
+                    padding-left: 8;
+                }
             </style>
-            
+
             <div class="page-overlay">
                 <div class="form-container">
                     <!-- Header -->
                     <div class="form-header">
                         <p class="form-title">Edit Citizen</p>
                     </div>
-                    
+
                     <!-- Form Content -->
                     <div class="form-content">
                         <p class="form-subtitle">ID: %s</p>
-                        
+
                         <div class="spacer-small"></div>
-                     
+
                         <!-- Name Input -->
                         <div class="form-section">
                             <p class="form-label">Citizen Name *</p>
-                            <input type="text" id="citizen-name" class="form-input" value="%s" 
+                            <input type="text" id="citizen-name" class="form-input" value="%s"
                                    placeholder="Enter citizen name" maxlength="32" />
                         </div>
-                        
+
                         <div class="spacer-medium"></div>
-                        
-                        <!-- Model ID Input -->
+
+                        <!-- Model Type Selection -->
                         <div class="form-section">
-                            <p class="form-label">Model ID *</p>
-                            <input type="text" id="citizen-model-id" class="form-input" value="%s" 
-                                   placeholder="Player, PlayerTestModel_V, Sheep, etc." maxlength="32" />
-                            <p class="form-hint">Player, PlayerTestModel_V, Sheep, etc.</p>
+                            <p class="form-label">Entity Type *</p>
+                            <div class="toggle-buttons">
+                                <button id="type-player" class="toggle-btn%s">Player</button>
+                                <div class="btn-spacer"></div>
+                                <button id="type-entity" class="toggle-btn%s">Other Entity</button>
+                            </div>
                         </div>
-                        
+
+                        <div class="spacer-medium"></div>
+
+                        <!-- Player Skin Section -->
+                        <div id="player-skin-section" class="form-section"%s>
+                            <div class="skin-section">
+                                <p class="form-label">Player Skin Configuration</p>
+                                <div class="spacer-small"></div>
+
+                                <!-- Username Input -->
+                                <input type="text" id="skin-username" class="form-input" value="%s"
+                                       placeholder="Enter username to fetch skin from PlayerDB" />
+                                <p class="form-hint">Leave empty to use current player's skin</p>
+
+                                <div class="spacer-small"></div>
+
+                                <!-- Get Current Player Skin Button -->
+                                <div class="button-row">
+                                    <button id="get-player-skin-btn" class="action-btn secondary-btn" style="anchor-width: 200;">Use My Skin</button>
+                                </div>
+
+                                <div class="spacer-small"></div>
+
+                                <!-- Live Skin Checkbox -->
+                                <div class="checkbox-row">
+                                    <input type="checkbox" id="live-skin-check"%s />
+                                    <p class="checkbox-label">Enable Live Skin Updates (refreshes every 30 minutes)</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Model ID Input -->
+                        <div id="model-id-section" class="form-section"%s>
+                            <p class="form-label">Model ID *</p>
+                            <input type="text" id="citizen-model-id" class="form-input" value="%s"
+                                   placeholder="Player, PlayerTestModel_V, Sheep, etc." maxlength="32" />
+                            <p class="form-hint">PlayerTestModel_V, Sheep, etc.</p>
+                        </div>
+
                         <div class="spacer-medium"></div>
                 
                         <!-- Scale Input -->
@@ -816,6 +989,12 @@ public class CitizensUI {
             """.formatted(
                 citizen.getId(),
                 citizen.getName(),
+                citizen.isPlayerModel() ? " toggle-active" : "",
+                !citizen.isPlayerModel() ? " toggle-active" : "",
+                citizen.isPlayerModel() ? "" : " style=\"display: none;\"",
+                citizen.getSkinUsername(),
+                citizen.isUseLiveSkin() ? " value=\"true\" checked" : " value=\"false\"",
+                !citizen.isPlayerModel() ? "" : " style=\"display: none;\"",
                 citizen.getModelId(),
                 String.valueOf(citizen.getScale()),
                 permValue,
@@ -845,7 +1024,7 @@ public class CitizensUI {
                 }
                 
                 .commands-title {
-                    color: #00d4ff;
+                    color: #FFFFFF;
                     font-size: 20;
                     font-weight: bold;
                 }
@@ -979,11 +1158,11 @@ public class CitizensUI {
                 }
                 
                 .primary-btn {
-                    background-color: #00d4ff(0.8);
+                    
                 }
                 
                 .secondary-btn {
-                    background-color: #0f3460(0.8);
+                    
                 }
                 
                 .empty-state {
@@ -1132,13 +1311,19 @@ public class CitizensUI {
         }
     }
 
-    private void setupCreateCitizenListeners(PageBuilder page, PlayerRef playerRef, Store<EntityStore> store) {
+    private void setupCreateCitizenListeners(PageBuilder page, PlayerRef playerRef, Store<EntityStore> store,
+                                            boolean initialIsPlayerModel, String initialName, String initialModelId,
+                                            float initialScale, String initialPermission, String initialPermMessage,
+                                            boolean initialUseLiveSkin, String initialSkinUsername) {
         final List<CommandAction> tempActions = new ArrayList<>();
-        final String[] currentName = {""};
-        final String[] currentModelId = {"PlayerTestModel_V"};
-        final float[] currentScale = {1};
-        final String[] currentPermission = {""};
-        final String[] currentPermMessage = {""};
+        final String[] currentName = {initialName};
+        final String[] currentModelId = {initialModelId.isEmpty() ? "PlayerTestModel_V" : initialModelId};
+        final float[] currentScale = {initialScale};
+        final String[] currentPermission = {initialPermission};
+        final String[] currentPermMessage = {initialPermMessage};
+        final boolean[] isPlayerModel = {initialIsPlayerModel};
+        final boolean[] useLiveSkin = {initialUseLiveSkin};
+        final String[] skinUsername = {initialSkinUsername};
 
         // Track input changes
         page.addEventListener("citizen-name", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
@@ -1172,6 +1357,31 @@ public class CitizensUI {
             currentPermMessage[0] = ctx.getValue("citizen-perm-message", String.class).orElse("");
         });
 
+        page.addEventListener("skin-username", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
+            skinUsername[0] = ctx.getValue("skin-username", String.class).orElse("");
+        });
+
+        page.addEventListener("live-skin-check", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
+            useLiveSkin[0] = ctx.getValue("live-skin-check", Boolean.class).orElse(false);
+        });
+
+        // Entity type toggle buttons
+        page.addEventListener("type-player", CustomUIEventBindingType.Activating, (event, ctx) -> {
+            openCreateCitizenGUI(playerRef, store, true, currentName[0], currentModelId[0], currentScale[0],
+                               currentPermission[0], currentPermMessage[0], useLiveSkin[0], true, skinUsername[0]);
+        });
+
+        page.addEventListener("type-entity", CustomUIEventBindingType.Activating, (event, ctx) -> {
+            openCreateCitizenGUI(playerRef, store, false, currentName[0], currentModelId[0], currentScale[0],
+                               currentPermission[0], currentPermMessage[0], useLiveSkin[0], true, skinUsername[0]);
+        });
+
+        // Get current player skin button
+        page.addEventListener("get-player-skin-btn", CustomUIEventBindingType.Activating, event -> {
+            skinUsername[0] = playerRef.getUsername();
+            playerRef.sendMessage(Message.raw("Using your skin for this citizen!").color(Color.GREEN));
+        });
+
         // Edit commands button
         page.addEventListener("edit-commands-btn", CustomUIEventBindingType.Activating, event -> {
             String tempId = "temp-" + UUID.randomUUID().toString();
@@ -1187,11 +1397,15 @@ public class CitizensUI {
                 return;
             }
 
-            String modelId = currentModelId[0].trim();
-
-            if (modelId.isEmpty()) {
-                playerRef.sendMessage(Message.raw("Please enter a model ID!").color(Color.RED));
-                return;
+            String modelId;
+            if (isPlayerModel[0]) {
+                modelId = "Player";
+            } else {
+                modelId = currentModelId[0].trim();
+                if (modelId.isEmpty()) {
+                    playerRef.sendMessage(Message.raw("Please enter a model ID!").color(Color.RED));
+                    return;
+                }
             }
 
             // Get player position and rotation
@@ -1216,6 +1430,10 @@ public class CitizensUI {
                 return;
             }
 
+            if (skinUsername[0].isEmpty()) {
+                skinUsername[0] = playerRef.getUsername();
+            }
+
             // Create the citizen
             CitizenData citizen = new CitizenData(
                     UUID.randomUUID().toString(),
@@ -1229,13 +1447,38 @@ public class CitizensUI {
                     null,
                     currentPermission[0].trim(),
                     currentPermMessage[0].trim(),
-                    new ArrayList<>(tempActions)
+                    new ArrayList<>(tempActions),
+                    isPlayerModel[0],
+                    useLiveSkin[0],
+                    skinUsername[0].trim(),
+                    null,
+                    0L
             );
 
-            plugin.getCitizensManager().addCitizen(citizen, true);
-
-            playerRef.sendMessage(Message.raw("Citizen \"" + name + "\" created at your position!").color(Color.GREEN));
-            openCitizensGUI(playerRef, store, Tab.MANAGE);
+            // If player model, fetch and cache the skin BEFORE adding
+            if (isPlayerModel[0]) {
+                if (skinUsername[0].trim().isEmpty()) {
+                    // Use current player's skin
+                    plugin.getCitizensManager().updateCitizenSkinFromPlayer(citizen, playerRef, false);
+                    plugin.getCitizensManager().addCitizen(citizen, true);
+                    playerRef.sendMessage(Message.raw("Citizen \"" + name + "\" created at your position!").color(Color.GREEN));
+                    openCitizensGUI(playerRef, store, Tab.MANAGE);
+                } else {
+                    // Fetch skin from username and wait for it
+                    playerRef.sendMessage(Message.raw("Fetching skin for \"" + skinUsername[0] + "\"...").color(Color.YELLOW));
+                    com.electro.hycitizens.util.SkinUtilities.getSkin(skinUsername[0].trim()).thenAccept(skin -> {
+                        citizen.setCachedSkin(skin);
+                        citizen.setLastSkinUpdate(System.currentTimeMillis());
+                        plugin.getCitizensManager().addCitizen(citizen, true);
+                        playerRef.sendMessage(Message.raw("Citizen \"" + name + "\" created at your position!").color(Color.GREEN));
+                        openCitizensGUI(playerRef, store, Tab.MANAGE);
+                    });
+                }
+            } else {
+                plugin.getCitizensManager().addCitizen(citizen, true);
+                playerRef.sendMessage(Message.raw("Citizen \"" + name + "\" created at your position!").color(Color.GREEN));
+                openCitizensGUI(playerRef, store, Tab.MANAGE);
+            }
         });
 
         // Cancel button
@@ -1250,6 +1493,9 @@ public class CitizensUI {
         final float[] currentScale = {citizen.getScale()};
         final String[] currentPermission = {citizen.getRequiredPermission()};
         final String[] currentPermMessage = {citizen.getNoPermissionMessage()};
+        final boolean[] isPlayerModel = {citizen.isPlayerModel()};
+        final boolean[] useLiveSkin = {citizen.isUseLiveSkin()};
+        final String[] skinUsername = {citizen.getSkinUsername()};
 
         // Track input changes
         page.addEventListener("citizen-name", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
@@ -1282,6 +1528,33 @@ public class CitizensUI {
 
         page.addEventListener("citizen-perm-message", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
             currentPermMessage[0] = ctx.getValue("citizen-perm-message", String.class).orElse("");
+        });
+
+        page.addEventListener("skin-username", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
+            skinUsername[0] = ctx.getValue("skin-username", String.class).orElse("");
+        });
+
+        page.addEventListener("live-skin-check", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
+            useLiveSkin[0] = ctx.getValue("live-skin-check", Boolean.class).orElse(false);
+        });
+
+        // Entity type toggle buttons
+        page.addEventListener("type-player", CustomUIEventBindingType.Activating, (event, ctx) -> {
+            isPlayerModel[0] = true;
+            citizen.setPlayerModel(true);
+            openEditCitizenGUI(playerRef, store, citizen);
+        });
+
+        page.addEventListener("type-entity", CustomUIEventBindingType.Activating, (event, ctx) -> {
+            isPlayerModel[0] = false;
+            citizen.setPlayerModel(false);
+            openEditCitizenGUI(playerRef, store, citizen);
+        });
+
+        // Get current player skin button
+        page.addEventListener("get-player-skin-btn", CustomUIEventBindingType.Activating, event -> {
+            skinUsername[0] = playerRef.getUsername();
+            playerRef.sendMessage(Message.raw("Using your skin for this citizen!").color(Color.GREEN));
         });
 
         // Edit commands button
@@ -1324,11 +1597,19 @@ public class CitizensUI {
                 return;
             }
 
-            String modelId = currentModelId[0].trim();
+            String modelId;
+            if (isPlayerModel[0]) {
+                modelId = "Player";
+            } else {
+                modelId = currentModelId[0].trim();
+                if (modelId.isEmpty()) {
+                    playerRef.sendMessage(Message.raw("Please enter a model ID!").color(Color.RED));
+                    return;
+                }
+            }
 
-            if (modelId.isEmpty()) {
-                playerRef.sendMessage(Message.raw("Please enter a model ID!").color(Color.RED));
-                return;
+            if (skinUsername[0].isEmpty()) {
+                skinUsername[0] = playerRef.getUsername();
             }
 
             citizen.setName(name);
@@ -1336,11 +1617,34 @@ public class CitizensUI {
             citizen.setScale(currentScale[0]);
             citizen.setRequiredPermission(currentPermission[0].trim());
             citizen.setNoPermissionMessage(currentPermMessage[0].trim());
+            citizen.setPlayerModel(isPlayerModel[0]);
+            citizen.setUseLiveSkin(useLiveSkin[0]);
+            citizen.setSkinUsername(skinUsername[0].trim());
 
-            plugin.getCitizensManager().updateCitizen(citizen, true);
-
-            playerRef.sendMessage(Message.raw("Citizen '" + name + "' updated!").color(Color.GREEN));
-            openCitizensGUI(playerRef, store, Tab.MANAGE);
+            // If player model, fetch and cache the skin BEFORE updating
+            if (isPlayerModel[0]) {
+                if (skinUsername[0].trim().isEmpty()) {
+                    // Use current player's skin
+                    plugin.getCitizensManager().updateCitizenSkinFromPlayer(citizen, playerRef, false);
+                    plugin.getCitizensManager().updateCitizen(citizen, true);
+                    playerRef.sendMessage(Message.raw("Citizen '" + name + "' updated!").color(Color.GREEN));
+                    openCitizensGUI(playerRef, store, Tab.MANAGE);
+                } else {
+                    // Fetch skin from username and wait for it
+                    playerRef.sendMessage(Message.raw("Fetching skin for '" + skinUsername[0] + "'...").color(Color.YELLOW));
+                    com.electro.hycitizens.util.SkinUtilities.getSkin(skinUsername[0].trim()).thenAccept(skin -> {
+                        citizen.setCachedSkin(skin);
+                        citizen.setLastSkinUpdate(System.currentTimeMillis());
+                        plugin.getCitizensManager().updateCitizen(citizen, true);
+                        playerRef.sendMessage(Message.raw("Citizen '" + name + "' updated!").color(Color.GREEN));
+                        openCitizensGUI(playerRef, store, Tab.MANAGE);
+                    });
+                }
+            } else {
+                plugin.getCitizensManager().updateCitizen(citizen, true);
+                playerRef.sendMessage(Message.raw("Citizen '" + name + "' updated!").color(Color.GREEN));
+                openCitizensGUI(playerRef, store, Tab.MANAGE);
+            }
         });
 
         // Cancel button
