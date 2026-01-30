@@ -11,5 +11,5 @@
   ],
   "Website": "https://github.com/ElectroGamesDev",
   "Main": "com.electro.hycitizens.HyCitizensPlugin",
-  "IncludesAssetPack": false
+  "IncludesAssetPack": true
 }
