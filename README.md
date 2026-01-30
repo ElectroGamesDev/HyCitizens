@@ -19,6 +19,7 @@ Each Citizen supports:
 *   Custom **position**
 *   Custom **rotation**
 *   Custom **entity type / model id**
+*   Player models and skins (with cached skins and live skins support)
 *   Custom **scale**
 *   Custom **hit actions**
 *   Persistent saving/loading (Citizens stay after restarts)
@@ -90,7 +91,8 @@ Saved data includes:
 ***
 
 ## Discord / Support
-If you would like to join the community, suggest features, report bugs, or need some help, join the Discord community! https://discord.gg/ScDW97HDXk
+
+If you would like to join the community, suggest features, report bugs, or need some help, join the Discord community! [https://discord.gg/ScDW97HDXk](https://discord.gg/ScDW97HDXk)
 
 ***
 
@@ -114,8 +116,6 @@ CitizensManager manager = CitizensPlugin.get().getCitizensManager();
 
 CitizenData represents a single Citizen and all of its settings.
 
-  
-
 ## Citizen fields:
 
 ```
@@ -131,9 +131,12 @@ hologramUUID (UUID) – spawned hologram UUID (if spawned)
 requiredPermission (String) – permission required to use the Citizen
 noPermissionMessage (String) – message shown if missing permission
 commandActions (List) – commands to run on interaction
+isPlayerModel (boolean) – whether this Citizen uses a player model instead of a normal entity model
+useLiveSkin (boolean) – enables automatic skin updates every 30 minutes
+skinUsername (String) – username used to fetch skins from PlayerDB
+cachedSkin (PlayerSkin) – stored skin data for this Citizen
+lastSkinUpdate (long) – timestamp of the last skin update
 ```
-
-  
 
 ## Creating a Citizen
 
@@ -150,7 +153,12 @@ CitizenData citizen = new CitizenData(
         null, // Hologram UUID - You should usually set this as null
         "", // Required Permission
         "", // No Permission Message - Leaving it empty sets a default message
-        List.of() // Command actions
+        List.of(), // Command actions
+        true, // Is Player Model
+        false, // Use Live Skin
+        "Simon", // Skin Username
+        null, // Cached Skin - Usually set to null
+        0L // Last Skin Update - Usually set to 0L
 );
 
 manager.addCitizen(citizen, true); // true means it will save to storage and will respawn every time the world loads.
@@ -159,8 +167,6 @@ manager.addCitizen(citizen, true); // true means it will save to storage and wil
 This will add it to the registry, save it to storage, and spawn it in the world.
 
 Please note that when setting a citizen to not save, Hytale automatically respawns entities. Even with this disabled, the entities still may spawn, they will just no be considered citizens. This is perfect if you're creating temporary worlds, else you may need to manually despawn the entities.
-
-  
 
 ## Updating a Citizen
 
@@ -196,8 +202,6 @@ manager.removeCitizen("npc_1_id");
 ```
 
 This will remove the Citizen from memory, delete the saved data, and despawn the Citizen.
-
-  
 
 ## Spawning / Despawning
 
@@ -237,7 +241,64 @@ Despawn only the hologram:
 manager.despawnCitizenHologram(citizen);
 ```
 
-  
+## Updating player model and skin settings
+Make a Citizen use a player model:
+```
+citizen.setPlayerModel(true);
+manager.updateCitizenNPC(citizen, true);
+```
+
+Set a cached skin (no live updates):
+```
+citizen.setPlayerModel(true);
+citizen.setUseLiveSkin(false);
+citizen.setSkinUsername("Simon");
+
+manager.updateCitizenNPC(citizen, true);
+```
+
+Enable live skin updates (updates every 30 minutes):
+```
+citizen.setPlayerModel(true);
+citizen.setUseLiveSkin(true);
+citizen.setSkinUsername("Simon");
+
+manager.updateCitizenNPC(citizen, true);
+```
+
+## Other Skin API
+Update a Citizen skin:
+
+This fetches the skin using the Citizen’s `skinUsername`, caches it, and applies it to the spawned NPC (if spawned).
+
+```
+manager.updateCitizenSkin(citizen, true); // true = save to storage
+```
+Copy skin from a real player (use their current skin):
+
+This will copy the player's current skin and store it as the Citizen’s cached skin.
+
+It will also:
+
+* Clear the skin username
+* Disable live skin updates
+* Apply the skin instantly
+
+```
+manager.updateCitizenSkinFromPlayer(citizen, playerRef, true); // true = save to storage
+```
+
+Force an instant skin update:
+
+```
+manager.updateCitizenSkin(citizen, true);
+```
+
+## Notes about player model Citizens
+
+* If `isPlayerModel = true`, the Citizen will spawn using a player model instead of a normal model ID.
+* If `useLiveSkin = true`, skins will automatically refresh every 30 minutes.
+* If live skin fails or is missing, the Citizen will fall back to a default skin.
 
 ## Getting Citizens
 
@@ -270,8 +331,6 @@ Find Citizens near a position:
 ```
 List<CitizenData> nearby = manager.getCitizensNear(playerPos, 10.0);
 ```
-
-  
 
 ## CommandAction API
 
@@ -315,8 +374,6 @@ citizen.setCommandActions(actions);
 manager.updateCitizen(citizen, true);
 ```
 
-  
-
 ## Citizen Interaction Event API
 
 Citizens includes an interaction event system developers can hook into.
@@ -335,7 +392,6 @@ isCancelled() - Whether the event is cancelled
 setCancelled(true) - Cancels further handling
 ```
 
-  
 `CitizenInteractListener` - To listen for Citizen interactions:
 
 ```
@@ -351,14 +407,12 @@ manager.addCitizenInteractListener(event -> {
 });
 ```
 
-  
 Removing a Listener:
 
 ```
 manager.removeCitizenInteractListener(listenerInstance);
 ```
 
-  
 Manually Firing the Event - If you need to trigger a CitizenInteractEvent manually:
 
 ```
@@ -368,13 +422,19 @@ manager.fireCitizenInteractEvent(event);
 
 If any listener cancels the event, further listeners will not be called, including the command actions.
 
-***  
+***
 
 ## Notes
 
 Citizens are spawned using the built-in NPC system and tracked using UUIDs.
 
 Citizens automatically spawn their hologram nameplate above them based on their scale.
+
+Citizens are designed to be fully usable in-game, while still providing a complete API for developers.
+
+## Credits
+
+This plugin has been made possible by [HyUI](https://www.curseforge.com/hytale/mods/hyui).
 
 Citizens are designed to be fully usable in-game, while still providing a complete API for developers.
 
