@@ -1,14 +1,19 @@
 package com.electro.hycitizens.models;
 
+import com.hypixel.hytale.component.Ref;
 import com.hypixel.hytale.math.vector.Vector3d;
 import com.hypixel.hytale.math.vector.Vector3f;
+import com.hypixel.hytale.protocol.Direction;
 import com.hypixel.hytale.protocol.PlayerSkin;
+import com.hypixel.hytale.server.core.universe.world.storage.EntityStore;
 
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 public class CitizenData {
     private final String id;
@@ -23,6 +28,19 @@ public class CitizenData {
     private List<CommandAction> commandActions;
     private UUID spawnedUUID;
     private UUID hologramUUID;
+    private Ref<EntityStore> npcRef;
+    public final Map<UUID, Direction> lastLookDirections = new ConcurrentHashMap<>();
+    private boolean rotateTowardsPlayer;
+    private boolean hideNametag = false;
+    private float nametagOffset;
+
+    // Item-related fields
+    private String npcHelmet;
+    private String npcChest;
+    private String npcLeggings;
+    private String npcGloves;
+    private String npcHand;
+    private String npcOffHand;
 
     // Skin-related fields
     private boolean isPlayerModel;
@@ -30,13 +48,14 @@ public class CitizenData {
     private String skinUsername;
     private PlayerSkin cachedSkin;
     private long lastSkinUpdate;
-    private transient long createdAt; // Timestamp when citizen was created (not saved to config)
+    private transient long createdAt;
 
     public CitizenData(@Nonnull String id, @Nonnull String name, @Nonnull String modelId, @Nonnull UUID worldUUID,
                        @Nonnull Vector3d position, @Nonnull Vector3f rotation, float scale, @Nullable UUID npcUUID,
                        @Nullable UUID hologramUUID, @Nonnull String requiredPermission, @Nonnull String noPermissionMessage,
                        @Nonnull List<CommandAction> commandActions, boolean isPlayerModel, boolean useLiveSkin,
-                       @Nullable String skinUsername, @Nullable PlayerSkin cachedSkin, long lastSkinUpdate) {
+                       @Nullable String skinUsername, @Nullable PlayerSkin cachedSkin, long lastSkinUpdate,
+                       boolean rotateTowardsPlayer) {
         this.id = id;
         this.name = name;
         this.modelId = modelId;
@@ -55,6 +74,18 @@ public class CitizenData {
         this.cachedSkin = cachedSkin;
         this.lastSkinUpdate = lastSkinUpdate;
         this.createdAt = 0;
+        this.npcRef = null;
+        this.rotateTowardsPlayer = rotateTowardsPlayer;
+
+        this.npcHelmet = null;
+        this.npcChest = null;
+        this.npcLeggings = null;
+        this.npcGloves = null;
+        this.npcHand = null;
+        this.npcOffHand = null;
+
+        this.nametagOffset = 0;
+        this.hideNametag = false;
     }
 
     @Nonnull
@@ -166,6 +197,14 @@ public class CitizenData {
         return !commandActions.isEmpty();
     }
 
+    public boolean getRotateTowardsPlayer() {
+        return rotateTowardsPlayer;
+    }
+
+    public void setRotateTowardsPlayer(boolean rotateTowardsPlayer) {
+        this.rotateTowardsPlayer = rotateTowardsPlayer;
+    }
+
     public boolean isPlayerModel() {
         return isPlayerModel;
     }
@@ -189,6 +228,78 @@ public class CitizenData {
 
     public void setSkinUsername(@Nullable String skinUsername) {
         this.skinUsername = skinUsername != null ? skinUsername : "";
+    }
+
+    public Ref<EntityStore> getNpcRef() {
+        return npcRef;
+    }
+
+    public void setNpcRef(Ref<EntityStore> npcRef) {
+        this.npcRef = npcRef;
+    }
+
+    public String getNpcHelmet() {
+        return npcHelmet;
+    }
+
+    public void setNpcHelmet(String item) {
+        this.npcHelmet = item;
+    }
+
+    public String getNpcChest() {
+        return npcChest;
+    }
+
+    public void setNpcChest(String item) {
+        this.npcChest = item;
+    }
+
+    public String getNpcLeggings() {
+        return npcLeggings;
+    }
+
+    public void setNpcLeggings(String item) {
+        this.npcLeggings = item;
+    }
+
+    public String getNpcGloves() {
+        return npcGloves;
+    }
+
+    public void setNpcGloves(String item) {
+        this.npcGloves = item;
+    }
+
+    public String getNpcHand() {
+        return npcHand;
+    }
+
+    public void setNpcHand(String item) {
+        this.npcHand = item;
+    }
+
+    public String getNpcOffHand() {
+        return npcOffHand;
+    }
+
+    public void setNpcOffHand(String item) {
+        this.npcOffHand = item;
+    }
+
+    public void setHideNametag(boolean hideNametag) {
+        this.hideNametag = hideNametag;
+    }
+
+    public boolean isHideNametag() {
+        return hideNametag;
+    }
+
+    public void setNametagOffset(float offset) {
+        this.nametagOffset = offset;
+    }
+
+    public float getNametagOffset() {
+        return nametagOffset;
     }
 
     @Nullable
