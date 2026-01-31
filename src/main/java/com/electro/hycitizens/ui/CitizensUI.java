@@ -5,13 +5,17 @@ import com.electro.hycitizens.HyCitizensPlugin;
 import com.electro.hycitizens.models.CitizenData;
 import com.electro.hycitizens.models.CommandAction;
 import com.electro.hycitizens.util.ConfigManager;
+import com.hypixel.hytale.component.Ref;
 import com.hypixel.hytale.component.Store;
 import com.hypixel.hytale.math.vector.Vector3d;
 import com.hypixel.hytale.math.vector.Vector3f;
 import com.hypixel.hytale.protocol.packets.interface_.CustomPageLifetime;
 import com.hypixel.hytale.protocol.packets.interface_.CustomUIEventBindingType;
 import com.hypixel.hytale.server.core.Message;
+import com.hypixel.hytale.server.core.entity.entities.Player;
 import com.hypixel.hytale.server.core.universe.PlayerRef;
+import com.hypixel.hytale.server.core.universe.Universe;
+import com.hypixel.hytale.server.core.universe.world.World;
 import com.hypixel.hytale.server.core.universe.world.storage.EntityStore;
 
 import javax.annotation.Nonnull;
@@ -47,21 +51,22 @@ public class CitizensUI {
     }
 
     public void openCreateCitizenGUI(@Nonnull PlayerRef playerRef, @Nonnull Store<EntityStore> store) {
-        openCreateCitizenGUI(playerRef, store, true, "", "", 1.0f, "", "", false, false, "");
+        openCreateCitizenGUI(playerRef, store, true, "", 0, false, "",
+                1.0f, "", "", false, false, "", true);
     }
 
     public void openCreateCitizenGUI(@Nonnull PlayerRef playerRef, @Nonnull Store<EntityStore> store,
-                                     boolean isPlayerModel, String name, String modelId, float scale,
-                                     String permission, String permMessage, boolean useLiveSkin,
-                                     boolean preserveState, String skinUsername) {
+                                     boolean isPlayerModel, String name, float nametagOffset, boolean hideNametag,
+                                     String modelId, float scale, String permission, String permMessage, boolean useLiveSkin,
+                                     boolean preserveState, String skinUsername, boolean rotateTowardsPlayer) {
         String html = buildCreateCitizenHTML(isPlayerModel);
 
         PageBuilder page = PageBuilder.pageForPlayer(playerRef)
                 .withLifetime(CustomPageLifetime.CanDismiss)
                 .fromHtml(html);
 
-        setupCreateCitizenListeners(page, playerRef, store, isPlayerModel, name, modelId, scale,
-                                   permission, permMessage, useLiveSkin, skinUsername);
+        setupCreateCitizenListeners(page, playerRef, store, isPlayerModel, name, nametagOffset, hideNametag, modelId, scale,
+                                   permission, permMessage, useLiveSkin, skinUsername, rotateTowardsPlayer);
 
         page.open(store);
     }
@@ -206,7 +211,7 @@ public class CitizensUI {
                 }
                 
                 .create-title {
-                    color: #ffffff;
+                    color: #FFFFFF;
                     font-size: 18;
                     font-weight: bold;
                     text-align: center;
@@ -441,7 +446,7 @@ public class CitizensUI {
                 .form-container {
                     layout: top;
                     anchor-width: 800;
-                    anchor-height: 800;
+                    anchor-height: 930;
                     background-color: #1a1a2e(0.95);
                     border-radius: 8;
                 }
@@ -573,6 +578,11 @@ public class CitizensUI {
                     margin-left: 12;
                     margin-right: 12;
                 }
+                
+                .checkbox {
+                        padding: 0;
+                        margin: 0;
+                    }
 
                 .checkbox-row {
                     layout: left;
@@ -583,7 +593,7 @@ public class CitizensUI {
                 .checkbox-label {
                     color: #ffffff;
                     font-size: 12;
-                    padding-left: 8;
+                    padding-left: -30;
                 }
             </style>
             
@@ -609,6 +619,29 @@ public class CitizensUI {
                             <input type="text" id="citizen-name" class="form-input" value="" 
                                    placeholder="Enter citizen name" maxlength="32" />
                             <p class="form-hint">This will be displayed above the NPC</p>
+                        </div>
+                        
+                        <div class="spacer-medium"></div>
+                        
+                        <!-- Nametag Offset Input -->
+                        <div class="form-section">
+                            <p class="form-label">Nametag Offset</p>
+                            <input type="number" id="nametag-offset" class="form-input"
+                                   value="0.0"
+                                   placeholder="Enter an offset"
+                                   min="-500"
+                                   max="500"
+                                   step="0.25"
+                                   data-hyui-max-decimal-places="2" />
+                            <p class="form-hint">Unless you're using a non-player entity, you should usually keep this at 0</p>
+                        </div>
+                        
+                        <div class="spacer-small"></div>
+
+                        <!-- Hide Nametag Checkbox -->
+                        <div class="checkbox-row">
+                            <input type="checkbox" id="hide-nametag-check" value="false" />
+                            <p class="checkbox-label">Hide the citizen's nametag</p>
                         </div>
                         
                         <div class="spacer-medium"></div>
@@ -649,6 +682,12 @@ public class CitizensUI {
                                 <div class="checkbox-row">
                                     <input type="checkbox" id="live-skin-check" value="false" />
                                     <p class="checkbox-label">Enable Live Skin Updates (refreshes every 30 minutes)</p>
+                                </div>
+                                
+                                <!-- Rotate Towards Player Checkbox -->
+                                <div class="checkbox-row">
+                                    <input type="checkbox" id="rotate-towards-player" value="true" />
+                                    <p class="checkbox-label">Rotates towards player</p>
                                 </div>
                             </div>
                         </div>
@@ -700,8 +739,8 @@ public class CitizensUI {
                         
                         <!-- Actions Buttons -->
                         <div class="button-row">
-                            <button id="edit-commands-btn" class="action-btn secondary-btn">Commands</button>
-                            <div class="btn-spacer"></div>
+                            <!--<button id="edit-commands-btn" class="action-btn secondary-btn">Commands</button>
+                            <div class="btn-spacer"></div>-->
                             <button id="create-btn" class="action-btn primary-btn">Create</button>
                             <div class="btn-spacer"></div>
                             <button id="cancel-btn" class="action-btn danger-btn">Cancel</button>
@@ -726,7 +765,7 @@ public class CitizensUI {
                 .form-container {
                     layout: top;
                     anchor-width: 800;
-                    anchor-height: 750;
+                    anchor-height: 885;
                     background-color: #1a1a2e(0.95);
                     border-radius: 8;
                 }
@@ -853,6 +892,11 @@ public class CitizensUI {
                     margin-left: 12;
                     margin-right: 12;
                 }
+                
+                .checkbox {
+                        padding: 0;
+                        margin: 0;
+                    }
 
                 .checkbox-row {
                     layout: left;
@@ -863,7 +907,7 @@ public class CitizensUI {
                 .checkbox-label {
                     color: #ffffff;
                     font-size: 12;
-                    padding-left: 8;
+                    padding-left: -30;
                 }
             </style>
 
@@ -886,7 +930,30 @@ public class CitizensUI {
                             <input type="text" id="citizen-name" class="form-input" value="%s"
                                    placeholder="Enter citizen name" maxlength="32" />
                         </div>
+                        
+                         <div class="spacer-small"></div>
+                         
+                        <!-- Nametag Offset Input -->
+                        <div class="form-section">
+                            <p class="form-label">Nametag Offset *</p>
+                            <input type="number" id="nametag-offset" class="form-input"
+                                   value="%s"
+                                   placeholder="Enter an offset"
+                                   min="-500"
+                                   max="500"
+                                   step="0.25"
+                                   data-hyui-max-decimal-places="2" />
+                            <p class="form-hint">Unless you're using a non-player entity, you should usually keep this at 0</p>
+                        </div>
 
+                        <div class="spacer-medium"></div>
+
+                        <!-- Hide Nametag Checkbox -->
+                        <div class="checkbox-row">
+                            <input type="checkbox" id="hide-nametag-check"%s />
+                            <p class="checkbox-label">Hide the citizen's nametag</p>
+                        </div>
+                        
                         <div class="spacer-medium"></div>
 
                         <!-- Model Type Selection -->
@@ -925,6 +992,12 @@ public class CitizensUI {
                                 <div class="checkbox-row">
                                     <input type="checkbox" id="live-skin-check"%s />
                                     <p class="checkbox-label">Enable Live Skin Updates (refreshes every 30 minutes)</p>
+                                </div>
+                                
+                                <!-- Rotate Towards Player Checkbox -->
+                                <div class="checkbox-row">
+                                    <input type="checkbox" id="rotate-towards-player"%s />
+                                    <p class="checkbox-label">Rotates towards player</p>
                                 </div>
                             </div>
                         </div>
@@ -977,6 +1050,8 @@ public class CitizensUI {
                         <div class="button-row">
                             <button id="edit-commands-btn" class="action-btn secondary-btn">Commands</button>
                             <div class="btn-spacer"></div>
+                            <button id="set-items-btn" class="action-btn warning-btn">Items</button>
+                            <div class="btn-spacer"></div>
                             <button id="change-position-btn" class="action-btn warning-btn">Position</button>
                             <div class="btn-spacer"></div>
                             <button id="save-btn" class="action-btn primary-btn">Save</button>
@@ -989,11 +1064,14 @@ public class CitizensUI {
             """.formatted(
                 citizen.getId(),
                 citizen.getName(),
+                String.valueOf(citizen.getNametagOffset()),
+                citizen.isHideNametag() ? " value=\"true\" checked" : " value=\"false\"",
                 citizen.isPlayerModel() ? " toggle-active" : "",
                 !citizen.isPlayerModel() ? " toggle-active" : "",
                 citizen.isPlayerModel() ? "" : " style=\"display: none;\"",
                 citizen.getSkinUsername(),
                 citizen.isUseLiveSkin() ? " value=\"true\" checked" : " value=\"false\"",
+                citizen.getRotateTowardsPlayer() ? " value=\"true\" checked" : " value=\"false\"",
                 !citizen.isPlayerModel() ? "" : " style=\"display: none;\"",
                 citizen.getModelId(),
                 String.valueOf(citizen.getScale()),
@@ -1129,13 +1207,13 @@ public class CitizensUI {
                 
                 .toggle-btn {
                     flex-weight: 0;
-                    anchor-width: 100;
+                    anchor-width: 130;
                     anchor-height: 38;
                 }
                 
                 .delete-btn {
                     flex-weight: 0;
-                    anchor-width: 100;
+                    anchor-width: 130;
                     anchor-height: 38;
                 }
                 
@@ -1198,6 +1276,7 @@ public class CitizensUI {
                             </div>
                             <p class="form-hint">Command will execute as PLAYER by default. Click toggle to change.</p>
                             <p class="form-hint">You can use "{PlayerName}" which will be replaced by the player's username.</p>
+                            <p class="form-hint">You can use also "{CitizenName}" which will be replaced by the citizen's username.</p>
                             <p class="form-hint">
                                 If you want to send a player a message, start the command with "{SendMessage}".
                             </p>
@@ -1312,11 +1391,14 @@ public class CitizensUI {
     }
 
     private void setupCreateCitizenListeners(PageBuilder page, PlayerRef playerRef, Store<EntityStore> store,
-                                            boolean initialIsPlayerModel, String initialName, String initialModelId,
-                                            float initialScale, String initialPermission, String initialPermMessage,
-                                            boolean initialUseLiveSkin, String initialSkinUsername) {
+                                            boolean initialIsPlayerModel, String initialName, float initialNametagOffset,
+                                             boolean initialHideNametag, String initialModelId, float initialScale,
+                                             String initialPermission, String initialPermMessage, boolean initialUseLiveSkin,
+                                             String initialSkinUsername, boolean initialRotateTowardsPlayer) {
         final List<CommandAction> tempActions = new ArrayList<>();
         final String[] currentName = {initialName};
+        final float[] nametagOffset = {initialNametagOffset};
+        final boolean[] hideNametag = {initialHideNametag};
         final String[] currentModelId = {initialModelId.isEmpty() ? "PlayerTestModel_V" : initialModelId};
         final float[] currentScale = {initialScale};
         final String[] currentPermission = {initialPermission};
@@ -1324,6 +1406,7 @@ public class CitizensUI {
         final boolean[] isPlayerModel = {initialIsPlayerModel};
         final boolean[] useLiveSkin = {initialUseLiveSkin};
         final String[] skinUsername = {initialSkinUsername};
+        final boolean[] rotateTowardsPlayer = {initialRotateTowardsPlayer};
 
         // Track input changes
         page.addEventListener("citizen-name", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
@@ -1332,6 +1415,25 @@ public class CitizensUI {
 
         page.addEventListener("citizen-model-id", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
             currentModelId[0] = ctx.getValue("citizen-model-id", String.class).orElse("");
+        });
+
+        page.addEventListener("nametag-offset", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
+            ctx.getValue("nametag-offset", Double.class)
+                    .ifPresent(val -> nametagOffset[0] = val.floatValue());
+
+            if (nametagOffset[0] == 0.0f) {
+                ctx.getValue("nametag-offset", String.class)
+                        .ifPresent(val -> {
+                            try {
+                                nametagOffset[0] = Float.parseFloat(val);
+                            } catch (NumberFormatException e) {
+                            }
+                        });
+            }
+        });
+
+        page.addEventListener("hide-nametag-check", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
+            hideNametag[0] = ctx.getValue("hide-nametag-check", Boolean.class).orElse(false);
         });
 
         page.addEventListener("citizen-scale", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
@@ -1365,15 +1467,21 @@ public class CitizensUI {
             useLiveSkin[0] = ctx.getValue("live-skin-check", Boolean.class).orElse(false);
         });
 
+        page.addEventListener("rotate-towards-player", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
+            rotateTowardsPlayer[0] = ctx.getValue("rotate-towards-player", Boolean.class).orElse(true);
+        });
+
         // Entity type toggle buttons
         page.addEventListener("type-player", CustomUIEventBindingType.Activating, (event, ctx) -> {
-            openCreateCitizenGUI(playerRef, store, true, currentName[0], currentModelId[0], currentScale[0],
-                               currentPermission[0], currentPermMessage[0], useLiveSkin[0], true, skinUsername[0]);
+            openCreateCitizenGUI(playerRef, store, true, currentName[0], nametagOffset[0], hideNametag[0], currentModelId[0],
+                                currentScale[0], currentPermission[0], currentPermMessage[0], useLiveSkin[0], true,
+                                skinUsername[0], rotateTowardsPlayer[0]);
         });
 
         page.addEventListener("type-entity", CustomUIEventBindingType.Activating, (event, ctx) -> {
-            openCreateCitizenGUI(playerRef, store, false, currentName[0], currentModelId[0], currentScale[0],
-                               currentPermission[0], currentPermMessage[0], useLiveSkin[0], true, skinUsername[0]);
+            openCreateCitizenGUI(playerRef, store, false, currentName[0], nametagOffset[0], hideNametag[0], currentModelId[0],
+                                currentScale[0], currentPermission[0], currentPermMessage[0], useLiveSkin[0], true,
+                                skinUsername[0], rotateTowardsPlayer[0]);
         });
 
         // Get current player skin button
@@ -1383,10 +1491,10 @@ public class CitizensUI {
         });
 
         // Edit commands button
-        page.addEventListener("edit-commands-btn", CustomUIEventBindingType.Activating, event -> {
-            String tempId = "temp-" + UUID.randomUUID().toString();
-            openCommandActionsGUI(playerRef, store, tempId, tempActions, true);
-        });
+//        page.addEventListener("edit-commands-btn", CustomUIEventBindingType.Activating, event -> {
+//            String tempId = "temp-" + UUID.randomUUID().toString();
+//            openCommandActionsGUI(playerRef, store, tempId, tempActions, true);
+//        });
 
         // Create button
         page.addEventListener("create-btn", CustomUIEventBindingType.Activating, event -> {
@@ -1452,8 +1560,12 @@ public class CitizensUI {
                     useLiveSkin[0],
                     skinUsername[0].trim(),
                     null,
-                    0L
+                    0L,
+                    rotateTowardsPlayer[0]
             );
+
+            citizen.setNametagOffset(nametagOffset[0]);
+            citizen.setHideNametag(hideNametag[0]);
 
             // If player model, fetch and cache the skin BEFORE adding
             if (isPlayerModel[0]) {
@@ -1489,12 +1601,15 @@ public class CitizensUI {
     private void setupEditCitizenListeners(PageBuilder page, PlayerRef playerRef, Store<EntityStore> store,
                                            CitizenData citizen) {
         final String[] currentName = {citizen.getName()};
+        final float[] nametagOffset = {citizen.getNametagOffset()};
+        final boolean[] hideNametag = {citizen.isHideNametag()};
         final String[] currentModelId = {citizen.getModelId()};
         final float[] currentScale = {citizen.getScale()};
         final String[] currentPermission = {citizen.getRequiredPermission()};
         final String[] currentPermMessage = {citizen.getNoPermissionMessage()};
         final boolean[] isPlayerModel = {citizen.isPlayerModel()};
         final boolean[] useLiveSkin = {citizen.isUseLiveSkin()};
+        final boolean[] rotateTowardsPlayer = {citizen.getRotateTowardsPlayer()};
         final String[] skinUsername = {citizen.getSkinUsername()};
 
         // Track input changes
@@ -1504,6 +1619,26 @@ public class CitizensUI {
 
         page.addEventListener("citizen-model-id", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
             currentModelId[0] = ctx.getValue("citizen-model-id", String.class).orElse("");
+        });
+
+        page.addEventListener("nametag-offset", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
+            ctx.getValue("nametag-offset", Double.class)
+                    .ifPresent(val -> nametagOffset[0] = val.floatValue());
+
+            if (nametagOffset[0] == 0.0f) {
+                ctx.getValue("nametag-offset", String.class)
+                        .ifPresent(val -> {
+                            try {
+                                nametagOffset[0] = Float.parseFloat(val);
+                            } catch (NumberFormatException e) {
+
+                            }
+                        });
+            }
+        });
+
+        page.addEventListener("hide-nametag-check", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
+            hideNametag[0] = ctx.getValue("hide-nametag-check", Boolean.class).orElse(false);
         });
 
         page.addEventListener("citizen-scale", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
@@ -1536,6 +1671,10 @@ public class CitizensUI {
 
         page.addEventListener("live-skin-check", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
             useLiveSkin[0] = ctx.getValue("live-skin-check", Boolean.class).orElse(false);
+        });
+
+        page.addEventListener("rotate-towards-player", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
+            rotateTowardsPlayer[0] = ctx.getValue("rotate-towards-player", Boolean.class).orElse(true);
         });
 
         // Entity type toggle buttons
@@ -1588,6 +1727,80 @@ public class CitizensUI {
             playerRef.sendMessage(Message.raw("Position updated to your current location!").color(Color.GREEN));
         });
 
+        // Set items button
+        page.addEventListener("set-items-btn", CustomUIEventBindingType.Activating, event -> {
+            World world = Universe.get().getWorld(playerRef.getWorldUuid());
+            if (world == null) {
+                playerRef.sendMessage(Message.raw("Failed to set the citizen's items!").color(Color.RED));
+                return;
+            }
+
+            world.execute(() -> {
+                Ref<EntityStore> ref = playerRef.getReference();
+                if (ref == null) {
+                    return;
+                }
+
+                Player player = ref.getStore().getComponent(ref, Player.getComponentType());
+                if (player == null) {
+                    return;
+                }
+
+                // Main hand
+                if (player.getInventory().getItemInHand() == null) {
+                    citizen.setNpcHand(null);
+                }
+                else {
+                    citizen.setNpcHand(player.getInventory().getItemInHand().getItemId());
+                }
+
+                // Off hand
+                if (player.getInventory().getUtilityItem() == null) {
+                    citizen.setNpcOffHand(null);
+                }
+                else {
+                    citizen.setNpcOffHand(player.getInventory().getUtilityItem().getItemId());
+                }
+
+                // Helmet
+                if (player.getInventory().getArmor().getItemStack((short)0) == null) {
+                    citizen.setNpcHelmet(null);
+                }
+                else {
+                    citizen.setNpcHelmet(player.getInventory().getArmor().getItemStack((short)0).getItemId());
+                }
+
+                // Chest
+                if (player.getInventory().getArmor().getItemStack((short)1) == null) {
+                    citizen.setNpcChest(null);
+                }
+                else {
+                    citizen.setNpcChest(player.getInventory().getArmor().getItemStack((short)1).getItemId());
+                }
+
+                // Gloves
+                if (player.getInventory().getArmor().getItemStack((short)2) == null) {
+                    citizen.setNpcGloves(null);
+                }
+                else {
+                    citizen.setNpcGloves(player.getInventory().getArmor().getItemStack((short)2).getItemId());
+                }
+
+                // Leggings
+                if (player.getInventory().getArmor().getItemStack((short)3) == null) {
+                    citizen.setNpcLeggings(null);
+                }
+                else {
+                    citizen.setNpcLeggings(player.getInventory().getArmor().getItemStack((short)3).getItemId());
+                }
+
+                plugin.getCitizensManager().saveCitizen(citizen);
+                plugin.getCitizensManager().updateCitizenNPCItems(citizen);
+            });
+
+            playerRef.sendMessage(Message.raw("Successfully the citizen's item in hand, off hand item, armor to your items!").color(Color.GREEN));
+        });
+
         // Save button
         page.addEventListener("save-btn", CustomUIEventBindingType.Activating, event -> {
             String name = currentName[0].trim();
@@ -1619,7 +1832,10 @@ public class CitizensUI {
             citizen.setNoPermissionMessage(currentPermMessage[0].trim());
             citizen.setPlayerModel(isPlayerModel[0]);
             citizen.setUseLiveSkin(useLiveSkin[0]);
+            citizen.setRotateTowardsPlayer(rotateTowardsPlayer[0]);
             citizen.setSkinUsername(skinUsername[0].trim());
+            citizen.setNametagOffset(nametagOffset[0]);
+            citizen.setHideNametag(hideNametag[0]);
 
             // If player model, fetch and cache the skin BEFORE updating
             if (isPlayerModel[0]) {
