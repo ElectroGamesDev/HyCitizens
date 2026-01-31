@@ -76,7 +76,7 @@ public class ConfigManager {
     }
 
     @Nonnull
-    public String getString(@Nonnull String path, @Nonnull String defaultValue) {
+    public String getString(@Nonnull String path, @Nullable String defaultValue) {
         String value = getString(path);
         return value != null ? value : defaultValue;
     }
@@ -208,9 +208,6 @@ public class ConfigManager {
         return new HashMap<>(config);
     }
 
-    /**
-     * Get a PlayerSkin from config.
-     */
     @Nullable
     public PlayerSkin getPlayerSkin(@Nonnull String path) {
         Object value = config.get(path);
@@ -244,9 +241,6 @@ public class ConfigManager {
         }
     }
 
-    /**
-     * Set a PlayerSkin in config.
-     */
     public void setPlayerSkin(@Nonnull String path, @Nullable PlayerSkin skin) {
         if (skin == null) {
             config.remove(path);
