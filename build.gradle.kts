@@ -3,7 +3,7 @@ plugins {
 }
 
 group = "com.electro"
-version = "1.1"
+version = "1.2"
 
 repositories {
     mavenCentral()
@@ -33,7 +33,7 @@ tasks.test {
 
 tasks.register<Jar>("fatJar") {
     archiveBaseName.set("HyCitizens")
-    archiveVersion.set("1.1")
+    archiveVersion.set(version.toString())
     archiveClassifier.set("")
 
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
