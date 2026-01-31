@@ -5,9 +5,11 @@ import com.electro.hycitizens.listeners.*;
 import com.electro.hycitizens.managers.CitizensManager;
 import com.electro.hycitizens.ui.CitizensUI;
 import com.electro.hycitizens.util.ConfigManager;
+import com.hypixel.hytale.event.EventPriority;
 import com.hypixel.hytale.server.core.event.events.player.*;
 import com.hypixel.hytale.server.core.plugin.JavaPlugin;
 import com.hypixel.hytale.server.core.plugin.JavaPluginInit;
+import com.hypixel.hytale.server.core.universe.world.events.ChunkPreLoadProcessEvent;
 
 import javax.annotation.Nonnull;
 import java.nio.file.Paths;
@@ -20,6 +22,8 @@ public class HyCitizensPlugin extends JavaPlugin {
 
     // Listeners
     private PlayerAddToWorldListener addToWorldListener;
+    private ChunkPreLoadListener chunkPreLoadListener;
+    private PlayerConnectionListener connectionListener;
 
     public HyCitizensPlugin(@Nonnull JavaPluginInit init) {
         super(init);
@@ -38,6 +42,8 @@ public class HyCitizensPlugin extends JavaPlugin {
 
         // Initialize listeners
         this.addToWorldListener = new PlayerAddToWorldListener(this);
+        this.chunkPreLoadListener = new ChunkPreLoadListener(this);
+        this.connectionListener = new PlayerConnectionListener(this);
 
         // Register event listeners
         registerEventListeners();
@@ -56,8 +62,10 @@ public class HyCitizensPlugin extends JavaPlugin {
     }
 
     private void registerEventListeners() {
+        getEventRegistry().register(PlayerDisconnectEvent.class, connectionListener::onPlayerDisconnect);
         this.getEntityStoreRegistry().registerSystem(new EntityDamageListener(this));
-        getEventRegistry().registerGlobal(AddPlayerToWorldEvent.class, addToWorldListener::onAddPlayerToWorld);
+        //getEventRegistry().registerGlobal(AddPlayerToWorldEvent.class, addToWorldListener::onAddPlayerToWorld);
+        getEventRegistry().registerGlobal(EventPriority.LAST, ChunkPreLoadProcessEvent.class, chunkPreLoadListener::onChunkPreload);
     }
 
     public static HyCitizensPlugin get() {
