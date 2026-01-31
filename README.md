@@ -1,5 +1,11 @@
 # You can download the mod/plugin from [CurseForge](https://www.curseforge.com/hytale/mods/hycitizens)!
 
+[![Join us on Discord](https://img.shields.io/badge/Discord-Join%20Community-7289DA?logo=discord&logoColor=white&style=for-the-badge)](https://discord.gg/Snqz9E58Dr)
+[![Star on GitHub](https://img.shields.io/badge/GitHub-Source-181717?logo=github&logoColor=white&style=for-the-badge)](https://github.com/ElectroGamesDev/HyCitizens)
+[![Support me on Ko-fi](https://img.shields.io/badge/Ko--fi-Support-FF0000?logo=kofi&logoColor=white&style=for-the-badge)](https://ko-fi.com/electrogames)
+
+
+
 **HyCitizens** is a full in-game NPC (Citizen) management plugin that allows you to create interactive NPCs for your server.  
 Everything can be configured directly in-game through a clean UI, with an optional developer API for full control and integration.
 
@@ -19,7 +25,9 @@ Each Citizen supports:
 *   Custom **position**
 *   Custom **rotation**
 *   Custom **entity type / model id**
+*   Visible/hidden nametags
 *   Player models and skins (with cached skins and live skins support)
+*   Armor and an item in hand
 *   Custom **scale**
 *   Custom **hit actions**
 *   Persistent saving/loading (Citizens stay after restarts)
@@ -76,23 +84,16 @@ Citizens can also send messages to the player when hit/interacted with.
 
 Citizens are stored automatically and restored when the server restarts.
 
-Saved data includes:
-
-*   Citizen ID
-*   Name
-*   Model ID
-*   World UUID
-*   Position / Rotation
-*   Scale
-*   Permission settings
-*   Command actions
-*   Spawned entity UUIDs (NPC + hologram)
-
 ***
 
 ## Discord / Support
 
-If you would like to join the community, suggest features, report bugs, or need some help, join the Discord community! [https://discord.gg/ScDW97HDXk](https://discord.gg/ScDW97HDXk)
+If you would like to join the community, suggest features, report bugs, or need some help, join the Discord community! [https://discord.gg/Snqz9E58Dr](https://discord.gg/Snqz9E58Dr)
+
+***
+## Support HyCitizens
+
+Want to support HyCitizens? You can donate at [Ko-fi](https://ko-fi.com/electrogames) or share HyCitizens with your friends!
 
 ***
 
@@ -119,23 +120,35 @@ CitizenData represents a single Citizen and all of its settings.
 ## Citizen fields:
 
 ```
-id (String) – unique Citizen identifier
-name (String) – displayed name
-modelId (String) – entity model ID
-worldUUID (UUID) – world the Citizen belongs to
-position (Vector3d) – spawn position
-rotation (Vector3f) – spawn rotation
-scale (float) – model scale
-spawnedUUID (UUID) – spawned NPC entity UUID (if spawned)
-hologramUUID (UUID) – spawned hologram UUID (if spawned)
-requiredPermission (String) – permission required to use the Citizen
-noPermissionMessage (String) – message shown if missing permission
-commandActions (List) – commands to run on interaction
-isPlayerModel (boolean) – whether this Citizen uses a player model instead of a normal entity model
-useLiveSkin (boolean) – enables automatic skin updates every 30 minutes
-skinUsername (String) – username used to fetch skins from PlayerDB
-cachedSkin (PlayerSkin) – stored skin data for this Citizen
-lastSkinUpdate (long) – timestamp of the last skin update
+id (String) – unique Citizen identifier.
+name (String) – displayed name.
+modelId (String) – entity model ID.
+position (Vector3d) – spawn position.
+rotation (Vector3f) – spawn rotation.
+scale (float) – model scale.
+requiredPermission (String) – permission required to use the Citizen.
+noPermissionMessage (String) – message shown if missing permission.
+worldUUID (UUID) – UUID of the world the Citizen belongs to.
+commandActions (List<CommandAction>) – commands to run on interaction.
+spawnedUUID (UUID) – spawned NPC entity UUID (if spawned).
+hologramUUID (UUID) – spawned hologram UUID (if spawned).
+npcRef (Ref<EntityStore>) – reference to the NPC entity store.
+lastLookDirections (Map<UUID, Direction>) – tracks the last look direction of players interacting with the Citizen.
+rotateTowardsPlayer (boolean) – whether the Citizen always looks at players.
+hideNametag (boolean) – whether the Citizen’s nametag is hidden. Default: false.
+nametagOffset (float) – vertical offset for the nametag.
+npcHelmet (String) – item equipped on the head.
+npcChest (String) – item equipped on the chest.
+npcLeggings (String) – item equipped on the legs.
+npcGloves (String) – item equipped on the hands.
+npcHand (String) – item held in main hand.
+npcOffHand (String) – item held in offhand.
+isPlayerModel (boolean) – whether this Citizen uses a player model instead of a normal entity model.
+useLiveSkin (boolean) – enables automatic skin updates every 30 minutes.
+skinUsername (String) – username used to fetch skins from PlayerDB.
+cachedSkin (PlayerSkin) – stored skin data for this Citizen.
+lastSkinUpdate (long) – timestamp of the last skin update.
+createdAt (transient long) – timestamp of when the Citizen was created (not serialized).
 ```
 
 ## Creating a Citizen
@@ -158,7 +171,8 @@ CitizenData citizen = new CitizenData(
         false, // Use Live Skin
         "Simon", // Skin Username
         null, // Cached Skin - Usually set to null
-        0L // Last Skin Update - Usually set to 0L
+        0L, // Last Skin Update - Usually set to 0L
+        true // Rotate towards players
 );
 
 manager.addCitizen(citizen, true); // true means it will save to storage and will respawn every time the world loads.
@@ -242,13 +256,16 @@ manager.despawnCitizenHologram(citizen);
 ```
 
 ## Updating player model and skin settings
+
 Make a Citizen use a player model:
+
 ```
 citizen.setPlayerModel(true);
 manager.updateCitizenNPC(citizen, true);
 ```
 
 Set a cached skin (no live updates):
+
 ```
 citizen.setPlayerModel(true);
 citizen.setUseLiveSkin(false);
@@ -258,6 +275,7 @@ manager.updateCitizenNPC(citizen, true);
 ```
 
 Enable live skin updates (updates every 30 minutes):
+
 ```
 citizen.setPlayerModel(true);
 citizen.setUseLiveSkin(true);
@@ -267,6 +285,7 @@ manager.updateCitizenNPC(citizen, true);
 ```
 
 ## Other Skin API
+
 Update a Citizen skin:
 
 This fetches the skin using the Citizen’s `skinUsername`, caches it, and applies it to the spawned NPC (if spawned).
@@ -274,18 +293,24 @@ This fetches the skin using the Citizen’s `skinUsername`, caches it, and appli
 ```
 manager.updateCitizenSkin(citizen, true); // true = save to storage
 ```
+
 Copy skin from a real player (use their current skin):
 
 This will copy the player's current skin and store it as the Citizen’s cached skin.
 
 It will also:
 
-* Clear the skin username
-* Disable live skin updates
-* Apply the skin instantly
+*   Clear the skin username
+*   Disable live skin updates
+*   Apply the skin instantly
 
 ```
 manager.updateCitizenSkinFromPlayer(citizen, playerRef, true); // true = save to storage
+```
+
+Get a citizen's player skin:
+```
+manager.determineSkin(citizen)
 ```
 
 Force an instant skin update:
@@ -294,11 +319,77 @@ Force an instant skin update:
 manager.updateCitizenSkin(citizen, true);
 ```
 
+## Access NPC Entity Reference
+
+Get or set the NPC entity reference:
+
+```
+Ref<EntityStore> ref = citizen.getNpcRef();
+citizen.setNpcRef(ref);
+```
+
+### Rotate Towards Player
+
+Get or set whether the Citizen rotates towards nearby players:
+
+```
+boolean rotates = citizen.getRotateTowardsPlayer();
+citizen.setRotateTowardsPlayer(true);
+```
+
+### NPC Equipment
+
+These methods allow you to get or set the items equipped by the Citizen.
+
+```
+citizen.getNpcHelmet();
+citizen.setNpcHelmet("Armor_Adamantite_Head");
+
+citizen.getNpcChest();
+citizen.setNpcChest("Armor_Adamantite_Chest");
+
+citizen.getNpcLeggings();
+citizen.setNpcLeggings("Armor_Adamantite_Legs");
+
+citizen.getNpcGloves();
+citizen.setNpcGloves("Armor_Adamantite_Hands");
+
+citizen.getNpcHand();
+citizen.setNpcHand("Weapon_Sword_Adamantite");
+
+// Note: citizens currently can not hold items in their offhand
+citizen.getNpcOffHand();
+citizen.setNpcOffHand("Weapon_Shield_Adamantite");
+```
+
+**Important:** These changes **do not automatically save and apply**.
+<br>
+You must call the following to apply the items to an existing citizen:
+```
+manager.updateCitizenNPCItems(citizen); // or manager.updateCitizen(citizen)
+```
+
+You must call the following to save the items to storage:
+```
+manager.saveCitizen(citizen);
+```
+
+## Other Nametag Settings
+
+Hide or adjust the Citizen’s nametag:
+```
+citizen.setHideNametag(true);
+boolean hidden = citizen.isHideNametag();
+
+citizen.setNametagOffset(1.5f);
+float offset = citizen.getNametagOffset();
+```
+
 ## Notes about player model Citizens
 
-* If `isPlayerModel = true`, the Citizen will spawn using a player model instead of a normal model ID.
-* If `useLiveSkin = true`, skins will automatically refresh every 30 minutes.
-* If live skin fails or is missing, the Citizen will fall back to a default skin.
+*   If `isPlayerModel = true`, the Citizen will spawn using a player model instead of a normal model ID.
+*   If `useLiveSkin = true`, skins will automatically refresh every 30 minutes.
+*   If live skin fails or is missing, the Citizen will fall back to a default skin.
 
 ## Getting Citizens
 
@@ -356,6 +447,7 @@ Variables/Placeholders:
 
 ```
 {PlayerName} - Will be replaced at runtime with the player's username
+{CitizenName} - Will be replaced at runtime with the citizen's name
 ```
 
 Sending Messages:  
@@ -434,9 +526,4 @@ Citizens are designed to be fully usable in-game, while still providing a comple
 
 ## Credits
 
-This plugin has been made possible by [HyUI](https://www.curseforge.com/hytale/mods/hyui).
-
-Citizens are designed to be fully usable in-game, while still providing a complete API for developers.
-
-## Credits
 This plugin has been made possible by [HyUI](https://www.curseforge.com/hytale/mods/hyui).
