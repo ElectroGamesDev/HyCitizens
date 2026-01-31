@@ -7,21 +7,21 @@ import com.electro.hycitizens.models.CitizenData;
 import com.electro.hycitizens.models.CommandAction;
 import com.electro.hycitizens.util.ConfigManager;
 import com.electro.hycitizens.util.SkinUtilities;
-import com.hypixel.hytale.component.AddReason;
-import com.hypixel.hytale.component.Holder;
-import com.hypixel.hytale.component.Ref;
-import com.hypixel.hytale.component.RemoveReason;
+import com.hypixel.hytale.component.*;
 import com.hypixel.hytale.math.util.ChunkUtil;
 import com.hypixel.hytale.math.vector.Vector3d;
 import com.hypixel.hytale.math.vector.Vector3f;
-import com.hypixel.hytale.protocol.PlayerSkin;
+import com.hypixel.hytale.protocol.*;
+import com.hypixel.hytale.protocol.packets.entities.EntityUpdates;
 import com.hypixel.hytale.server.core.HytaleServer;
+import com.hypixel.hytale.server.core.Message;
 import com.hypixel.hytale.server.core.asset.type.model.config.Model;
-import com.hypixel.hytale.server.core.asset.type.model.config.ModelAsset;
 import com.hypixel.hytale.server.core.cosmetics.CosmeticsModule;
 import com.hypixel.hytale.server.core.entity.UUIDComponent;
+import com.hypixel.hytale.server.core.entity.entities.Player;
 import com.hypixel.hytale.server.core.entity.entities.ProjectileComponent;
 import com.hypixel.hytale.server.core.entity.nameplate.Nameplate;
+import com.hypixel.hytale.server.core.inventory.ItemStack;
 import com.hypixel.hytale.server.core.modules.entity.component.ModelComponent;
 import com.hypixel.hytale.server.core.modules.entity.component.TransformComponent;
 import com.hypixel.hytale.server.core.modules.entity.player.PlayerSkinComponent;
@@ -50,6 +50,8 @@ public class CitizensManager {
     private final Map<String, CitizenData> citizens;
     private final List<CitizenInteractListener> interactListeners = new ArrayList<>();
     private ScheduledFuture<?> skinUpdateTask;
+    private ScheduledFuture<?> rotateTask;
+    private final Map<UUID, List<CitizenData>> citizensByWorld = new HashMap<>();
 
     public CitizensManager(@Nonnull HyCitizensPlugin plugin) {
         this.plugin = plugin;
@@ -58,11 +60,10 @@ public class CitizensManager {
 
         loadAllCitizens();
         startSkinUpdateScheduler();
+        startRotateScheduler();
+        startCitizensByWorldScheduler();
     }
 
-    /**
-     * Starts a scheduler that updates live skins every 30 minutes.
-     */
     private void startSkinUpdateScheduler() {
         skinUpdateTask = HytaleServer.SCHEDULED_EXECUTOR.scheduleAtFixedRate(() -> {
             long currentTime = System.currentTimeMillis();
@@ -80,12 +81,88 @@ public class CitizensManager {
         }, 30, 30, TimeUnit.MINUTES);
     }
 
-    /**
-     * Stops the skin update scheduler.
-     */
+    private void startRotateScheduler() {
+        rotateTask = HytaleServer.SCHEDULED_EXECUTOR.scheduleAtFixedRate(() -> {
+            // Group citizens by world
+            Map<UUID, List<CitizenData>> snapshot;
+
+            synchronized (citizensByWorld) {
+                snapshot = new HashMap<>(citizensByWorld);
+            }
+
+            // Process each world once
+            for (Map.Entry<UUID, List<CitizenData>> entry : snapshot.entrySet()) {
+                UUID worldUUID = entry.getKey();
+                List<CitizenData> worldCitizens = entry.getValue();
+
+                World world = Universe.get().getWorld(worldUUID);
+                if (world == null)
+                    continue;
+
+                Collection<PlayerRef> players = world.getPlayerRefs();
+                if (players.isEmpty()) {
+                    continue;
+                }
+
+                // Execute all rotation logic for this world
+                world.execute(() -> {
+                    for (CitizenData citizen : worldCitizens) {
+                        if (citizen.getSpawnedUUID() == null || citizen.getNpcRef() == null)
+                            continue;
+
+                        long chunkIndex = ChunkUtil.indexChunkFromBlock(citizen.getPosition().x, citizen.getPosition().z);
+                        WorldChunk chunk = world.getChunkIfLoaded(chunkIndex);
+                        if (chunk == null)
+                            continue;
+
+                        for (PlayerRef playerRef : players) {
+
+                            float maxDistance = 25.0f;
+                            float maxDistanceSq = maxDistance * maxDistance;
+
+                            double dx = playerRef.getTransform().getPosition().x - citizen.getPosition().x;
+                            double dz = playerRef.getTransform().getPosition().z - citizen.getPosition().z;
+
+                            if ((dx * dx + dz * dz) > maxDistanceSq)
+                                continue;
+
+                            rotateCitizenToPlayer(citizen, playerRef);
+                        }
+                    }
+                });
+            }
+        }, 0, 60, TimeUnit.MILLISECONDS);
+    }
+
+    private void startCitizensByWorldScheduler() {
+        HytaleServer.SCHEDULED_EXECUTOR.scheduleAtFixedRate(() -> {
+            Map<UUID, List<CitizenData>> tmp = new HashMap<>();
+
+            for (CitizenData citizen : citizens.values()) {
+                if (citizen.getSpawnedUUID() == null || citizen.getNpcRef() == null)
+                    continue;
+
+                if (!citizen.getRotateTowardsPlayer())
+                    continue;
+
+                UUID worldUUID = citizen.getWorldUUID();
+                tmp.computeIfAbsent(worldUUID, k -> new ArrayList<>()).add(citizen);
+            }
+
+            synchronized (citizensByWorld) {
+                citizensByWorld.clear();
+                citizensByWorld.putAll(tmp);
+            }
+        }, 0, 1000, TimeUnit.MILLISECONDS);
+    }
+
     public void shutdown() {
         if (skinUpdateTask != null && !skinUpdateTask.isCancelled()) {
             skinUpdateTask.cancel(false);
+        }
+
+        if (rotateTask != null && !rotateTask.isCancelled()) {
+            rotateTask.cancel(false);
         }
     }
 
@@ -172,6 +249,8 @@ public class CitizensManager {
         UUID npcUUID = config.getUUID(basePath + ".npc-uuid");
         UUID hologramUUID = config.getUUID(basePath + ".hologram-uuid");
 
+        boolean rotateTowardsPlayer = config.getBoolean(basePath + ".rotate-towards-player", false);
+
         // Load skin data
         boolean isPlayerModel = config.getBoolean(basePath + ".is-player-model", false);
         boolean useLiveSkin = config.getBoolean(basePath + ".use-live-skin", false);
@@ -180,8 +259,21 @@ public class CitizensManager {
         long lastSkinUpdate = config.getLong(basePath + ".last-skin-update", 0L);
 
         CitizenData citizenData = new CitizenData(citizenId, name, modelId, worldUUID, position, rotation, scale, npcUUID, hologramUUID,
-                permission, permMessage, actions, isPlayerModel, useLiveSkin, skinUsername, cachedSkin, lastSkinUpdate);
+                permission, permMessage, actions, isPlayerModel, useLiveSkin, skinUsername, cachedSkin, lastSkinUpdate, rotateTowardsPlayer);
         citizenData.setCreatedAt(0); // Mark as loaded from config, not newly created
+
+        // Load item data
+        citizenData.setNpcHelmet(config.getString(basePath + ".npc-helmet", null));
+        citizenData.setNpcChest(config.getString(basePath + ".npc-chest", null));
+        citizenData.setNpcLeggings(config.getString(basePath + ".npc-leggings", null));
+        citizenData.setNpcGloves(config.getString(basePath + ".npc-gloves", null));
+        citizenData.setNpcHand(config.getString(basePath + ".npc-hand", null));
+        citizenData.setNpcOffHand(config.getString(basePath + ".npc-offhand", null));
+
+        // Misc
+        citizenData.setHideNametag(config.getBoolean(basePath + ".hide-nametag", false));
+        citizenData.setNametagOffset(config.getFloat(basePath + ".nametag-offset", 0));
+
         return citizenData;
     }
 
@@ -198,6 +290,15 @@ public class CitizensManager {
         config.set(basePath + ".permission-message", citizen.getNoPermissionMessage());
         config.setUUID(basePath + ".npc-uuid", citizen.getSpawnedUUID());
         config.setUUID(basePath + ".hologram-uuid", citizen.getHologramUUID());
+        config.set(basePath + ".rotate-towards-player", citizen.getRotateTowardsPlayer());
+
+        // Save item data
+        config.set(basePath + ".npc-helmet", citizen.getNpcHelmet());
+        config.set(basePath + ".npc-chest", citizen.getNpcChest());
+        config.set(basePath + ".npc-leggings", citizen.getNpcLeggings());
+        config.set(basePath + ".npc-gloves", citizen.getNpcGloves());
+        config.set(basePath + ".npc-hand", citizen.getNpcHand());
+        config.set(basePath + ".npc-offhand", citizen.getNpcOffHand());
 
         // Save skin data
         config.set(basePath + ".is-player-model", citizen.isPlayerModel());
@@ -217,6 +318,10 @@ public class CitizensManager {
             config.set(commandPath + ".command", action.getCommand());
             config.set(commandPath + ".run-as-server", action.isRunAsServer());
         }
+
+        // Misc
+        config.set(basePath + ".hide-nametag", citizen.isHideNametag());
+        config.set(basePath + ".nametag-offset", citizen.getNametagOffset());
     }
 
     public void addCitizen(@Nonnull CitizenData citizen, boolean save) {
@@ -255,6 +360,67 @@ public class CitizensManager {
             saveCitizen(citizen);
 
         updateSpawnedCitizenHologram(citizen, save);
+    }
+
+    public void updateCitizenNPCItems(CitizenData citizen) {
+        if (citizen.getSpawnedUUID() == null || citizen.getNpcRef() == null) {
+            return;
+        }
+
+        NPCEntity npcEntity = citizen.getNpcRef().getStore().getComponent(citizen.getNpcRef(), NPCEntity.getComponentType());
+        if (npcEntity == null) {
+            return;
+        }
+
+        // Item in hand
+        if (citizen.getNpcHand() == null) {
+            npcEntity.getInventory().getHotbar().setItemStackForSlot((short) 0, null);
+        }
+        else {
+            npcEntity.getInventory().getHotbar().setItemStackForSlot((short) 0, new ItemStack(citizen.getNpcHand()));
+        }
+
+        // Item in offhand
+        // Off hand is not supported by NPCs
+//        if (citizen.getNpcOffHand() == null) {
+//            npcEntity.getInventory().getUtility().setItemStackForSlot((short) 0, null);
+//        }
+//        else {
+//            npcEntity.getInventory().getUtility().setItemStackForSlot((short) 0, new ItemStack(citizen.getNpcHand()));
+//            npcEntity.getInventory().setActiveUtilitySlot((byte) 0); // Todo: This likely isnt needed
+//        }
+
+        // Set helmet
+        if (citizen.getNpcHelmet() == null) {
+            npcEntity.getInventory().getArmor().setItemStackForSlot((short) 0, null);
+        }
+        else {
+            npcEntity.getInventory().getArmor().setItemStackForSlot((short) 0, new ItemStack(citizen.getNpcHelmet()));
+        }
+
+        // Set chest
+        if (citizen.getNpcChest() == null) {
+            npcEntity.getInventory().getArmor().setItemStackForSlot((short) 1, null);
+        }
+        else {
+            npcEntity.getInventory().getArmor().setItemStackForSlot((short) 1, new ItemStack(citizen.getNpcChest()));
+        }
+
+        // Set gloves
+        if (citizen.getNpcGloves() == null) {
+            npcEntity.getInventory().getArmor().setItemStackForSlot((short) 2, null);
+        }
+        else {
+            npcEntity.getInventory().getArmor().setItemStackForSlot((short) 2, new ItemStack(citizen.getNpcGloves()));
+        }
+
+        // Set leggings
+        if (citizen.getNpcLeggings() == null) {
+            npcEntity.getInventory().getArmor().setItemStackForSlot((short) 3, null);
+        }
+        else {
+            npcEntity.getInventory().getArmor().setItemStackForSlot((short) 3, new ItemStack(citizen.getNpcLeggings()));
+        }
     }
 
     public void removeCitizen(@Nonnull String citizenId) {
@@ -381,10 +547,15 @@ public class CitizensManager {
                 null
         );
 
-        UUIDComponent uuidComponent = npc.first().getStore().getComponent(
-                npc.second().getReference(),
-                UUIDComponent.getComponentType()
-        );
+        if (npc == null)
+            return;
+
+        Ref<EntityStore> ref = npc.second().getReference();
+        Store<EntityStore> store = npc.first().getStore();
+
+        UUIDComponent uuidComponent = store.getComponent(ref, UUIDComponent.getComponentType());
+
+        citizen.setNpcRef(ref);
 
         if (uuidComponent != null) {
             citizen.setSpawnedUUID(uuidComponent.getUuid());
@@ -392,11 +563,10 @@ public class CitizensManager {
             if (save)
                 saveCitizen(citizen);
         }
+
+        updateCitizenNPCItems(citizen);
     }
 
-    /**
-     * Spawns a player model NPC with skin.
-     */
     public void spawnPlayerModelNPC(CitizenData citizen, World world, boolean save) {
         PlayerSkin skinToUse = determineSkin(citizen);
 
@@ -412,6 +582,12 @@ public class CitizensManager {
             return;
         }
 
+        long chunkIndex = ChunkUtil.indexChunkFromBlock(citizen.getPosition().x, citizen.getPosition().z);
+        WorldChunk chunk = world.getChunkIfLoaded(chunkIndex);
+        if (chunk == null) {
+            getLogger().atInfo().log("Failed to spawn player model for citizen NPC: " + citizen.getName() + ". The world chunk is unloaded.");
+        }
+
         Pair<Ref<EntityStore>, NPCEntity> npc = NPCPlugin.get().spawnEntity(
                 world.getEntityStore().getStore(),
                 18,
@@ -422,6 +598,9 @@ public class CitizensManager {
                 null
         );
 
+        if (npc == null)
+            return;
+
         // Apply skin component
         PlayerSkinComponent skinComponent = new PlayerSkinComponent(skinToUse);
         npc.first().getStore().putComponent(npc.second().getReference(), PlayerSkinComponent.getComponentType(), skinComponent);
@@ -431,17 +610,18 @@ public class CitizensManager {
                 UUIDComponent.getComponentType()
         );
 
+        citizen.setNpcRef(npc.first());
+
         if (uuidComponent != null) {
             citizen.setSpawnedUUID(uuidComponent.getUuid());
 
             if (save)
                 saveCitizen(citizen);
         }
+
+        updateCitizenNPCItems(citizen);
     }
 
-    /**
-     * Determines which skin to use for the citizen.
-     */
     public PlayerSkin determineSkin(CitizenData citizen) {
         if (citizen.isUseLiveSkin() && !citizen.getSkinUsername().isEmpty()) {
             // Fetch live skin asynchronously, but for now return cached or default
@@ -452,9 +632,6 @@ public class CitizensManager {
         }
     }
 
-    /**
-     * Updates the citizen's skin from the API.
-     */
     public void updateCitizenSkin(CitizenData citizen, boolean save) {
         if (!citizen.isPlayerModel() || citizen.getSkinUsername().isEmpty()) {
             return;
@@ -493,9 +670,6 @@ public class CitizensManager {
         });
     }
 
-    /**
-     * Updates skin for a citizen from current player's skin.
-     */
     public void updateCitizenSkinFromPlayer(CitizenData citizen, PlayerRef playerRef, boolean save) {
         if (!citizen.isPlayerModel()) {
             return;
@@ -522,19 +696,22 @@ public class CitizensManager {
     }
 
     public void spawnCitizenHologram(CitizenData citizen, boolean save) {
+        if (citizen.isHideNametag()) {
+            return;
+        }
+
         World world = Universe.get().getWorld(citizen.getWorldUUID());
         if (world == null) {
             getLogger().atWarning().log("Failed to spawn citizen hologram: " + citizen.getName() + ". Failed to find world. Try updating the citizen's position.");
             return;
         }
 
-        double scale = Math.max(0.01, citizen.getScale());
+        double scale = Math.max(0.01, citizen.getScale() + citizen.getNametagOffset());
 
         double baseOffset = 1.65;
         double extraPerScale = 0.40;
 
         double yOffset = baseOffset * scale + (scale - 1.0) * extraPerScale;
-
 
         Vector3d hologramPos = new Vector3d(
                 citizen.getPosition().x,
@@ -640,6 +817,75 @@ public class CitizensManager {
     public void updateSpawnedCitizenHologram(CitizenData citizen, boolean save) {
         despawnCitizenHologram(citizen);
         spawnCitizenHologram(citizen, save);
+    }
+
+    public void rotateCitizenToPlayer(CitizenData citizen, PlayerRef playerRef) {
+        if (citizen == null || citizen.getSpawnedUUID() == null || citizen.getNpcRef() == null) {
+            return;
+        }
+
+        NetworkId citizenNetworkId = citizen.getNpcRef().getStore().getComponent(citizen.getNpcRef(), NetworkId.getComponentType());
+        if (citizenNetworkId != null) {
+            TransformComponent npcTransformComponent = citizen.getNpcRef().getStore().getComponent(citizen.getNpcRef(), TransformComponent.getComponentType());
+            if (npcTransformComponent == null) {
+                return;
+            }
+
+            // Calculate rotation to look at player
+            Vector3d entityPos = npcTransformComponent.getPosition();
+            Vector3d playerPos = new Vector3d(playerRef.getTransform().getPosition());
+
+            double dx = playerPos.x - entityPos.x;
+            double dz = playerPos.z - entityPos.z;
+
+            // Flip the direction 180 degrees
+            float yaw = (float) (Math.atan2(dx, dz) + Math.PI);
+
+            double dy = playerPos.y - entityPos.y;
+            double horizontalDistance = Math.sqrt(dx * dx + dz * dz);
+            float pitch = (float) Math.atan2(dy, horizontalDistance);
+
+            // Create directions
+            Direction lookDirection = new Direction(yaw, pitch, 0f);
+            Direction bodyDirection = new Direction(yaw, 0f, 0f);
+
+            // Don't rotate if the player barely moved
+            UUID playerUUID = playerRef.getUuid();
+            Direction lastLook = citizen.lastLookDirections.get(playerUUID);
+            if (lastLook != null) {
+                float yawThreshold = 0.02f;
+                float pitchThreshold = 0.02f;
+                float yawDiff = Math.abs(lookDirection.yaw - lastLook.yaw);
+                float pitchDiff = Math.abs(lookDirection.pitch - lastLook.pitch);
+
+                if (yawDiff < yawThreshold && pitchDiff < pitchThreshold) {
+                    return;
+                }
+            }
+
+            citizen.lastLookDirections.put(playerUUID, lookDirection);
+
+            // Create ModelTransform
+            ModelTransform transform = new ModelTransform();
+            transform.lookOrientation = lookDirection;
+            transform.bodyOrientation = bodyDirection;
+
+            // Create ComponentUpdate
+            ComponentUpdate update = new ComponentUpdate();
+            update.type = ComponentUpdateType.Transform;
+            update.transform = transform;
+
+            // Create EntityUpdate
+            EntityUpdate entityUpdate = new EntityUpdate(
+                    citizenNetworkId.getId(),
+                    null,
+                    new ComponentUpdate[] { update }
+            );
+
+            // Send the packet
+            EntityUpdates packet = new EntityUpdates(null, new EntityUpdate[] { entityUpdate });
+            playerRef.getPacketHandler().write(packet);
+        }
     }
 
     @Nullable
