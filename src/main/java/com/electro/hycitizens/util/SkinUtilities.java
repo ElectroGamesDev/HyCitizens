@@ -25,25 +25,16 @@ public class SkinUtilities {
             .connectTimeout(Duration.ofSeconds(5))
             .build();
 
-    /**
-     * Standard Fetch from PlayerDB.
-     */
     @Nonnull
     public static CompletableFuture<PlayerSkin> getSkin(@Nonnull String username) {
         return fetchSkinInternal(username, false);
     }
 
-    /**
-     * Force Refresh from PlayerDB.
-     */
     @Nonnull
     public static CompletableFuture<PlayerSkin> refreshSkin(@Nonnull String username) {
         return fetchSkinInternal(username, true);
     }
 
-    /**
-     * Internal logic to handle the API call and decision matrix.
-     */
     @Nonnull
     private static CompletableFuture<PlayerSkin> fetchSkinInternal(@Nonnull String username, boolean forceApi) {
         if (username.isBlank()) {
@@ -109,9 +100,6 @@ public class SkinUtilities {
                 });
     }
 
-    /**
-     * Attempts to load the skin from Hytale's internal disk storage.
-     */
     @Nonnull
     public static CompletableFuture<PlayerSkin> getSkinByUuid(@Nonnull UUID uuid) {
         PlayerStorage playerStorage = Universe.get().getPlayerStorage();
@@ -129,9 +117,6 @@ public class SkinUtilities {
                 });
     }
 
-    /**
-     * JSON Parser for PlayerDB API response.
-     */
     @Nullable
     private static PlayerSkin parseSkinFromPlayerDB(@Nonnull JsonObject playerJson) {
         if (!playerJson.has("skin") || playerJson.get("skin").isJsonNull()) {
@@ -172,9 +157,6 @@ public class SkinUtilities {
         return object.get(key).getAsString();
     }
 
-    /**
-     * Creates a default skin (Steve/Alex style).
-     */
     @Nonnull
     public static PlayerSkin createDefaultSkin() {
         PlayerSkin skin = new PlayerSkin();
