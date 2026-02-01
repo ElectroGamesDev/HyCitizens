@@ -539,7 +539,7 @@ public class CitizensManager {
 
         Pair<Ref<EntityStore>, NPCEntity> npc = NPCPlugin.get().spawnEntity(
                 world.getEntityStore().getStore(),
-                18,
+                NPCPlugin.get().getIndex("Citizen_Role"),
                 citizen.getPosition(),
                 citizen.getRotation(),
                 citizenModel,
@@ -590,7 +590,7 @@ public class CitizensManager {
 
         Pair<Ref<EntityStore>, NPCEntity> npc = NPCPlugin.get().spawnEntity(
                 world.getEntityStore().getStore(),
-                18,
+                NPCPlugin.get().getIndex("Citizen_Role"),
                 citizen.getPosition(),
                 citizen.getRotation(),
                 playerModel,
