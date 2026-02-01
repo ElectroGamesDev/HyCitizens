@@ -247,7 +247,20 @@ public class CitizensManager {
         }
 
         UUID npcUUID = config.getUUID(basePath + ".npc-uuid");
-        UUID hologramUUID = config.getUUID(basePath + ".hologram-uuid");
+
+        // Load hologram
+        List<UUID> hologramUuids = config.getUUIDList(basePath + ".hologram-uuids");
+        if (hologramUuids == null) {
+            hologramUuids = new ArrayList<>();
+        }
+
+        if (hologramUuids.isEmpty()) {
+            // Backwards compatibility
+            UUID hologramUUID = config.getUUID(basePath + ".hologram-uuid");
+            if (hologramUUID != null) {
+                hologramUuids.add(hologramUUID);
+            }
+        }
 
         boolean rotateTowardsPlayer = config.getBoolean(basePath + ".rotate-towards-player", false);
 
@@ -258,7 +271,7 @@ public class CitizensManager {
         PlayerSkin cachedSkin = config.getPlayerSkin(basePath + ".cached-skin");
         long lastSkinUpdate = config.getLong(basePath + ".last-skin-update", 0L);
 
-        CitizenData citizenData = new CitizenData(citizenId, name, modelId, worldUUID, position, rotation, scale, npcUUID, hologramUUID,
+        CitizenData citizenData = new CitizenData(citizenId, name, modelId, worldUUID, position, rotation, scale, npcUUID, hologramUuids,
                 permission, permMessage, actions, isPlayerModel, useLiveSkin, skinUsername, cachedSkin, lastSkinUpdate, rotateTowardsPlayer);
         citizenData.setCreatedAt(0); // Mark as loaded from config, not newly created
 
@@ -273,6 +286,7 @@ public class CitizensManager {
         // Misc
         citizenData.setHideNametag(config.getBoolean(basePath + ".hide-nametag", false));
         citizenData.setNametagOffset(config.getFloat(basePath + ".nametag-offset", 0));
+        citizenData.setFKeyInteractionEnabled(config.getBoolean(basePath + ".f-key-interaction", false));
 
         return citizenData;
     }
@@ -288,9 +302,10 @@ public class CitizensManager {
         config.set(basePath + ".scale", citizen.getScale());
         config.set(basePath + ".permission", citizen.getRequiredPermission());
         config.set(basePath + ".permission-message", citizen.getNoPermissionMessage());
-        config.setUUID(basePath + ".npc-uuid", citizen.getSpawnedUUID());
-        config.setUUID(basePath + ".hologram-uuid", citizen.getHologramUUID());
         config.set(basePath + ".rotate-towards-player", citizen.getRotateTowardsPlayer());
+        config.set(basePath + ".f-key-interaction", citizen.getFKeyInteractionEnabled());
+        config.setUUID(basePath + ".npc-uuid", citizen.getSpawnedUUID());
+        config.setUUIDList(basePath + ".hologram-uuids", citizen.getHologramLineUuids());
 
         // Save item data
         config.set(basePath + ".npc-helmet", citizen.getNpcHelmet());
@@ -537,9 +552,11 @@ public class CitizensManager {
             return;
         }
 
+        String roleName = citizen.getFKeyInteractionEnabled() ? "Citizen_Interactable_Role" : "Citizen_Role";
+
         Pair<Ref<EntityStore>, NPCEntity> npc = NPCPlugin.get().spawnEntity(
                 world.getEntityStore().getStore(),
-                NPCPlugin.get().getIndex("Citizen_Role"),
+                NPCPlugin.get().getIndex(roleName),
                 citizen.getPosition(),
                 citizen.getRotation(),
                 citizenModel,
@@ -588,9 +605,11 @@ public class CitizensManager {
             getLogger().atInfo().log("Failed to spawn player model for citizen NPC: " + citizen.getName() + ". The world chunk is unloaded.");
         }
 
+        String roleName = citizen.getFKeyInteractionEnabled() ? "Citizen_Interactable_Role" : "Citizen_Role";
+
         Pair<Ref<EntityStore>, NPCEntity> npc = NPCPlugin.get().spawnEntity(
                 world.getEntityStore().getStore(),
-                NPCPlugin.get().getIndex("Citizen_Role"),
+                NPCPlugin.get().getIndex(roleName),
                 citizen.getPosition(),
                 citizen.getRotation(),
                 playerModel,
@@ -696,6 +715,8 @@ public class CitizensManager {
     }
 
     public void spawnCitizenHologram(CitizenData citizen, boolean save) {
+        despawnCitizenHologram(citizen);
+
         if (citizen.isHideNametag()) {
             return;
         }
@@ -706,6 +727,15 @@ public class CitizensManager {
             return;
         }
 
+        String name = citizen.getName();
+        if (name == null || name.isEmpty()) {
+            return;
+        }
+
+        name = name.replace("\\n", "\n");
+
+        String[] lines = name.split("\\r?\\n");
+
         double scale = Math.max(0.01, citizen.getScale() + citizen.getNametagOffset());
 
         double baseOffset = 1.65;
@@ -713,7 +743,7 @@ public class CitizensManager {
 
         double yOffset = baseOffset * scale + (scale - 1.0) * extraPerScale;
 
-        Vector3d hologramPos = new Vector3d(
+        Vector3d baseHologramPos = new Vector3d(
                 citizen.getPosition().x,
                 citizen.getPosition().y + yOffset,
                 citizen.getPosition().z
@@ -721,36 +751,56 @@ public class CitizensManager {
 
         Vector3f hologramRot = new Vector3f(citizen.getRotation());
 
-        Holder<EntityStore> holder = EntityStore.REGISTRY.newHolder();
+        // Clear old UUIDs (so we don’t keep stacking forever)
+        citizen.getHologramLineUuids().clear();
 
-        ProjectileComponent projectileComponent = new ProjectileComponent("Projectile");
-        holder.putComponent(ProjectileComponent.getComponentType(), projectileComponent);
+        // Controls spacing between each nameplate line
+        double lineSpacing = 0.25 * scale;
 
-        holder.putComponent(TransformComponent.getComponentType(), new TransformComponent(hologramPos, hologramRot));
-        holder.ensureComponent(UUIDComponent.getComponentType());
-
-        if (projectileComponent.getProjectile() == null) {
-            projectileComponent.initialize();
-            if (projectileComponent.getProjectile() == null) {
-                return;
+        for (int i = 0; i < lines.length; ++i) {
+            String lineText = lines[i].trim();
+            if (lineText.isEmpty()) {
+                continue;
             }
+
+            Vector3d linePos = new Vector3d(
+                    baseHologramPos.x,
+                    baseHologramPos.y + ((lines.length - 1 - i) * lineSpacing),
+                    baseHologramPos.z
+            );
+
+            Holder<EntityStore> holder = EntityStore.REGISTRY.newHolder();
+
+            ProjectileComponent projectileComponent = new ProjectileComponent("Projectile");
+            holder.putComponent(ProjectileComponent.getComponentType(), projectileComponent);
+
+            holder.putComponent(TransformComponent.getComponentType(), new TransformComponent(linePos, hologramRot));
+            holder.ensureComponent(UUIDComponent.getComponentType());
+
+            if (projectileComponent.getProjectile() == null) {
+                projectileComponent.initialize();
+                if (projectileComponent.getProjectile() == null) {
+                    continue;
+                }
+            }
+
+            holder.addComponent(
+                    NetworkId.getComponentType(),
+                    new NetworkId(world.getEntityStore().getStore().getExternalData().takeNextNetworkId())
+            );
+
+            UUIDComponent hologramUUIDComponent = holder.getComponent(UUIDComponent.getComponentType());
+            if (hologramUUIDComponent != null) {
+                citizen.getHologramLineUuids().add(hologramUUIDComponent.getUuid());
+            }
+
+            holder.addComponent(Nameplate.getComponentType(), new Nameplate(lineText));
+            world.getEntityStore().getStore().addEntity(holder, AddReason.SPAWN);
         }
 
-        holder.addComponent(
-                NetworkId.getComponentType(),
-                new NetworkId(world.getEntityStore().getStore().getExternalData().takeNextNetworkId())
-        );
-
-        UUIDComponent hologramUUIDComponent = holder.getComponent(UUIDComponent.getComponentType());
-        if (hologramUUIDComponent != null) {
-            citizen.setHologramUUID(hologramUUIDComponent.getUuid());
-
-            if (save)
-                saveCitizen(citizen);
+        if (save) {
+            saveCitizen(citizen);
         }
-
-        holder.addComponent(Nameplate.getComponentType(), new Nameplate(citizen.getName()));
-        world.getEntityStore().getStore().addEntity(holder, AddReason.SPAWN);
     }
 
     public void despawnCitizen(CitizenData citizen) {
@@ -787,21 +837,26 @@ public class CitizensManager {
             return;
         }
 
-        UUID hologramUUID = citizen.getHologramUUID();
-        if (hologramUUID != null) {
-            if (world.getEntityRef(hologramUUID) != null) {
-                world.execute(() -> {
-                    Ref<EntityStore> hologram = world.getEntityRef(hologramUUID);
+        if (citizen.getHologramLineUuids() == null || citizen.getHologramLineUuids().isEmpty()) {
+            return;
+        }
+
+        List<UUID> hologramUuids = new ArrayList<>(citizen.getHologramLineUuids());
+        world.execute(() -> {
+            for (UUID uuid : hologramUuids) {
+                try {
+                    Ref<EntityStore> hologram = world.getEntityRef(uuid);
                     if (hologram == null) {
-                        return;
+                        continue;
                     }
 
                     world.getEntityStore().getStore().removeEntity(hologram, RemoveReason.REMOVE);
-                });
-
-                citizen.setHologramUUID(null);
+                } catch (Exception ignored) {
+                }
             }
-        }
+        });
+
+        citizen.getHologramLineUuids().clear();
     }
 
     public void updateSpawnedCitizen(CitizenData citizen, boolean save) {
@@ -820,7 +875,11 @@ public class CitizensManager {
     }
 
     public void rotateCitizenToPlayer(CitizenData citizen, PlayerRef playerRef) {
-        if (citizen == null || citizen.getSpawnedUUID() == null || citizen.getNpcRef() == null) {
+        if (citizen == null || citizen.getSpawnedUUID() == null || citizen.getNpcRef() == null || !citizen.getNpcRef().isValid()) {
+            return;
+        }
+
+        if (citizen.getNpcRef().getStore() == null) {
             return;
         }
 
