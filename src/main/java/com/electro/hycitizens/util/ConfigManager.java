@@ -13,9 +13,7 @@ import javax.annotation.Nullable;
 import java.io.*;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.UUID;
+import java.util.*;
 
 public class ConfigManager {
     private final Path configFile;
@@ -177,12 +175,63 @@ public class ConfigManager {
         }
     }
 
+    @Nullable
+    public List<UUID> getUUIDList(@Nonnull String path) {
+        Object value = config.get(path);
+        if (value == null) return null;
+
+        List<UUID> uuids = new ArrayList<>();
+
+        if (value instanceof List<?> list) {
+            for (Object obj : list) {
+                if (!(obj instanceof String str)) continue;
+
+                try {
+                    uuids.add(UUID.fromString(str));
+                } catch (IllegalArgumentException ignored) {
+                }
+            }
+        } else if (value instanceof String str) {
+            // Backwards compatibility
+            try {
+                uuids.add(UUID.fromString(str));
+            }
+            catch (IllegalArgumentException ignored) {
+            }
+        }
+
+        return uuids.isEmpty() ? null : uuids;
+    }
+
     public void setUUID(@Nonnull String path, @Nullable UUID uuid) {
         if (uuid == null) {
             config.remove(path);
         } else {
             config.put(path, uuid.toString());
         }
+        saveConfig();
+    }
+
+    public void setUUIDList(@Nonnull String path, @Nullable List<UUID> uuids) {
+        if (uuids == null || uuids.isEmpty()) {
+            config.remove(path);
+        } else {
+            List<String> uuidStrings = new ArrayList<>();
+            for (UUID uuid : uuids) {
+                if (uuid == null) {
+                    continue;
+                }
+
+                uuidStrings.add(uuid.toString());
+            }
+
+            if (uuidStrings.isEmpty()) {
+                config.remove(path);
+            } else {
+                config.put(path, uuidStrings);
+            }
+        }
+
         saveConfig();
     }
 
