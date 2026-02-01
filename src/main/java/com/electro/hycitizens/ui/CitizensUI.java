@@ -1,6 +1,7 @@
 package com.electro.hycitizens.ui;
 
 import au.ellie.hyui.builders.PageBuilder;
+import au.ellie.hyui.html.TemplateProcessor;
 import com.electro.hycitizens.HyCitizensPlugin;
 import com.electro.hycitizens.models.CitizenData;
 import com.electro.hycitizens.models.CommandAction;
@@ -21,11 +22,44 @@ import com.hypixel.hytale.server.core.universe.world.storage.EntityStore;
 import javax.annotation.Nonnull;
 import java.awt.*;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
 
 public class CitizensUI {
     private final HyCitizensPlugin plugin;
+
+    // Common entity types for the dropdown
+    private static final List<String> COMMON_ENTITIES = Arrays.asList(
+            "Player",
+            "PlayerTestModel_V",
+            "Sheep",
+            "Chicken",
+            "Cow",
+            "Pig",
+            "Wolf",
+            "Trork",
+            "Kweebec",
+            "Feran",
+            "Scarrak",
+            "Goblin",
+            "Skeleton",
+            "Zombie"
+    );
+
+    // Helper method to generate dropdown options HTML (avoids template iteration issues with String lists)
+    private String generateEntityDropdownOptions(String selectedValue) {
+        StringBuilder sb = new StringBuilder();
+        for (String entity : COMMON_ENTITIES) {
+            boolean isSelected = entity.equals(selectedValue);
+            sb.append("<option value=\"").append(entity).append("\"");
+            if (isSelected) {
+                sb.append(" selected");
+            }
+            sb.append(">").append(entity).append("</option>\n");
+        }
+        return sb.toString();
+    }
 
     public enum Tab {
         CREATE, MANAGE
@@ -35,11 +69,711 @@ public class CitizensUI {
         this.plugin = plugin;
     }
 
+    private String getSharedStyles() {
+        return """
+            <style>                
+                /* Primary Colors */
+                /* Background Dark:    #0d1117 */
+                /* Background Medium:  #161b22 */
+                /* Background Light:   #21262d */
+                /* Surface:            #30363d */
+                /* Border:             #484f58 */
+                
+                /* Accent Colors */
+                /* Primary:            #58a6ff (Blue) */
+                /* Success:            #3fb950 (Green) */
+                /* Warning:            #d29922 (Orange) */
+                /* Danger:             #f85149 (Red) */
+                /* Info:               #a371f7 (Purple) */
+                
+                /* Text Colors */
+                /* Text Primary:       #e6edf3 */
+                /* Text Secondary:     #8b949e */
+                /* Text Muted:         #6e7681 */
+                
+                .main-container {
+                    layout: top;
+                    background-color: #0d1117(0.98);
+                    border-radius: 12;
+                }
+                
+                .header {
+                    layout: center;
+                    flex-weight: 0;
+                    background-color: #161b22;
+                    padding: 20;
+                    border-radius: 12 12 0 0;
+                }
+                
+                .header-content {
+                    layout: top;
+                    flex-weight: 0;
+                }
+                
+                .header-title {
+                    color: #e6edf3;
+                    font-size: 24;
+                    font-weight: bold;
+                    text-align: center;
+                }
+                
+                .header-subtitle {
+                    color: #8b949e;
+                    font-size: 12;
+                    padding-top: 4;
+                    text-align: center;
+                }
+                
+                .body {
+                    layout: top;
+                    flex-weight: 1;
+                    padding: 20;
+                }
+                
+                .footer {
+                    layout: center;
+                    flex-weight: 0;
+                    background-color: #161b22;
+                    padding: 16;
+                    border-radius: 0 0 12 12;
+                }
+                
+                .card {
+                    layout: top;
+                    flex-weight: 0;
+                    background-color: #161b22;
+                    padding: 16;
+                    border-radius: 8;
+                }
+                
+                .card-header {
+                    layout: left;
+                    flex-weight: 0;
+                    padding-bottom: 12;
+                }
+                
+                .card-title {
+                    color: #e6edf3;
+                    font-size: 14;
+                    font-weight: bold;
+                    flex-weight: 1;
+                }
+                
+                .card-body {
+                    layout: top;
+                    flex-weight: 0;
+                }
+                
+                .section {
+                    layout: top;
+                    flex-weight: 0;
+                    background-color: #21262d(0.5);
+                    padding: 16;
+                    border-radius: 8;
+                }
+                
+                .section-header {
+                    layout: left;
+                    flex-weight: 0;
+                }
+                
+                .section-title {
+                    color: #e6edf3;
+                    font-size: 13;
+                    font-weight: bold;
+                }
+                
+                .section-description {
+                    color: #8b949e;
+                    font-size: 11;
+                    padding-top: 4;
+                    padding-bottom: 12;
+                }
+                
+                .form-group {
+                    layout: top;
+                    flex-weight: 0;
+                }
+                
+                .form-row {
+                    layout: left;
+                    flex-weight: 0;
+                }
+                
+                .form-col {
+                    layout: top;
+                    flex-weight: 1;
+                }
+                
+                .form-col-fixed {
+                    layout: top;
+                    flex-weight: 0;
+                }
+                
+                .form-label {
+                    color: #e6edf3;
+                    font-size: 12;
+                    font-weight: bold;
+                    padding-bottom: 6;
+                }
+                
+                .form-label-optional {
+                    color: #6e7681;
+                    font-size: 10;
+                    padding-left: 6;
+                }
+                
+                .form-input {
+                    flex-weight: 0;
+                    anchor-height: 38;
+                    background-color: #21262d;
+                    border-radius: 6;
+                }
+                
+                .form-input-small {
+                    flex-weight: 0;
+                    anchor-height: 38;
+                    anchor-width: 120;
+                    background-color: #21262d;
+                    border-radius: 6;
+                }
+                
+                .form-hint {
+                    color: #6e7681;
+                    font-size: 10;
+                    padding-top: 4;
+                }
+                
+                .form-hint-highlight {
+                    color: #58a6ff;
+                    font-size: 10;
+                    padding-top: 4;
+                }
+                
+                .checkbox-row {
+                    layout: left;
+                    flex-weight: 0;
+                    padding-top: 8;
+                    padding-bottom: 4;
+                }
+                
+                .checkbox-label {
+                    color: #e6edf3;
+                    font-size: 12;
+                    padding-left: -30;
+                }
+                
+                .checkbox-description {
+                    color: #8b949e;
+                    font-size: 10;
+                    padding-left: -30;
+                }
+                
+                .btn-row {
+                    layout: center;
+                    flex-weight: 0;
+                }
+                
+                .btn-row-left {
+                    layout: left;
+                    flex-weight: 0;
+                }
+                
+                .btn-row-right {
+                    layout: right;
+                    flex-weight: 0;
+                }
+                
+                .btn-primary {
+                    flex-weight: 0;
+                    anchor-height: 40;
+                    anchor-width: 140;
+                    border-radius: 6;
+                }
+                
+                .btn-secondary {
+                    flex-weight: 0;
+                    anchor-height: 40;
+                    anchor-width: 140;
+                    border-radius: 6;
+                }
+                
+                .btn-danger {
+                    flex-weight: 0;
+                    anchor-height: 40;
+                    anchor-width: 140;
+                    border-radius: 6;
+                }
+                
+                .btn-warning {
+                    flex-weight: 0;
+                    anchor-height: 40;
+                    anchor-width: 140;
+                    border-radius: 6;
+                }
+                
+                .btn-info {
+                    flex-weight: 0;
+                    anchor-height: 40;
+                    anchor-width: 140;
+                    border-radius: 6;
+                }
+                
+                .btn-ghost {
+                    flex-weight: 0;
+                    anchor-height: 40;
+                    anchor-width: 140;
+                    border-radius: 6;
+                }
+                
+                .btn-small {
+                    anchor-height: 32;
+                    anchor-width: 100;
+                }
+                
+                .btn-wide {
+                    anchor-width: 200;
+                }
+                
+                .btn-full {
+                    flex-weight: 1;
+                    anchor-width: 0;
+                }
+                
+                .tab-container {
+                    layout: left;
+                    flex-weight: 0;
+                    padding: 4;
+                    border-radius: 8;
+                }
+                
+                .tab-btn {
+                    flex-weight: 1;
+                    anchor-height: 36;
+                    border-radius: 6;
+                }
+                
+                .tab-active {
+                }
+                
+                .list-container {
+                    layout-mode: TopScrolling;
+                    flex-weight: 1;
+                    padding: 4;
+                }
+                
+                .list-item {
+                    layout: left;
+                    flex-weight: 0;
+                    background-color: #21262d;
+                    padding: 14;
+                    border-radius: 8;
+                }
+                
+                .list-item-hover {
+                    background-color: #30363d;
+                }
+                
+                .list-item-content {
+                    layout: top;
+                    flex-weight: 1;
+                    padding-left: 12;
+                    padding-right: 12;
+                }
+                
+                .list-item-title {
+                    color: #e6edf3;
+                    font-size: 14;
+                    font-weight: bold;
+                }
+                
+                .list-item-subtitle {
+                    color: #8b949e;
+                    font-size: 11;
+                    padding-top: 2;
+                }
+                
+                .list-item-meta {
+                    color: #6e7681;
+                    font-size: 10;
+                    padding-top: 4;
+                }
+                
+                .list-item-actions {
+                    layout: left;
+                    flex-weight: 0;
+                }
+                
+                .stats-row {
+                    layout: left;
+                    flex-weight: 0;
+                }
+                
+                .stat-card {
+                    layout: top;
+                    flex-weight: 1;
+                    background-color: #21262d;
+                    padding: 14;
+                    border-radius: 8;
+                }
+                
+                .stat-value {
+                    color: #e6edf3;
+                    font-size: 24;
+                    font-weight: bold;
+                }
+                
+                .stat-label {
+                    color: #8b949e;
+                    font-size: 11;
+                    padding-top: 2;
+                }
+                
+                .stat-change-positive {
+                    color: #3fb950;
+                    font-size: 10;
+                }
+                
+                .stat-change-negative {
+                    color: #f85149;
+                    font-size: 10;
+                }
+                
+                .empty-state {
+                    layout: center;
+                    flex-weight: 1;
+                    padding: 40;
+                }
+                
+                .empty-state-content {
+                    layout: top;
+                    flex-weight: 0;
+                }
+                
+                .empty-state-title {
+                    color: #8b949e;
+                    font-size: 16;
+                    text-align: center;
+                    padding-top: 16;
+                }
+                
+                .empty-state-description {
+                    color: #6e7681;
+                    font-size: 12;
+                    text-align: center;
+                    padding-top: 8;
+                }
+                
+                .info-box {
+                    layout: left;
+                    flex-weight: 0;
+                    background-color: #1f6feb(0.1);
+                    padding: 12;
+                    border-radius: 6;
+                }
+                
+                .info-box-text {
+                    color: #8b949e;
+                    font-size: 11;
+                    flex-weight: 1;
+                }
+                
+                .divider {
+                    flex-weight: 0;
+                    anchor-height: 1;
+                    background-color: #30363d;
+                }
+                
+                .divider-vertical {
+                    flex-weight: 0;
+                    anchor-width: 1;
+                    background-color: #30363d;
+                }
+                
+                .spacer-xs {
+                    flex-weight: 0;
+                    anchor-height: 4;
+                }
+                
+                .spacer-sm {
+                    flex-weight: 0;
+                    anchor-height: 8;
+                }
+                
+                .spacer-md {
+                    flex-weight: 0;
+                    anchor-height: 16;
+                }
+                
+                .spacer-lg {
+                    flex-weight: 0;
+                    anchor-height: 24;
+                }
+                
+                .spacer-xl {
+                    flex-weight: 0;
+                    anchor-height: 32;
+                }
+                
+                .spacer-h-xs {
+                    flex-weight: 0;
+                    anchor-width: 4;
+                }
+                
+                .spacer-h-sm {
+                    flex-weight: 0;
+                    anchor-width: 8;
+                }
+                
+                .spacer-h-md {
+                    flex-weight: 0;
+                    anchor-width: 16;
+                }
+                
+                .toggle-group {
+                    layout: left;
+                    flex-weight: 0;
+                    padding: 4;
+                    border-radius: 8;
+                }
+                
+                .toggle-btn {
+                    flex-weight: 1;
+                    anchor-height: 36;
+                    border-radius: 6;
+                }
+                
+                .toggle-active {
+                }
+                
+                .command-item {
+                    layout: left;
+                    flex-weight: 0;
+                    background-color: #21262d;
+                    padding: 12;
+                    border-radius: 6;
+                }
+                
+                .command-icon {
+                    layout: center;
+                    flex-weight: 0;
+                    anchor-width: 32;
+                    anchor-height: 32;
+                    border-radius: 6;
+                }
+                
+                .command-icon-server {
+                }
+                
+                .command-icon-player {
+                }
+                
+                .command-icon-text {
+                    font-size: 14;
+                }
+                
+                .command-icon-text-server {
+                    color: #a371f7;
+                }
+                
+                .command-icon-text-player {
+                    color: #58a6ff;
+                }
+                
+                .command-content {
+                    layout: top;
+                    flex-weight: 1;
+                    padding-left: 10;
+                    padding-right: 10;
+                }
+                
+                .command-text {
+                    color: #3fb950;
+                    font-size: 12;
+                    font-weight: bold;
+                }
+                
+                .command-type {
+                    color: #8b949e;
+                    font-size: 10;
+                    padding-top: 2;
+                }
+                
+                .command-actions {
+                    layout: left;
+                    flex-weight: 0;
+                }
+            </style>
+            """;
+    }
+
+    private TemplateProcessor createBaseTemplate() {
+        return new TemplateProcessor()
+                // Stat card component
+                .registerComponent("statCard", """
+                    <div class="stat-card">
+                        <p class="stat-value">{{$value}}</p>
+                        <p class="stat-label">{{$label}}</p>
+                    </div>
+                    """)
+
+                // Form field component
+                .registerComponent("formField", """
+                    <div class="form-group">
+                        <div class="form-row">
+                            <p class="form-label">{{$label}}</p>
+                            {{#if optional}}
+                            <p class="form-label-optional">(Optional)</p>
+                            {{/if}}
+                        </div>
+                        <input type="text" id="{{$id}}" class="form-input" value="{{$value}}" 
+                               placeholder="{{$placeholder}}" maxlength="{{$maxlength|64}}" />
+                        {{#if hint}}
+                        <p class="form-hint">{{$hint}}</p>
+                        {{/if}}
+                    </div>
+                    """)
+
+                // Number field component
+                .registerComponent("numberField", """
+                    <div class="form-group">
+                        <p class="form-label">{{$label}}</p>
+                        <input type="number" id="{{$id}}" class="form-input" 
+                               value="{{$value}}"
+                               placeholder="{{$placeholder}}"
+                               min="{{$min}}"
+                               max="{{$max}}"
+                               step="{{$step}}"
+                               data-hyui-max-decimal-places="{{$decimals|2}}" />
+                        {{#if hint}}
+                        <p class="form-hint">{{$hint}}</p>
+                        {{/if}}
+                    </div>
+                    """)
+
+                // Checkbox component
+                .registerComponent("checkbox", """
+                    <div class="checkbox-row">
+                        <input type="checkbox" id="{{$id}}" {{#if checked}}checked{{/if}} />
+                        <div style="layout: top; flex-weight: 1;">
+                            <p class="checkbox-label">{{$label}}</p>
+                            {{#if description}}
+                            <p class="checkbox-description">{{$description}}</p>
+                            {{/if}}
+                        </div>
+                    </div>
+                    """)
+
+                // Info box component
+                .registerComponent("infoBox", """
+                    <div class="info-box">
+                        <p class="info-box-text">{{$text}}</p>
+                    </div>
+                    """)
+
+                // Section header component
+                .registerComponent("sectionHeader", """
+                    <div class="section-header">
+                        <p class="section-title">{{$title}}</p>
+                    </div>
+                    {{#if description}}
+                    <p class="section-description">{{$description}}</p>
+                    {{else}}
+                    <div class="spacer-sm"></div>
+                    {{/if}}
+                    """);
+    }
+
     public void openCitizensGUI(@Nonnull PlayerRef playerRef, @Nonnull Store<EntityStore> store, @Nonnull Tab currentTab) {
-        ConfigManager config = plugin.getConfigManager();
         List<CitizenData> citizens = plugin.getCitizensManager().getAllCitizens();
 
-        String html = buildMainHTML(currentTab, citizens.size());
+        TemplateProcessor template = createBaseTemplate()
+                .setVariable("citizenCount", citizens.size())
+                .setVariable("isCreateTab", currentTab == Tab.CREATE)
+                .setVariable("isManageTab", currentTab == Tab.MANAGE)
+                .setVariable("citizens", citizens)
+                .setVariable("hasCitizens", !citizens.isEmpty());
+
+        String html = template.process(getSharedStyles() + """
+            <div class="page-overlay">
+                <div class="main-container" style="anchor-width: 960; anchor-height: 600;">
+                    
+                    <!-- Header -->
+                    <div class="header">
+                        <div class="header-content">
+                            <p class="header-title">Citizens Manager</p>
+                            <p class="header-subtitle">Create and manage interactive NPCs for your server</p>
+                        </div>
+                    </div>
+                    
+                    <!-- Body -->
+                    <div class="body">
+                        
+                        <!-- Stats Row -->
+                        <div class="stats-row">
+                            {{@statCard:value={{$citizenCount}},label=Total Citizens}}
+                        </div>
+                        
+                        <div class="spacer-md"></div>
+                        
+                        <!-- Tabs -->
+                        <div class="tab-container">
+                            <button id="tab-create" class="tab-btn{{#if isCreateTab}} tab-active{{/if}}">Create</button>
+                            <button id="tab-manage" class="tab-btn{{#if isManageTab}} tab-active{{/if}}">Manage</button>
+                        </div>
+                        
+                        <div class="spacer-md"></div>
+                        
+                        <!-- Tab Content -->
+                        {{#if isCreateTab}}
+                        <!-- Create Tab -->
+                        <div class="card" style="flex-weight: 1;">
+                            <div class="card-body" style="layout: center; flex-weight: 1;">
+                                <div class="empty-state-content">
+                                    <p class="empty-state-title">Create a New Citizen</p>
+                                    <p class="empty-state-description">Citizens are interactive NPCs that can execute commands,</p>
+                                    <p class="empty-state-description">display custom messages, and bring your server to life.</p>
+                                    <div class="spacer-lg"></div>
+                                    <div class="btn-row">
+                                        <button id="start-create" class="btn-primary" style="anchor-width: 220;">Start Creating</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        {{else}}
+                        <!-- Manage Tab -->
+                        {{#if hasCitizens}}
+                        <div class="list-container" style="anchor-height: 340;">
+                            {{#each citizens}}
+                            <div class="list-item">
+                                <div class="list-item-content">
+                                    <p class="list-item-title">{{$name}}</p>
+                                    <p class="list-item-subtitle">Model: {{$modelId}} | Scale: {{$scale}}</p>
+                                    <p class="list-item-meta">ID: {{$id}}</p>
+                                </div>
+                                <div class="list-item-actions">
+                                    <button id="edit-{{$id}}" class="btn-info btn-small" style="anchor-width: 80;">Edit</button>
+                                    <div class="spacer-h-sm"></div>
+                                    <button id="remove-{{$id}}" class="btn-danger btn-small" style="anchor-width: 140;">Remove</button>
+                                </div>
+                            </div>
+                            <div class="spacer-sm"></div>
+                            {{/each}}
+                        </div>
+                        {{else}}
+                        <div class="empty-state">
+                            <div class="empty-state-content">
+                                <p class="empty-state-title">No Citizens Yet</p>
+                                <p class="empty-state-description">Switch to the Create tab to add your first citizen!</p>
+                            </div>
+                        </div>
+                        {{/if}}
+                        {{/if}}
+                        
+                    </div>
+                </div>
+            </div>
+            """);
 
         PageBuilder page = PageBuilder.pageForPlayer(playerRef)
                 .withLifetime(CustomPageLifetime.CanDismiss)
@@ -59,20 +793,420 @@ public class CitizensUI {
                                      boolean isPlayerModel, String name, float nametagOffset, boolean hideNametag,
                                      String modelId, float scale, String permission, String permMessage, boolean useLiveSkin,
                                      boolean preserveState, String skinUsername, boolean rotateTowardsPlayer) {
-        String html = buildCreateCitizenHTML(isPlayerModel);
+
+        TemplateProcessor template = createBaseTemplate()
+                .setVariable("isPlayerModel", isPlayerModel)
+                .setVariable("name", name)
+                .setVariable("nametagOffset", nametagOffset)
+                .setVariable("hideNametag", hideNametag)
+                .setVariable("modelId", modelId.isEmpty() ? "PlayerTestModel_V" : modelId)
+                .setVariable("scale", scale)
+                .setVariable("permission", permission)
+                .setVariable("permMessage", permMessage)
+                .setVariable("useLiveSkin", useLiveSkin)
+                .setVariable("skinUsername", skinUsername)
+                .setVariable("rotateTowardsPlayer", rotateTowardsPlayer)
+                .setVariable("entityOptions", generateEntityDropdownOptions(modelId.isEmpty() ? "PlayerTestModel_V" : modelId));
+
+        String html = template.process(getSharedStyles() + """
+            <div class="page-overlay">
+                <div class="main-container" style="anchor-width: 900; anchor-height: 820;">
+                    
+                    <!-- Header -->
+                    <div class="header">
+                        <div class="header-content">
+                            <p class="header-title">Create New Citizen</p>
+                            <p class="header-subtitle">Configure your new NPC's appearance and behavior</p>
+                        </div>
+                    </div>
+                    
+                    <!-- Body -->
+                    <div class="body" style="layout-mode: TopScrolling;">
+                        
+                        <!-- Info Box -->
+                        {{@infoBox:text=The citizen will spawn at your current position and rotation}}
+                        
+                        <div class="spacer-md"></div>
+                        
+                        <!-- Basic Information Section -->
+                        <div class="section">
+                            {{@sectionHeader:title=Basic Information,description=Set the citizen's name and display settings}}
+                            
+                            <div class="form-row">
+                                <div class="form-col">
+                                    <div class="form-group">
+                                        <p class="form-label">Citizen Name *</p>
+                                        <input type="text" id="citizen-name" class="form-input" value="{{$name}}" 
+                                               placeholder="Enter a display name" maxlength="32" />
+                                        <p class="form-hint">This will be displayed above the NPC</p>
+                                    </div>
+                                </div>
+                                <div class="spacer-h-md"></div>
+                                <div class="form-col-fixed" style="anchor-width: 150;">
+                                    <div class="form-group">
+                                        <p class="form-label">Nametag Offset</p>
+                                        <input type="number" id="nametag-offset" class="form-input"
+                                               value="{{$nametagOffset}}"
+                                               placeholder="0.0"
+                                               min="-500" max="500" step="0.25"
+                                               data-hyui-max-decimal-places="2" />
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="spacer-sm"></div>
+                            
+                            {{@checkbox:id=hide-nametag-check,checked={{$hideNametag}},label=Hide Nametag,description=Hide the name displayed above the citizen}}
+                        </div>
+                        
+                        <div class="spacer-md"></div>
+                        
+                        <!-- Entity Type Section -->
+                        <div class="section">
+                            {{@sectionHeader:title=Entity Type,description=Choose whether this citizen uses a player model or another entity}}
+                            
+                            <div class="toggle-group">
+                                <button id="type-player" class="toggle-btn{{#if isPlayerModel}} toggle-active{{/if}}">Player Model</button>
+                                <button id="type-entity" class="toggle-btn{{#if !isPlayerModel}} toggle-active{{/if}}">Other Entity</button>
+                            </div>
+                            
+                            <div class="spacer-md"></div>
+                            
+                            {{#if isPlayerModel}}
+                            <!-- Player Skin Configuration -->
+                            <div class="card">
+                                <div class="card-header">
+                                    <p class="card-title">Player Skin Configuration</p>
+                                </div>
+                                <div class="card-body">
+                                    <div class="form-group">
+                                        <p class="form-label">Skin Username</p>
+                                        <div class="form-row">
+                                            <input type="text" id="skin-username" class="form-input" value="{{$skinUsername}}"
+                                                   placeholder="Enter username to fetch skin" style="flex-weight: 1;" />
+                                            <div class="spacer-h-sm"></div>
+                                            <button id="get-player-skin-btn" class="btn-secondary btn-small" style="anchor-width: 160;">Use My Skin</button>
+                                        </div>
+                                        <p class="form-hint">Leave empty to use your current skin</p>
+                                    </div>
+                                    
+                                    <div class="spacer-sm"></div>
+                                    
+                                    {{@checkbox:id=live-skin-check,checked={{$useLiveSkin}},label=Enable Live Skin Updates,description=Automatically refresh the skin every 30 minutes}}
+                                    
+                                    {{@checkbox:id=rotate-towards-player,checked={{$rotateTowardsPlayer}},label=Rotate Towards Player,description=The citizen will face players when they approach}}
+                                </div>
+                            </div>
+                            {{else}}
+                            <!-- Entity Selection -->
+                            <div class="card">
+                                <div class="card-header">
+                                    <p class="card-title">Entity Selection</p>
+                                </div>
+                                <div class="card-body">
+                                    <div class="form-group">
+                                        <p class="form-label">Select Entity Type</p>
+                                        <select id="entity-dropdown" value="{{$modelId}}" data-hyui-showlabel="true">
+                                            {{$entityOptions}}
+                                        </select>
+                                        <p class="form-hint">Choose from common entity types</p>
+                                    </div>
+                                    
+                                    <div class="spacer-sm"></div>
+                                    <div class="divider"></div>
+                                    <div class="spacer-sm"></div>
+                                    
+                                    <div class="form-group">
+                                        <p class="form-label">Or Enter Custom Model ID</p>
+                                        <input type="text" id="citizen-model-id" class="form-input" value="{{$modelId}}"
+                                               placeholder="e.g., PlayerTestModel_V, Sheep" maxlength="64" />
+                                        <p class="form-hint">Type a custom model ID if not in the dropdown</p>
+                                    </div>
+                                </div>
+                            </div>
+                            {{/if}}
+                        </div>
+                        
+                        <div class="spacer-md"></div>
+                        
+                        <!-- Scale Section -->
+                        <div class="section">
+                            {{@sectionHeader:title=Scale,description=Adjust the size of the citizen}}
+                            
+                            <div class="form-row">
+                                <div class="form-col-fixed" style="anchor-width: 200;">
+                                    <div class="form-group">
+                                        <p class="form-label">Scale Factor *</p>
+                                        <input type="number" id="citizen-scale" class="form-input"
+                                               value="{{$scale}}"
+                                               placeholder="1.0"
+                                               min="0.01" max="500" step="0.25"
+                                               data-hyui-max-decimal-places="2" />
+                                        <p class="form-hint">Default: 1.0 (normal size)</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="spacer-md"></div>
+                        
+                        <!-- Permissions Section -->
+                        <div class="section">
+                            {{@sectionHeader:title=Permissions,description=Control who can interact with this citizen}}
+                            
+                            <div class="form-row">
+                                <div class="form-col">
+                                    <div class="form-group">
+                                        <div class="form-row">
+                                            <p class="form-label">Required Permission</p>
+                                            <p class="form-label-optional">(Optional)</p>
+                                        </div>
+                                        <input type="text" id="citizen-permission" class="form-input" value="{{$permission}}" 
+                                               placeholder="e.g., citizens.interact.vip" />
+                                        <p class="form-hint">Leave empty to allow everyone</p>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="spacer-sm"></div>
+                            
+                            <div class="form-row">
+                                <div class="form-col">
+                                    <div class="form-group">
+                                        <div class="form-row">
+                                            <p class="form-label">No Permission Message</p>
+                                            <p class="form-label-optional">(Optional)</p>
+                                        </div>
+                                        <input type="text" id="citizen-perm-message" class="form-input" value="{{$permMessage}}" 
+                                               placeholder="e.g., You need VIP rank to interact!" />
+                                        <p class="form-hint">Message shown when player lacks permission</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="spacer-lg"></div>
+                        
+                    </div>
+                    
+                    <!-- Footer -->
+                    <div class="footer">
+                        <button id="cancel-btn" class="btn-ghost">Cancel</button>
+                        <div class="spacer-h-md"></div>
+                        <button id="create-btn" class="btn-primary btn-wide">Create Citizen</button>
+                    </div>
+                    
+                </div>
+            </div>
+            """);
 
         PageBuilder page = PageBuilder.pageForPlayer(playerRef)
                 .withLifetime(CustomPageLifetime.CanDismiss)
                 .fromHtml(html);
 
-        setupCreateCitizenListeners(page, playerRef, store, isPlayerModel, name, nametagOffset, hideNametag, modelId, scale,
-                                   permission, permMessage, useLiveSkin, skinUsername, rotateTowardsPlayer);
+        setupCreateCitizenListeners(page, playerRef, store, isPlayerModel, name, nametagOffset, hideNametag,
+                modelId, scale, permission, permMessage, useLiveSkin, skinUsername, rotateTowardsPlayer);
 
         page.open(store);
     }
 
     public void openEditCitizenGUI(@Nonnull PlayerRef playerRef, @Nonnull Store<EntityStore> store, @Nonnull CitizenData citizen) {
-        String html = buildEditCitizenHTML(citizen);
+        TemplateProcessor template = createBaseTemplate()
+                .setVariable("citizen", citizen)
+                .setVariable("isPlayerModel", citizen.isPlayerModel())
+                .setVariable("entityOptions", generateEntityDropdownOptions(citizen.getModelId()));
+
+        String html = template.process(getSharedStyles() + """
+            <div class="page-overlay">
+                <div class="main-container" style="anchor-width: 900; anchor-height: 850;">
+                    
+                    <!-- Header -->
+                    <div class="header">
+                        <div class="header-content">
+                            <p class="header-title">Edit Citizen</p>
+                            <p class="header-subtitle">ID: {{$citizen.id}}</p>
+                        </div>
+                    </div>
+                    
+                    <!-- Body -->
+                    <div class="body" style="layout-mode: TopScrolling;">
+                        
+                        <!-- Basic Information Section -->
+                        <div class="section">
+                            {{@sectionHeader:title=Basic Information}}
+                            
+                            <div class="form-row">
+                                <div class="form-col">
+                                    <div class="form-group">
+                                        <p class="form-label">Citizen Name *</p>
+                                        <input type="text" id="citizen-name" class="form-input" value="{{$citizen.name}}" 
+                                               placeholder="Enter a display name" maxlength="32" />
+                                    </div>
+                                </div>
+                                <div class="spacer-h-md"></div>
+                                <div class="form-col-fixed" style="anchor-width: 150;">
+                                    <div class="form-group">
+                                        <p class="form-label">Nametag Offset</p>
+                                        <input type="number" id="nametag-offset" class="form-input"
+                                               value="{{$citizen.nametagOffset}}"
+                                               min="-500" max="500" step="0.25"
+                                               data-hyui-max-decimal-places="2" />
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="spacer-sm"></div>
+                            
+                            {{@checkbox:id=hide-nametag-check,checked={{$citizen.hideNametag}},label=Hide Nametag}}
+                        </div>
+                        
+                        <div class="spacer-md"></div>
+                        
+                        <!-- Entity Type Section -->
+                        <div class="section">
+                            {{@sectionHeader:title=Entity Type}}
+                            
+                            <div class="toggle-group">
+                                <button id="type-player" class="toggle-btn{{#if isPlayerModel}} toggle-active{{/if}}">Player Model</button>
+                                <button id="type-entity" class="toggle-btn{{#if !isPlayerModel}} toggle-active{{/if}}">Other Entity</button>
+                            </div>
+                            
+                            <div class="spacer-md"></div>
+                            
+                            {{#if isPlayerModel}}
+                            <!-- Player Skin Configuration -->
+                            <div class="card">
+                                <div class="card-header">
+                                    <p class="card-title">Player Skin Configuration</p>
+                                </div>
+                                <div class="card-body">
+                                    <div class="form-group">
+                                        <p class="form-label">Skin Username</p>
+                                        <div class="form-row">
+                                            <input type="text" id="skin-username" class="form-input" value="{{$citizen.skinUsername}}"
+                                                   placeholder="Enter username" style="flex-weight: 1;" />
+                                            <div class="spacer-h-sm"></div>
+                                            <button id="get-player-skin-btn" class="btn-secondary btn-small" style="anchor-width: 160;">Use My Skin</button>
+                                        </div>
+                                    </div>
+                                    
+                                    <div class="spacer-sm"></div>
+                                    
+                                    {{@checkbox:id=live-skin-check,checked={{$citizen.useLiveSkin}},label=Enable Live Skin Updates}}
+                                    {{@checkbox:id=rotate-towards-player,checked={{$citizen.rotateTowardsPlayer}},label=Rotate Towards Player}}
+                                </div>
+                            </div>
+                            {{else}}
+                            <!-- Entity Selection -->
+                            <div class="card">
+                                <div class="card-header">
+                                    <p class="card-title">Entity Selection</p>
+                                </div>
+                                <div class="card-body">
+                                    <div class="form-group">
+                                        <p class="form-label">Select Entity Type</p>
+                                        <select id="entity-dropdown" value="{{$citizen.modelId}}" data-hyui-showlabel="true">
+                                            {{$entityOptions}}
+                                        </select>
+                                    </div>
+                                    
+                                    <div class="spacer-sm"></div>
+                                    <div class="divider"></div>
+                                    <div class="spacer-sm"></div>
+                                    
+                                    <div class="form-group">
+                                        <p class="form-label">Or Enter Custom Model ID</p>
+                                        <input type="text" id="citizen-model-id" class="form-input" value="{{$citizen.modelId}}"
+                                               placeholder="Custom model ID" maxlength="64" />
+                                    </div>
+                                </div>
+                            </div>
+                            {{/if}}
+                        </div>
+                        
+                        <div class="spacer-md"></div>
+                        
+                        <!-- Scale Section -->
+                        <div class="section">
+                            {{@sectionHeader:title=Scale}}
+                            
+                            <div class="form-row">
+                                <div class="form-col-fixed" style="anchor-width: 200;">
+                                    <div class="form-group">
+                                        <p class="form-label">Scale Factor *</p>
+                                        <input type="number" id="citizen-scale" class="form-input"
+                                               value="{{$citizen.scale}}"
+                                               min="0.01" max="500" step="0.25"
+                                               data-hyui-max-decimal-places="2" />
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="spacer-md"></div>
+                        
+                        <!-- Permissions Section -->
+                        <div class="section">
+                            {{@sectionHeader:title=Permissions}}
+                            
+                            <div class="form-row">
+                                <div class="form-col">
+                                    <div class="form-group">
+                                        <div class="form-row">
+                                            <p class="form-label">Required Permission</p>
+                                            <p class="form-label-optional">(Optional)</p>
+                                        </div>
+                                        <input type="text" id="citizen-permission" class="form-input" value="{{$citizen.requiredPermission}}" 
+                                               placeholder="e.g., citizens.interact.vip" />
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="spacer-sm"></div>
+                            
+                            <div class="form-row">
+                                <div class="form-col">
+                                    <div class="form-group">
+                                        <div class="form-row">
+                                            <p class="form-label">No Permission Message</p>
+                                            <p class="form-label-optional">(Optional)</p>
+                                        </div>
+                                        <input type="text" id="citizen-perm-message" class="form-input" value="{{$citizen.noPermissionMessage}}" 
+                                               placeholder="e.g., You need VIP rank!" />
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="spacer-md"></div>
+                        
+                        <!-- Quick Actions Section -->
+                        <div class="section">
+                            {{@sectionHeader:title=Quick Actions,description=Manage commands and items and position}}
+                            
+                            <div class="form-row">
+                                <button id="edit-commands-btn" class="btn-info" style="anchor-width: 200; anchor-height: 44;">Edit Commands</button>
+                                <div class="spacer-h-sm"></div>
+                                <button id="set-items-btn" class="btn-warning" style="anchor-width: 200; anchor-height: 44;">Set Items</button>
+                                <div class="spacer-h-sm"></div>
+                                <button id="change-position-btn" class="btn-secondary" style="anchor-width: 200; anchor-height: 44;">Update Position</button>
+                            </div>
+                        </div>
+                        
+                        <div class="spacer-lg"></div>
+                        
+                    </div>
+                    
+                    <!-- Footer -->
+                    <div class="footer">
+                        <button id="cancel-btn" class="btn-ghost">Cancel</button>
+                        <div class="spacer-h-md"></div>
+                        <button id="save-btn" class="btn-primary" style="anchor-width: 220;">Save Changes</button>
+                    </div>
+                    
+                </div>
+            </div>
+            """);
 
         PageBuilder page = PageBuilder.pageForPlayer(playerRef)
                 .withLifetime(CustomPageLifetime.CanDismiss)
@@ -83,10 +1217,125 @@ public class CitizensUI {
         page.open(store);
     }
 
+    // Helper class to provide index information for command actions in templates
+    public static class IndexedCommandAction {
+        private final int index;
+        private final String command;
+        private final boolean runAsServer;
+
+        public IndexedCommandAction(int index, CommandAction action) {
+            this.index = index;
+            this.command = action.getCommand();
+            this.runAsServer = action.isRunAsServer();
+        }
+
+        public int getIndex() { return index; }
+        public String getCommand() { return command; }
+        public boolean isRunAsServer() { return runAsServer; }
+    }
+
     public void openCommandActionsGUI(@Nonnull PlayerRef playerRef, @Nonnull Store<EntityStore> store,
                                       @Nonnull String citizenId, @Nonnull List<CommandAction> actions,
                                       boolean isCreating) {
-        String html = buildCommandActionsHTML(actions);
+
+        // Create indexed actions for the template
+        List<IndexedCommandAction> indexedActions = new ArrayList<>();
+        for (int i = 0; i < actions.size(); i++) {
+            indexedActions.add(new IndexedCommandAction(i, actions.get(i)));
+        }
+
+        TemplateProcessor template = createBaseTemplate()
+                .setVariable("actions", indexedActions)
+                .setVariable("hasActions", !actions.isEmpty())
+                .setVariable("actionCount", actions.size());
+
+        String html = template.process(getSharedStyles() + """
+            <div class="page-overlay">
+                <div class="main-container" style="anchor-width: 850; anchor-height: 700;">
+                    
+                    <!-- Header -->
+                    <div class="header">
+                        <div class="header-content">
+                            <p class="header-title">Command Actions</p>
+                            <p class="header-subtitle">Configure commands that execute when players interact ({{$actionCount}} commands)</p>
+                        </div>
+                    </div>
+                    
+                    <!-- Body -->
+                    <div class="body">
+                        
+                        <!-- Add Command Section -->
+                        <div class="section">
+                            {{@sectionHeader:title=Add New Command}}
+                            
+                            <div class="form-row">
+                                <input type="text" id="new-command" class="form-input" value="" 
+                                       placeholder="Command without '/' (e.g., give {PlayerName} diamond 64)"
+                                       style="flex-weight: 1;" />
+                                <div class="spacer-h-sm"></div>
+                                <button id="add-command-btn" class="btn-primary" style="anchor-width: 120;">Add</button>
+                            </div>
+                            
+                            <div class="spacer-md"></div>
+                            
+                            <!-- Help Info -->
+                            <div class="card">
+                                <div class="card-body">
+                                    <p style="color: #8b949e; font-size: 11;"><span style="color: #58a6ff;">Variables:</span> Use {PlayerName} for player's name, {CitizenName} for citizen's name</p>
+                                    <div class="spacer-xs"></div>
+                                    <p style="color: #8b949e; font-size: 11;"><span style="color: #58a6ff;">Messages:</span> Start with {SendMessage} to send a message instead of running a command</p>
+                                    <div class="spacer-xs"></div>
+                                    <p style="color: #8b949e; font-size: 11;"><span style="color: #58a6ff;">Colors:</span> Use {RED}, {GREEN}, {BLUE}, {YELLOW}, {#HEX} for colored messages</p>
+                                    <div class="spacer-xs"></div>
+                                    <p style="color: #8b949e; font-size: 11;">Commands run as <span style="color: #58a6ff;">PLAYER</span> by default. Click toggle to run as <span style="color: #a371f7;">SERVER</span>.</p>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="spacer-md"></div>
+                        
+                        <!-- Commands List -->
+                        {{#if hasActions}}
+                        <div class="list-container" style="anchor-height: 320;">
+                            {{#each actions}}
+                            <div class="command-item">
+                                <div class="command-icon {{#if runAsServer}}command-icon-server{{else}}command-icon-player{{/if}}">
+                                    <p class="command-icon-text {{#if runAsServer}}command-icon-text-server{{else}}command-icon-text-player{{/if}}">{{#if runAsServer}}S{{else}}P{{/if}}</p>
+                                </div>
+                                <div class="command-content">
+                                    <p class="command-text">/{{$command}}</p>
+                                    <p class="command-type">Runs as {{#if runAsServer}}SERVER{{else}}PLAYER{{/if}}</p>
+                                </div>
+                                <div class="command-actions">
+                                    <button id="toggle-{{$index}}" class="btn-secondary btn-small">Toggle</button>
+                                    <div class="spacer-h-sm"></div>
+                                    <button id="delete-{{$index}}" class="btn-danger btn-small">Delete</button>
+                                </div>
+                            </div>
+                            <div class="spacer-sm"></div>
+                            {{/each}}
+                        </div>
+                        {{else}}
+                        <div class="empty-state">
+                            <div class="empty-state-content">
+                                <p class="empty-state-title">No Commands Added</p>
+                                <p class="empty-state-description">Add commands above to execute when players interact with this citizen.</p>
+                            </div>
+                        </div>
+                        {{/if}}
+                        
+                    </div>
+                    
+                    <!-- Footer -->
+                    <div class="footer">
+                        <button id="cancel-btn" class="btn-ghost">Cancel</button>
+                        <div class="spacer-h-md"></div>
+                        <button id="done-btn" class="btn-primary">Done</button>
+                    </div>
+                    
+                </div>
+            </div>
+            """);
 
         PageBuilder page = PageBuilder.pageForPlayer(playerRef)
                 .withLifetime(CustomPageLifetime.CanDismiss)
@@ -97,1274 +1346,14 @@ public class CitizensUI {
         page.open(store);
     }
 
-    private String buildMainHTML(Tab currentTab, int citizenCount) {
-        StringBuilder sb = new StringBuilder();
-
-        sb.append("""
-            <style>
-                .citizens-container {
-                    layout: top;
-                    anchor-width: 920;
-                    anchor-height: 500;
-                    background-color: #1a1a2e(0.95);
-                    border-radius: 8;
-                }
-                
-                .title-bar {
-                    layout: center;
-                    flex-weight: 0;
-                    background-color: #16213e(0.9);
-                    padding: 18;
-                    border-radius: 8 8 0 0;
-                }
-                
-                .title-text {
-                    color: #FFFFFF;
-                    font-size: 22;
-                    font-weight: bold;
-                    text-align: center;
-                }
-                
-                .stats-bar {
-                    layout: center;
-                    flex-weight: 0;
-                    background-color: #0f3460(0.7);
-                    padding: 14;
-                }
-                
-                .stat-item {
-                    layout: left;
-                    flex-weight: 0;
-                    padding: 10;
-                    background-color: #1a1a2e(0.8);
-                    border-radius: 4;
-                }
-                
-                .stat-label {
-                    color: #888888;
-                    font-size: 11;
-                }
-                
-                .stat-value {
-                    color: #00ff88;
-                    font-size: 16;
-                    padding-left: 8;
-                }
-                
-                .main-content {
-                    layout: top;
-                    flex-weight: 1;
-                    padding: 20;
-                }
-                
-                .tab-buttons {
-                    layout: center;
-                    flex-weight: 0;
-                    padding-top: 8;
-                    padding-bottom: 8;
-                }
-                
-                .tab-btn {
-                    flex-weight: 0;
-                    anchor-width: 220;
-                    anchor-height: 40;
-                    background-color: #16213e(0.6);
-                }
-                
-                .tab-spacer {
-                    flex-weight: 0;
-                    anchor-width: 16;
-                }
-                
-                .tab-active {
-                    background-color: #00d4ff(0.3);
-                }
-                
-                .content-section {
-                    layout: top;
-                    flex-weight: 1;
-                    padding: 16;
-                }
-                
-                .spacer-small {
-                    flex-weight: 0;
-                    anchor-height: 10;
-                }
-                
-                .spacer-medium {
-                    flex-weight: 0;
-                    anchor-height: 18;
-                }
-                
-                .spacer-large {
-                    flex-weight: 0;
-                    anchor-height: 24;
-                }
-                
-                .create-section {
-                    layout: top;
-                    flex-weight: 0;
-                    background-color: #0f3460(0.5);
-                    padding: 24;
-                    border-radius: 6;
-                    margin: 16;
-                }
-                
-                .create-title {
-                    color: #FFFFFF;
-                    font-size: 18;
-                    font-weight: bold;
-                    text-align: center;
-                }
-                
-                .create-desc {
-                    color: #aaaaaa;
-                    font-size: 12;
-                    text-align: center;
-                    padding-top: 8;
-                }
-                
-                .create-btn-row {
-                    layout: center;
-                    flex-weight: 0;
-                    padding-top: 20;
-                }
-                
-                .create-btn {
-                    flex-weight: 0;
-                    anchor-width: 260;
-                    anchor-height: 42;
-                }
-                
-                .citizen-card {
-                    layout: left;
-                    flex-weight: 0;
-                    background-color: #16213e(0.7);
-                    padding: 18;
-                    border-radius: 6;
-                    margin: 8;
-                }
-                
-                .citizen-info {
-                    layout: top;
-                    flex-weight: 1;
-                    padding-right: 16;
-                }
-                
-                .citizen-name {
-                    color: #FFFFFF;
-                    font-size: 16;
-                    font-weight: bold;
-                }
-                
-                .citizen-model-id {
-                    color: #00d4ff;
-                    font-size: 16;
-                    font-weight: bold;
-                }
-                
-                .citizen-scale {
-                    color: #00d4ff;
-                    font-size: 16;
-                    font-weight: bold;
-                }
-                
-                .citizen-detail {
-                    color: #aaaaaa;
-                    font-size: 11;
-                    padding-top: 4;
-                }
-                
-                .citizen-actions {
-                    layout: left;
-                    flex-weight: 0;
-                }
-                
-                .edit-btn {
-                    flex-weight: 0;
-                    anchor-width: 110;
-                    anchor-height: 38;
-                }
-                
-                .remove-btn {
-                    flex-weight: 0;
-                    anchor-width: 130;
-                    anchor-height: 38;
-                }
-                
-                .btn-spacer {
-                    flex-weight: 0;
-                    anchor-width: 10;
-                }
-                
-                .empty-state {
-                    layout: center;
-                    flex-weight: 1;
-                    padding: 32;
-                }
-                
-                .empty-icon {
-                    color: #444444;
-                    font-size: 48;
-                    text-align: center;
-                }
-                
-                .empty-text {
-                    color: #666666;
-                    font-size: 14;
-                    text-align: center;
-                    padding-top: 16;
-                }
-            </style>
-            
-            <div class="page-overlay">
-                <div class="citizens-container">
-                    <!-- Title Bar -->
-                    <div class="title-bar">
-                        <p class="title-text">Citizens Manager</p>
-                    </div>
-                    
-                    <!-- Stats Bar -->
-                    <div class="stats-bar">
-                        <div class="stat-item">
-                            <p class="stat-label">Total Citizens</p>
-                            <p class="stat-value">%d</p>
-                        </div>
-                    </div>
-                    
-                    <!-- Main Content -->
-                    <div class="main-content">
-                        <!-- Tab Navigation -->
-                        <div class="tab-buttons">
-                            <button id="tab-create" class="tab-btn%s">Create</button>
-                            <div class="tab-spacer"></div>
-                            <button id="tab-manage" class="tab-btn%s">Manage</button>
-                        </div>
-                        
-                        <div class="spacer-medium"></div>
-                        
-                        <!-- Content Section -->
-                        <div class="content-section">
-            """.formatted(
-                citizenCount,
-                currentTab == Tab.CREATE ? " tab-active" : "",
-                currentTab == Tab.MANAGE ? " tab-active" : ""
-        ));
-
-        if (currentTab == Tab.CREATE) {
-            sb.append(buildCreateTabContent());
-        } else {
-            sb.append(buildManageTabContent(plugin.getCitizensManager().getAllCitizens()));
-        }
-
-        sb.append("""
-                        </div>
-                    </div>
-                </div>
-            </div>
-            """);
-
-        return sb.toString();
-    }
-
-    private String buildCreateTabContent() {
-        return """
-                            <div class="create-section">
-                                <p class="create-title">Create a New Citizen</p>
-                                <p class="create-desc">Citizens are interactive NPCs that can execute commands and display custom messages.</p>
-                                <p class="create-desc">The NPC will spawn at your current position and rotation.</p>
-                                <div class="create-btn-row">
-                                    <button id="start-create" class="create-btn">Start Creating</button>
-                                </div>
-                            </div>
-                """;
-    }
-
-    private String buildManageTabContent(List<CitizenData> citizens) {
-        StringBuilder sb = new StringBuilder();
-
-        if (citizens.isEmpty()) {
-            sb.append("""
-                                <div class="empty-state">
-                                    <p class="empty-text">No citizens created yet.</p>
-                                    <p class="empty-text"> Switch to the Create tab to add your first citizen!</p>
-                                </div>
-                    """);
-            return sb.toString();
-        }
-
-        sb.append("<div id=\"citizens-list\" style=\"layout-mode: TopScrolling; padding: 6; anchor-height: 385;\">");
-
-        for (int i = 0; i < citizens.size(); i++) {
-            CitizenData citizen = citizens.get(i);
-
-            if (i > 0) {
-                sb.append("                            <div class=\"spacer-small\"></div>\n");
-            }
-
-            String permInfo = citizen.getRequiredPermission().isEmpty() ?
-                    "No permission required" :
-                    "Requires: " + citizen.getRequiredPermission();
-
-            String commandInfo = citizen.getCommandActions().isEmpty() ?
-                    "No commands" :
-                    citizen.getCommandActions().size() + " command(s)";
-
-            sb.append("""
-                                <div class="citizen-card">
-                                    <div class="citizen-info">
-                                        <p class="citizen-name">%s</p>
-                                        <p class="citizen-detail">ID: %s</p>
-                                        <p class="citizen-detail">Model: %s</p>
-                                        <p class="citizen-detail">%s • %s</p>
-                                    </div>
-                                    <div class="citizen-actions">
-                                        <button id="edit-%d" class="edit-btn">Edit</button>
-                                        <div class="btn-spacer"></div>
-                                        <button id="remove-%d" class="remove-btn">Remove</button>
-                                    </div>
-                                </div>
-                    """.formatted(
-                    citizen.getName(),
-                    citizen.getId(),
-                    citizen.getModelId(),
-                    permInfo,
-                    commandInfo,
-                    i,
-                    i
-            ));
-        }
-
-        sb.append("</div>");
-
-        return sb.toString();
-    }
-
-    private String buildCreateCitizenHTML(boolean isPlayerModel) {
-        return """
-            <style>
-                .form-container {
-                    layout: top;
-                    anchor-width: 800;
-                    anchor-height: 930;
-                    background-color: #1a1a2e(0.95);
-                    border-radius: 8;
-                }
-                
-                .form-header {
-                    layout: center;
-                    flex-weight: 0;
-                    background-color: #16213e(0.9);
-                    padding: 18;
-                    border-radius: 8 8 0 0;
-                }
-                
-                .form-title {
-                    color: #00d4ff;
-                    font-size: 20;
-                    font-weight: bold;
-                }
-                
-                .form-content {
-                    layout: top;
-                    flex-weight: 1;
-                    padding: 24;
-                }
-                
-                .form-section {
-                    layout: top;
-                    flex-weight: 0;
-                    padding-left: 12;
-                    padding-right: 12;
-                }
-                
-                .form-label {
-                    color: #ffffff;
-                    font-size: 13;
-                    font-weight: bold;
-                    padding-bottom: 6;
-                }
-                
-                .form-hint {
-                    color: #888888;
-                    font-size: 10;
-                    padding-top: 4;
-                }
-                
-                .form-input {
-                    flex-weight: 0;
-                    anchor-height: 36;
-                }
-                
-                .spacer-small {
-                    flex-weight: 0;
-                    anchor-height: 12;
-                }
-                
-                .spacer-medium {
-                    flex-weight: 0;
-                    anchor-height: 18;
-                }
-                
-                .button-row {
-                    layout: center;
-                    flex-weight: 0;
-                    padding-top: 24;
-                    padding-bottom: 16;
-                }
-                
-                .action-btn {
-                    flex-weight: 0;
-                    anchor-width: 160;
-                    anchor-height: 42;
-                }
-                
-                .primary-btn {
-                    
-                }
-                
-                .secondary-btn {
-                    
-                }
-                
-                .danger-btn {
-                    
-                }
-                
-                .btn-spacer {
-                    flex-weight: 0;
-                    anchor-width: 12;
-                }
-                
-                .info-box {
-                    layout: top;
-                    flex-weight: 0;
-                    background-color: #00d4ff(0.15);
-                    padding: 14;
-                    border-radius: 4;
-                    margin-left: 12;
-                    margin-right: 12;
-                }
-                
-                .info-text {
-                    color: #FFFFFF;
-                    font-size: 11;
-                }
-
-                .toggle-buttons {
-                    layout: center;
-                    flex-weight: 0;
-                    padding-top: 8;
-                    padding-bottom: 8;
-                }
-
-                .toggle-btn {
-                    flex-weight: 0;
-                    anchor-width: 180;
-                    anchor-height: 38;
-                    
-                }
-
-                .toggle-active {
-                    
-                }
-
-                .skin-section {
-                    layout: top;
-                    flex-weight: 0;
-                    background-color: #0f3460(0.3);
-                    padding: 14;
-                    border-radius: 4;
-                    margin-left: 12;
-                    margin-right: 12;
-                }
-                
-                .checkbox {
-                        padding: 0;
-                        margin: 0;
-                    }
-
-                .checkbox-row {
-                    layout: left;
-                    flex-weight: 0;
-                    padding-top: 8;
-                }
-
-                .checkbox-label {
-                    color: #ffffff;
-                    font-size: 12;
-                    padding-left: -30;
-                }
-            </style>
-            
-            <div class="page-overlay">
-                <div class="form-container">
-                    <!-- Header -->
-                    <div class="form-header">
-                        <p class="form-title">Create New Citizen</p>
-                    </div>
-                    
-                    <!-- Form Content -->
-                    <div class="form-content">
-                        <!-- Info Box -->
-                        <div class="info-box">
-                            <p class="info-text">The citizen will spawn at your current position and rotation</p>
-                        </div>
-                        
-                        <div class="spacer-medium"></div>
-                        
-                        <!-- Name Input -->
-                        <div class="form-section">
-                            <p class="form-label">Citizen Name *</p>
-                            <input type="text" id="citizen-name" class="form-input" value="" 
-                                   placeholder="Enter citizen name" maxlength="32" />
-                            <p class="form-hint">This will be displayed above the NPC</p>
-                        </div>
-                        
-                        <div class="spacer-medium"></div>
-                        
-                        <!-- Nametag Offset Input -->
-                        <div class="form-section">
-                            <p class="form-label">Nametag Offset</p>
-                            <input type="number" id="nametag-offset" class="form-input"
-                                   value="0.0"
-                                   placeholder="Enter an offset"
-                                   min="-500"
-                                   max="500"
-                                   step="0.25"
-                                   data-hyui-max-decimal-places="2" />
-                            <p class="form-hint">Unless you're using a non-player entity, you should usually keep this at 0</p>
-                        </div>
-                        
-                        <div class="spacer-small"></div>
-
-                        <!-- Hide Nametag Checkbox -->
-                        <div class="checkbox-row">
-                            <input type="checkbox" id="hide-nametag-check" value="false" />
-                            <p class="checkbox-label">Hide the citizen's nametag</p>
-                        </div>
-                        
-                        <div class="spacer-medium"></div>
-
-                        <!-- Model Type Selection -->
-                        <div class="form-section">
-                            <p class="form-label">Entity Type *</p>
-                            <div class="toggle-buttons">
-                                <button id="type-player" class="toggle-btn%s">Player</button>
-                                <div class="btn-spacer"></div>
-                                <button id="type-entity" class="toggle-btn%s">Other Entity</button>
-                            </div>
-                        </div>
-
-                        <div class="spacer-medium"></div>
-
-                        <!-- Player Skin Section -->
-                        <div id="player-skin-section" class="form-section"%s>
-                            <div class="skin-section">
-                                <p class="form-label">Player Skin Configuration</p>
-                                <div class="spacer-small"></div>
-
-                                <!-- Username Input -->
-                                <input type="text" id="skin-username" class="form-input" value=""
-                                       placeholder="Enter username (can be offline)" />
-                                <p class="form-hint">Leave empty to use current player's skin</p>
-
-                                <div class="spacer-small"></div>
-
-                                <!-- Get Current Player Skin Button -->
-                                <div class="button-row">
-                                    <button id="get-player-skin-btn" class="action-btn secondary-btn">Use My Skin</button>
-                                </div>
-
-                                <div class="spacer-small"></div>
-
-                                <!-- Live Skin Checkbox -->
-                                <div class="checkbox-row">
-                                    <input type="checkbox" id="live-skin-check" value="false" />
-                                    <p class="checkbox-label">Enable Live Skin Updates (refreshes every 30 minutes)</p>
-                                </div>
-                                
-                                <!-- Rotate Towards Player Checkbox -->
-                                <div class="checkbox-row">
-                                    <input type="checkbox" id="rotate-towards-player" value="true" />
-                                    <p class="checkbox-label">Rotates towards player</p>
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- Model ID Input -->
-                        <div id="model-id-section" class="form-section"%s>
-                            <p class="form-label">Model ID *</p>
-                            <input type="text" id="citizen-model-id" class="form-input" value="PlayerTestModel_V"
-                                   placeholder="Enter model ID" maxlength="32" />
-                            <p class="form-hint">PlayerTestModel_V, Sheep, etc.</p>
-                        </div>
-
-                        <div class="spacer-medium"></div>
-                        
-                        <!-- Scale Input -->
-                        <div class="form-section">
-                            <p class="form-label">Scale *</p>
-                            <input type="number" id="citizen-scale" class="form-input"
-                                   value="1.0"
-                                   placeholder="Enter a scale"
-                                   min="0.01"
-                                   max="500"
-                                   step="0.25"
-                                   data-hyui-max-decimal-places="2" />
-                            <p class="form-hint">Default is 1.0</p>
-                        </div>
-                        
-                        <div class="spacer-medium"></div>
-                        
-                        <!-- Permission Input -->
-                        <div class="form-section">
-                            <p class="form-label">Required Permission (Optional)</p>
-                            <input type="text" id="citizen-permission" class="form-input" value="" 
-                                   placeholder="e.g., citizens.interact.vip" />
-                            <p class="form-hint">Leave empty to allow everyone to interact</p>
-                        </div>
-                        
-                        <div class="spacer-medium"></div>
-                        
-                        <!-- Permission Message Input -->
-                        <div class="form-section">
-                            <p class="form-label">No Permission Message (Optional)</p>
-                            <input type="text" id="citizen-perm-message" class="form-input" value="" 
-                                   placeholder="e.g., You need VIP rank to interact!" />
-                            <p class="form-hint">Message shown when player lacks permission</p>
-                        </div>
-                        
-                        <div class="spacer-medium"></div>
-                        
-                        <!-- Actions Buttons -->
-                        <div class="button-row">
-                            <!--<button id="edit-commands-btn" class="action-btn secondary-btn">Commands</button>
-                            <div class="btn-spacer"></div>-->
-                            <button id="create-btn" class="action-btn primary-btn">Create</button>
-                            <div class="btn-spacer"></div>
-                            <button id="cancel-btn" class="action-btn danger-btn">Cancel</button>
-                        </div>
-                    </div>
-                </div>
-            </div>
-            """.formatted(
-                isPlayerModel ? " toggle-active" : "",
-                !isPlayerModel ? " toggle-active" : "",
-                isPlayerModel ? "" : " style=\"display: none;\"",
-                !isPlayerModel ? "" : " style=\"display: none;\""
-        );
-    }
-
-    private String buildEditCitizenHTML(CitizenData citizen) {
-        String permValue = citizen.getRequiredPermission().isEmpty() ? "" : citizen.getRequiredPermission();
-        String permMessage = citizen.getNoPermissionMessage().isEmpty() ? "" : citizen.getNoPermissionMessage();
-
-        return """
-            <style>
-                .form-container {
-                    layout: top;
-                    anchor-width: 800;
-                    anchor-height: 885;
-                    background-color: #1a1a2e(0.95);
-                    border-radius: 8;
-                }
-                
-                .form-header {
-                    layout: center;
-                    flex-weight: 0;
-                    background-color: #16213e(0.9);
-                    padding: 18;
-                    border-radius: 8 8 0 0;
-                }
-                
-                .form-title {
-                    color: #FFFFFF;
-                    font-size: 20;
-                    font-weight: bold;
-                }
-                
-                .form-subtitle {
-                    color: #888888;
-                    font-size: 11;
-                    padding-top: 4;
-                }
-                
-                .form-content {
-                    layout: top;
-                    flex-weight: 1;
-                    padding: 24;
-                }
-                
-                .form-section {
-                    layout: top;
-                    flex-weight: 0;
-                    padding-left: 12;
-                    padding-right: 12;
-                }
-                
-                .form-label {
-                    color: #ffffff;
-                    font-size: 13;
-                    font-weight: bold;
-                    padding-bottom: 6;
-                }
-                
-                .form-hint {
-                    color: #888888;
-                    font-size: 10;
-                    padding-top: 4;
-                }
-                
-                .form-input {
-                    flex-weight: 0;
-                    anchor-height: 36;
-                }
-                
-                .spacer-small {
-                    flex-weight: 0;
-                    anchor-height: 12;
-                }
-                
-                .spacer-medium {
-                    flex-weight: 0;
-                    anchor-height: 18;
-                }
-                
-                .button-row {
-                    layout: center;
-                    flex-weight: 0;
-                    padding-top: 20;
-                    padding-bottom: 16;
-                }
-                
-                .action-btn {
-                    flex-weight: 0;
-                    anchor-width: 150;
-                    anchor-height: 42;
-                }
-                
-                .primary-btn {
-                    
-                }
-                
-                .secondary-btn {
-                    
-                }
-                
-                .warning-btn {
-                    
-                }
-                
-                .danger-btn {
-                    
-                }
-                
-                .btn-spacer {
-                    flex-weight: 0;
-                    anchor-width: 10;
-                }
-
-                .toggle-buttons {
-                    layout: center;
-                    flex-weight: 0;
-                    padding-top: 8;
-                    padding-bottom: 8;
-                }
-
-                .toggle-btn {
-                    flex-weight: 0;
-                    anchor-width: 180;
-                    anchor-height: 38;
-                    
-                }
-
-                .toggle-active {
-                    
-                }
-
-                .skin-section {
-                    layout: top;
-                    flex-weight: 0;
-                    background-color: #0f3460(0.3);
-                    padding: 14;
-                    border-radius: 4;
-                    margin-left: 12;
-                    margin-right: 12;
-                }
-                
-                .checkbox {
-                        padding: 0;
-                        margin: 0;
-                    }
-
-                .checkbox-row {
-                    layout: left;
-                    flex-weight: 0;
-                    padding-top: 8;
-                }
-
-                .checkbox-label {
-                    color: #ffffff;
-                    font-size: 12;
-                    padding-left: -30;
-                }
-            </style>
-
-            <div class="page-overlay">
-                <div class="form-container">
-                    <!-- Header -->
-                    <div class="form-header">
-                        <p class="form-title">Edit Citizen</p>
-                    </div>
-
-                    <!-- Form Content -->
-                    <div class="form-content">
-                        <p class="form-subtitle">ID: %s</p>
-
-                        <div class="spacer-small"></div>
-
-                        <!-- Name Input -->
-                        <div class="form-section">
-                            <p class="form-label">Citizen Name *</p>
-                            <input type="text" id="citizen-name" class="form-input" value="%s"
-                                   placeholder="Enter citizen name" maxlength="32" />
-                        </div>
-                        
-                         <div class="spacer-small"></div>
-                         
-                        <!-- Nametag Offset Input -->
-                        <div class="form-section">
-                            <p class="form-label">Nametag Offset *</p>
-                            <input type="number" id="nametag-offset" class="form-input"
-                                   value="%s"
-                                   placeholder="Enter an offset"
-                                   min="-500"
-                                   max="500"
-                                   step="0.25"
-                                   data-hyui-max-decimal-places="2" />
-                            <p class="form-hint">Unless you're using a non-player entity, you should usually keep this at 0</p>
-                        </div>
-
-                        <div class="spacer-medium"></div>
-
-                        <!-- Hide Nametag Checkbox -->
-                        <div class="checkbox-row">
-                            <input type="checkbox" id="hide-nametag-check"%s />
-                            <p class="checkbox-label">Hide the citizen's nametag</p>
-                        </div>
-                        
-                        <div class="spacer-medium"></div>
-
-                        <!-- Model Type Selection -->
-                        <div class="form-section">
-                            <p class="form-label">Entity Type *</p>
-                            <div class="toggle-buttons">
-                                <button id="type-player" class="toggle-btn%s">Player</button>
-                                <div class="btn-spacer"></div>
-                                <button id="type-entity" class="toggle-btn%s">Other Entity</button>
-                            </div>
-                        </div>
-
-                        <div class="spacer-medium"></div>
-
-                        <!-- Player Skin Section -->
-                        <div id="player-skin-section" class="form-section"%s>
-                            <div class="skin-section">
-                                <p class="form-label">Player Skin Configuration</p>
-                                <div class="spacer-small"></div>
-
-                                <!-- Username Input -->
-                                <input type="text" id="skin-username" class="form-input" value="%s"
-                                       placeholder="Enter username to fetch skin from PlayerDB" />
-                                <p class="form-hint">Leave empty to use current player's skin</p>
-
-                                <div class="spacer-small"></div>
-
-                                <!-- Get Current Player Skin Button -->
-                                <div class="button-row">
-                                    <button id="get-player-skin-btn" class="action-btn secondary-btn" style="anchor-width: 200;">Use My Skin</button>
-                                </div>
-
-                                <div class="spacer-small"></div>
-
-                                <!-- Live Skin Checkbox -->
-                                <div class="checkbox-row">
-                                    <input type="checkbox" id="live-skin-check"%s />
-                                    <p class="checkbox-label">Enable Live Skin Updates (refreshes every 30 minutes)</p>
-                                </div>
-                                
-                                <!-- Rotate Towards Player Checkbox -->
-                                <div class="checkbox-row">
-                                    <input type="checkbox" id="rotate-towards-player"%s />
-                                    <p class="checkbox-label">Rotates towards player</p>
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- Model ID Input -->
-                        <div id="model-id-section" class="form-section"%s>
-                            <p class="form-label">Model ID *</p>
-                            <input type="text" id="citizen-model-id" class="form-input" value="%s"
-                                   placeholder="Player, PlayerTestModel_V, Sheep, etc." maxlength="32" />
-                            <p class="form-hint">PlayerTestModel_V, Sheep, etc.</p>
-                        </div>
-
-                        <div class="spacer-medium"></div>
-                
-                        <!-- Scale Input -->
-                        <div class="form-section">
-                            <p class="form-label">Scale *</p>
-                            <input type="number" id="citizen-scale" class="form-input"
-                                   value="%s"
-                                   placeholder="Enter a scale"
-                                   min="0.01"
-                                   max="500"
-                                   step="0.25"
-                                   data-hyui-max-decimal-places="2" />
-                            <p class="form-hint">Default is 1.0</p>
-                        </div>
-                        
-                        <div class="spacer-medium"></div>
-                        
-                        <!-- Permission Input -->
-                        <div class="form-section">
-                            <p class="form-label">Required Permission (Optional)</p>
-                            <input type="text" id="citizen-permission" class="form-input" value="%s" 
-                                   placeholder="e.g., citizens.interact.vip" />
-                            <p class="form-hint">Leave empty to allow everyone to interact</p>
-                        </div>
-                        
-                        <div class="spacer-medium"></div>
-                        
-                        <!-- Permission Message Input -->
-                        <div class="form-section">
-                            <p class="form-label">No Permission Message (Optional)</p>
-                            <input type="text" id="citizen-perm-message" class="form-input" value="%s" 
-                                   placeholder="e.g., You need VIP rank to interact!" />
-                        </div>
-                        
-                        <div class="spacer-medium"></div>
-                        
-                        <!-- Actions Buttons -->
-                        <div class="button-row">
-                            <button id="edit-commands-btn" class="action-btn secondary-btn">Commands</button>
-                            <div class="btn-spacer"></div>
-                            <button id="set-items-btn" class="action-btn warning-btn">Items</button>
-                            <div class="btn-spacer"></div>
-                            <button id="change-position-btn" class="action-btn warning-btn">Position</button>
-                            <div class="btn-spacer"></div>
-                            <button id="save-btn" class="action-btn primary-btn">Save</button>
-                            <div class="btn-spacer"></div>
-                            <button id="cancel-btn" class="action-btn danger-btn">Cancel</button>
-                        </div>
-                    </div>
-                </div>
-            </div>
-            """.formatted(
-                citizen.getId(),
-                citizen.getName(),
-                String.valueOf(citizen.getNametagOffset()),
-                citizen.isHideNametag() ? " value=\"true\" checked" : " value=\"false\"",
-                citizen.isPlayerModel() ? " toggle-active" : "",
-                !citizen.isPlayerModel() ? " toggle-active" : "",
-                citizen.isPlayerModel() ? "" : " style=\"display: none;\"",
-                citizen.getSkinUsername(),
-                citizen.isUseLiveSkin() ? " value=\"true\" checked" : " value=\"false\"",
-                citizen.getRotateTowardsPlayer() ? " value=\"true\" checked" : " value=\"false\"",
-                !citizen.isPlayerModel() ? "" : " style=\"display: none;\"",
-                citizen.getModelId(),
-                String.valueOf(citizen.getScale()),
-                permValue,
-                permMessage
-        );
-    }
-
-    private String buildCommandActionsHTML(List<CommandAction> actions) {
-        StringBuilder sb = new StringBuilder();
-
-        sb.append("""
-            <style>
-                .commands-container {
-                    layout: top;
-                    anchor-width: 800;
-                    anchor-height: 640;
-                    background-color: #1a1a2e(0.95);
-                    border-radius: 8;
-                }
-                
-                .commands-header {
-                    layout: center;
-                    flex-weight: 0;
-                    background-color: #16213e(0.9);
-                    padding: 18;
-                    border-radius: 8 8 0 0;
-                }
-                
-                .commands-title {
-                    color: #FFFFFF;
-                    font-size: 20;
-                    font-weight: bold;
-                }
-                
-                .commands-content {
-                    layout: top;
-                    flex-weight: 1;
-                    padding: 24;
-                }
-                
-                .add-section {
-                    layout: top;
-                    flex-weight: 0;
-                    background-color: #0f3460(0.5);
-                    padding: 18;
-                    border-radius: 6;
-                    margin-left: 8;
-                    margin-right: 8;
-                }
-                
-                .add-title {
-                    color: #ffffff;
-                    font-size: 14;
-                    font-weight: bold;
-                    padding-bottom: 12;
-                }
-                
-                .add-row {
-                    layout: left;
-                    flex-weight: 0;
-                }
-                
-                .add-input {
-                    flex-weight: 1;
-                    anchor-height: 40;
-                }
-                
-                .add-btn {
-                    flex-weight: 0;
-                    anchor-width: 130;
-                    anchor-height: 40;
-                }
-                
-                .input-spacer {
-                    flex-weight: 0;
-                    anchor-width: 12;
-                }
-                
-                .form-hint {
-                    color: #888888;
-                    font-size: 10;
-                    padding-top: 6;
-                }
-                
-                .spacer-small {
-                    flex-weight: 0;
-                    anchor-height: 10;
-                }
-                
-                .spacer-medium {
-                    flex-weight: 0;
-                    anchor-height: 18;
-                }
-                
-                .commands-list {
-                    layout: top;
-                    flex-weight: 1;
-                    padding-left: 8;
-                    padding-right: 8;
-                }
-                
-                .command-card {
-                    layout: left;
-                    flex-weight: 0;
-                    background-color: #16213e(0.7);
-                    padding: 16;
-                    border-radius: 6;
-                }
-                
-                .command-info {
-                    layout: top;
-                    flex-weight: 1;
-                    padding-right: 12;
-                }
-                
-                .command-text {
-                    color: #00ff88;
-                    font-size: 13;
-                    font-weight: bold;
-                }
-                
-                .command-type {
-                    color: #aaaaaa;
-                    font-size: 11;
-                    padding-top: 4;
-                }
-                
-                .command-actions {
-                    layout: left;
-                    flex-weight: 0;
-                }
-                
-                .toggle-btn {
-                    flex-weight: 0;
-                    anchor-width: 130;
-                    anchor-height: 38;
-                }
-                
-                .delete-btn {
-                    flex-weight: 0;
-                    anchor-width: 130;
-                    anchor-height: 38;
-                }
-                
-                .btn-spacer {
-                    flex-weight: 0;
-                    anchor-width: 10;
-                }
-                
-                .button-row {
-                    layout: center;
-                    flex-weight: 0;
-                    padding-top: 20;
-                    padding-bottom: 16;
-                }
-                
-                .action-btn {
-                    flex-weight: 0;
-                    anchor-width: 180;
-                    anchor-height: 42;
-                }
-                
-                .primary-btn {
-                    
-                }
-                
-                .secondary-btn {
-                    
-                }
-                
-                .empty-state {
-                    layout: center;
-                    flex-weight: 1;
-                    padding: 32;
-                }
-                
-                .empty-text {
-                    color: #666666;
-                    font-size: 13;
-                    text-align: center;
-                }
-            </style>
-            
-            <div class="page-overlay">
-                <div class="commands-container">
-                    <!-- Header -->
-                    <div class="commands-header">
-                        <p class="commands-title">Command Actions</p>
-                    </div>
-                    
-                    <!-- Content -->
-                    <div class="commands-content">
-                        <!-- Add Command Section -->
-                        <div class="add-section">
-                            <p class="add-title">Add New Command</p>
-                            <div class="add-row">
-                                <input type="text" id="new-command" class="add-input" value="" 
-                                       placeholder="Command without '/' (e.g., give {PlayerName} Rock_Gem_Diamond)" />
-                                <div class="input-spacer"></div>
-                                <button id="add-command-btn" class="add-btn">Add</button>
-                            </div>
-                            <p class="form-hint">Command will execute as PLAYER by default. Click toggle to change.</p>
-                            <p class="form-hint">You can use "{PlayerName}" which will be replaced by the player's username.</p>
-                            <p class="form-hint">You can use also "{CitizenName}" which will be replaced by the citizen's username.</p>
-                            <p class="form-hint">
-                                If you want to send a player a message, start the command with "{SendMessage}".
-                            </p>
-                            <p class="form-hint">
-                                You can use HEX values or named colors BEFORE the text to set its color.
-                            </p>
-                            <p class="form-hint">
-                                Supported named colors include {RED}, {GREEN}, {BLUE}, {YELLOW}, {ORANGE}, {PINK}, {PURPLE}, {BLACK}, {WHITE}, {CYAN}, and more.
-                            </p>
-                            <p class="form-hint">
-                                Colors will remain in effect until another color is specified.
-                            </p>
-                            <p class="form-hint">
-                                Example: "{SendMessage} {BLUE} Info: {#FFA500} Warning!" – "Info:" in blue, "Warning!" in orange using HEX.
-                            </p>
-                        </div>
-                        
-                        <div class="spacer-medium"></div>
-                        
-                        <!-- Commands List -->
-                        <div class="commands-list">
-            """);
-
-        if (actions.isEmpty()) {
-            sb.append("""
-                                <div class="empty-state">
-                                    <p class="empty-text">No commands added yet.</p>
-                                    <p class="empty-text">Add commands above to execute when players interact.</p>
-                                </div>
-                    """);
-        } else {
-            sb.append("<div id=\"commands-list\" style=\"layout-mode: TopScrolling; padding: 6; anchor-height: 335;\">");
-
-            for (int i = 0; i < actions.size(); i++) {
-                if (i > 0) {
-                    sb.append("                            <div class=\"spacer-small\"></div>\n");
-                }
-
-                CommandAction action = actions.get(i);
-                String typeLabel = action.isRunAsServer() ? "As SERVER" : "As PLAYER";
-
-                sb.append("""
-                                <div class="command-card">
-                                    <div class="command-info">
-                                        <p class="command-text">/%s</p>
-                                        <p class="command-type">Runs %s</p>
-                                    </div>
-                                    <div class="command-actions">
-                                        <button id="toggle-%d" class="toggle-btn">Toggle</button>
-                                        <div class="btn-spacer"></div>
-                                        <button id="delete-%d" class="delete-btn">Delete</button>
-                                    </div>
-                                </div>
-                        """.formatted(action.getCommand(), typeLabel, i, i));
-            }
-
-            sb.append("</div>");
-        }
-
-        sb.append("""
-                        </div>
-                        
-                        <!-- Action Buttons -->
-                        <div class="button-row">
-                            <button id="done-btn" class="action-btn primary-btn">Done</button>
-                            <div class="btn-spacer"></div>
-                            <button id="cancel-btn" class="action-btn secondary-btn">Cancel</button>
-                        </div>
-                    </div>
-                </div>
-            </div>
-            """);
-
-        return sb.toString();
-    }
-
     private void setupMainEventListeners(PageBuilder page, PlayerRef playerRef, Store<EntityStore> store,
                                          Tab currentTab, List<CitizenData> citizens) {
         // Tab switching
         page.addEventListener("tab-create", CustomUIEventBindingType.Activating, event ->
                 openCitizensGUI(playerRef, store, Tab.CREATE));
 
-        page.addEventListener("tab-manage", CustomUIEventBindingType.Activating, (event, ctx) -> {
-            // Rebuild manage tab content
-            ctx.getById("content-section", au.ellie.hyui.builders.GroupBuilder.class).ifPresent(group -> {
-            });
-            openCitizensGUI(playerRef, store, Tab.MANAGE);
-        });
+        page.addEventListener("tab-manage", CustomUIEventBindingType.Activating, event ->
+                openCitizensGUI(playerRef, store, Tab.MANAGE));
 
         // Create button
         if (currentTab == Tab.CREATE) {
@@ -1374,15 +1363,14 @@ public class CitizensUI {
 
         // Manage tab - edit and remove buttons
         if (currentTab == Tab.MANAGE) {
-            for (int i = 0; i < citizens.size(); i++) {
-                final int index = i;
-                final CitizenData citizen = citizens.get(i);
+            for (CitizenData citizen : citizens) {
+                final String cid = citizen.getId();
 
-                page.addEventListener("edit-" + i, CustomUIEventBindingType.Activating, event ->
+                page.addEventListener("edit-" + cid, CustomUIEventBindingType.Activating, event ->
                         openEditCitizenGUI(playerRef, store, citizen));
 
-                page.addEventListener("remove-" + i, CustomUIEventBindingType.Activating, event -> {
-                    plugin.getCitizensManager().removeCitizen(citizen.getId());
+                page.addEventListener("remove-" + cid, CustomUIEventBindingType.Activating, event -> {
+                    plugin.getCitizensManager().removeCitizen(cid);
                     playerRef.sendMessage(Message.raw("Citizen '" + citizen.getName() + "' removed!").color(Color.GREEN));
                     openCitizensGUI(playerRef, store, Tab.MANAGE);
                 });
@@ -1391,7 +1379,7 @@ public class CitizensUI {
     }
 
     private void setupCreateCitizenListeners(PageBuilder page, PlayerRef playerRef, Store<EntityStore> store,
-                                            boolean initialIsPlayerModel, String initialName, float initialNametagOffset,
+                                             boolean initialIsPlayerModel, String initialName, float initialNametagOffset,
                                              boolean initialHideNametag, String initialModelId, float initialScale,
                                              String initialPermission, String initialPermMessage, boolean initialUseLiveSkin,
                                              String initialSkinUsername, boolean initialRotateTowardsPlayer) {
@@ -1413,9 +1401,40 @@ public class CitizensUI {
             currentName[0] = ctx.getValue("citizen-name", String.class).orElse("");
         });
 
-        page.addEventListener("citizen-model-id", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
-            currentModelId[0] = ctx.getValue("citizen-model-id", String.class).orElse("");
-        });
+        // Entity-specific listeners (only when NOT in player model mode)
+        if (!initialIsPlayerModel) {
+            page.addEventListener("citizen-model-id", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
+                currentModelId[0] = ctx.getValue("citizen-model-id", String.class).orElse("");
+            });
+
+            // Entity dropdown selection
+            page.addEventListener("entity-dropdown", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
+                ctx.getValue("entity-dropdown", String.class).ifPresent(val -> {
+                    currentModelId[0] = val;
+                });
+            });
+        }
+
+        // Player-specific listeners (only when in player model mode)
+        if (initialIsPlayerModel) {
+            page.addEventListener("skin-username", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
+                skinUsername[0] = ctx.getValue("skin-username", String.class).orElse("");
+            });
+
+            page.addEventListener("live-skin-check", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
+                useLiveSkin[0] = ctx.getValue("live-skin-check", Boolean.class).orElse(false);
+            });
+
+            page.addEventListener("rotate-towards-player", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
+                rotateTowardsPlayer[0] = ctx.getValue("rotate-towards-player", Boolean.class).orElse(true);
+            });
+
+            // Get current player skin button
+            page.addEventListener("get-player-skin-btn", CustomUIEventBindingType.Activating, event -> {
+                skinUsername[0] = playerRef.getUsername();
+                playerRef.sendMessage(Message.raw("Using your skin for this citizen!").color(Color.GREEN));
+            });
+        }
 
         page.addEventListener("nametag-offset", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
             ctx.getValue("nametag-offset", Double.class)
@@ -1427,6 +1446,7 @@ public class CitizensUI {
                             try {
                                 nametagOffset[0] = Float.parseFloat(val);
                             } catch (NumberFormatException e) {
+                                // Ignore
                             }
                         });
             }
@@ -1446,6 +1466,7 @@ public class CitizensUI {
                             try {
                                 currentScale[0] = Float.parseFloat(val);
                             } catch (NumberFormatException e) {
+                                // Ignore
                             }
                         });
             }
@@ -1459,42 +1480,18 @@ public class CitizensUI {
             currentPermMessage[0] = ctx.getValue("citizen-perm-message", String.class).orElse("");
         });
 
-        page.addEventListener("skin-username", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
-            skinUsername[0] = ctx.getValue("skin-username", String.class).orElse("");
-        });
-
-        page.addEventListener("live-skin-check", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
-            useLiveSkin[0] = ctx.getValue("live-skin-check", Boolean.class).orElse(false);
-        });
-
-        page.addEventListener("rotate-towards-player", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
-            rotateTowardsPlayer[0] = ctx.getValue("rotate-towards-player", Boolean.class).orElse(true);
-        });
-
         // Entity type toggle buttons
         page.addEventListener("type-player", CustomUIEventBindingType.Activating, (event, ctx) -> {
             openCreateCitizenGUI(playerRef, store, true, currentName[0], nametagOffset[0], hideNametag[0], currentModelId[0],
-                                currentScale[0], currentPermission[0], currentPermMessage[0], useLiveSkin[0], true,
-                                skinUsername[0], rotateTowardsPlayer[0]);
+                    currentScale[0], currentPermission[0], currentPermMessage[0], useLiveSkin[0], true,
+                    skinUsername[0], rotateTowardsPlayer[0]);
         });
 
         page.addEventListener("type-entity", CustomUIEventBindingType.Activating, (event, ctx) -> {
             openCreateCitizenGUI(playerRef, store, false, currentName[0], nametagOffset[0], hideNametag[0], currentModelId[0],
-                                currentScale[0], currentPermission[0], currentPermMessage[0], useLiveSkin[0], true,
-                                skinUsername[0], rotateTowardsPlayer[0]);
+                    currentScale[0], currentPermission[0], currentPermMessage[0], useLiveSkin[0], true,
+                    skinUsername[0], rotateTowardsPlayer[0]);
         });
-
-        // Get current player skin button
-        page.addEventListener("get-player-skin-btn", CustomUIEventBindingType.Activating, event -> {
-            skinUsername[0] = playerRef.getUsername();
-            playerRef.sendMessage(Message.raw("Using your skin for this citizen!").color(Color.GREEN));
-        });
-
-        // Edit commands button
-//        page.addEventListener("edit-commands-btn", CustomUIEventBindingType.Activating, event -> {
-//            String tempId = "temp-" + UUID.randomUUID().toString();
-//            openCommandActionsGUI(playerRef, store, tempId, tempActions, true);
-//        });
 
         // Create button
         page.addEventListener("create-btn", CustomUIEventBindingType.Activating, event -> {
@@ -1511,23 +1508,10 @@ public class CitizensUI {
             } else {
                 modelId = currentModelId[0].trim();
                 if (modelId.isEmpty()) {
-                    playerRef.sendMessage(Message.raw("Please enter a model ID!").color(Color.RED));
+                    playerRef.sendMessage(Message.raw("Please select or enter a model ID!").color(Color.RED));
                     return;
                 }
             }
-
-            // Get player position and rotation
-//            var ref = playerRef.getReference();
-//            if (ref == null || !ref.isValid()) {
-//                playerRef.sendMessage(Message.raw("Failed to get your position!").color(Color.RED));
-//                return;
-//            }
-
-//            Player player = store.getComponent(playerRef.getReference(), Player.getComponentType());
-//            if (player == null) {
-//                playerRef.sendMessage(Message.raw("Failed to get your position!").color(Color.RED));
-//                return;
-//            }
 
             Vector3d position = new Vector3d(playerRef.getTransform().getPosition());
             Vector3f rotation = new Vector3f(playerRef.getTransform().getRotation());
@@ -1570,13 +1554,11 @@ public class CitizensUI {
             // If player model, fetch and cache the skin BEFORE adding
             if (isPlayerModel[0]) {
                 if (skinUsername[0].trim().isEmpty()) {
-                    // Use current player's skin
                     plugin.getCitizensManager().updateCitizenSkinFromPlayer(citizen, playerRef, false);
                     plugin.getCitizensManager().addCitizen(citizen, true);
                     playerRef.sendMessage(Message.raw("Citizen \"" + name + "\" created at your position!").color(Color.GREEN));
                     openCitizensGUI(playerRef, store, Tab.MANAGE);
                 } else {
-                    // Fetch skin from username and wait for it
                     playerRef.sendMessage(Message.raw("Fetching skin for \"" + skinUsername[0] + "\"...").color(Color.YELLOW));
                     com.electro.hycitizens.util.SkinUtilities.getSkin(skinUsername[0].trim()).thenAccept(skin -> {
                         citizen.setCachedSkin(skin);
@@ -1617,9 +1599,40 @@ public class CitizensUI {
             currentName[0] = ctx.getValue("citizen-name", String.class).orElse("");
         });
 
-        page.addEventListener("citizen-model-id", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
-            currentModelId[0] = ctx.getValue("citizen-model-id", String.class).orElse("");
-        });
+        // Entity-specific listeners (only when NOT in player model mode)
+        if (!citizen.isPlayerModel()) {
+            page.addEventListener("citizen-model-id", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
+                currentModelId[0] = ctx.getValue("citizen-model-id", String.class).orElse("");
+            });
+
+            // Entity dropdown selection
+            page.addEventListener("entity-dropdown", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
+                ctx.getValue("entity-dropdown", String.class).ifPresent(val -> {
+                    currentModelId[0] = val;
+                });
+            });
+        }
+
+        // Player-specific listeners (only when in player model mode)
+        if (citizen.isPlayerModel()) {
+            page.addEventListener("skin-username", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
+                skinUsername[0] = ctx.getValue("skin-username", String.class).orElse("");
+            });
+
+            page.addEventListener("live-skin-check", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
+                useLiveSkin[0] = ctx.getValue("live-skin-check", Boolean.class).orElse(false);
+            });
+
+            page.addEventListener("rotate-towards-player", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
+                rotateTowardsPlayer[0] = ctx.getValue("rotate-towards-player", Boolean.class).orElse(true);
+            });
+
+            // Get current player skin button
+            page.addEventListener("get-player-skin-btn", CustomUIEventBindingType.Activating, event -> {
+                skinUsername[0] = playerRef.getUsername();
+                playerRef.sendMessage(Message.raw("Using your skin for this citizen!").color(Color.GREEN));
+            });
+        }
 
         page.addEventListener("nametag-offset", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
             ctx.getValue("nametag-offset", Double.class)
@@ -1631,7 +1644,7 @@ public class CitizensUI {
                             try {
                                 nametagOffset[0] = Float.parseFloat(val);
                             } catch (NumberFormatException e) {
-
+                                // Ignore
                             }
                         });
             }
@@ -1651,7 +1664,7 @@ public class CitizensUI {
                             try {
                                 currentScale[0] = Float.parseFloat(val);
                             } catch (NumberFormatException e) {
-
+                                // Ignore
                             }
                         });
             }
@@ -1663,18 +1676,6 @@ public class CitizensUI {
 
         page.addEventListener("citizen-perm-message", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
             currentPermMessage[0] = ctx.getValue("citizen-perm-message", String.class).orElse("");
-        });
-
-        page.addEventListener("skin-username", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
-            skinUsername[0] = ctx.getValue("skin-username", String.class).orElse("");
-        });
-
-        page.addEventListener("live-skin-check", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
-            useLiveSkin[0] = ctx.getValue("live-skin-check", Boolean.class).orElse(false);
-        });
-
-        page.addEventListener("rotate-towards-player", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
-            rotateTowardsPlayer[0] = ctx.getValue("rotate-towards-player", Boolean.class).orElse(true);
         });
 
         // Entity type toggle buttons
@@ -1690,12 +1691,6 @@ public class CitizensUI {
             openEditCitizenGUI(playerRef, store, citizen);
         });
 
-        // Get current player skin button
-        page.addEventListener("get-player-skin-btn", CustomUIEventBindingType.Activating, event -> {
-            skinUsername[0] = playerRef.getUsername();
-            playerRef.sendMessage(Message.raw("Using your skin for this citizen!").color(Color.GREEN));
-        });
-
         // Edit commands button
         page.addEventListener("edit-commands-btn", CustomUIEventBindingType.Activating, event -> {
             openCommandActionsGUI(playerRef, store, citizen.getId(),
@@ -1704,12 +1699,6 @@ public class CitizensUI {
 
         // Change position button
         page.addEventListener("change-position-btn", CustomUIEventBindingType.Activating, event -> {
-//            var ref = playerRef.getReference();
-//            if (ref == null || !ref.isValid()) {
-//                playerRef.sendMessage(Message.raw("Failed to get your position!").color(Color.RED));
-//                return;
-//            }
-
             Vector3d newPosition = new Vector3d(playerRef.getTransform().getPosition());
             Vector3f newRotation = new Vector3f(playerRef.getTransform().getRotation());
 
@@ -1749,56 +1738,50 @@ public class CitizensUI {
                 // Main hand
                 if (player.getInventory().getItemInHand() == null) {
                     citizen.setNpcHand(null);
-                }
-                else {
+                } else {
                     citizen.setNpcHand(player.getInventory().getItemInHand().getItemId());
                 }
 
                 // Off hand
                 if (player.getInventory().getUtilityItem() == null) {
                     citizen.setNpcOffHand(null);
-                }
-                else {
+                } else {
                     citizen.setNpcOffHand(player.getInventory().getUtilityItem().getItemId());
                 }
 
                 // Helmet
-                if (player.getInventory().getArmor().getItemStack((short)0) == null) {
+                if (player.getInventory().getArmor().getItemStack((short) 0) == null) {
                     citizen.setNpcHelmet(null);
-                }
-                else {
-                    citizen.setNpcHelmet(player.getInventory().getArmor().getItemStack((short)0).getItemId());
+                } else {
+                    citizen.setNpcHelmet(player.getInventory().getArmor().getItemStack((short) 0).getItemId());
                 }
 
                 // Chest
-                if (player.getInventory().getArmor().getItemStack((short)1) == null) {
+                if (player.getInventory().getArmor().getItemStack((short) 1) == null) {
                     citizen.setNpcChest(null);
-                }
-                else {
-                    citizen.setNpcChest(player.getInventory().getArmor().getItemStack((short)1).getItemId());
+                } else {
+                    citizen.setNpcChest(player.getInventory().getArmor().getItemStack((short) 1).getItemId());
                 }
 
                 // Gloves
-                if (player.getInventory().getArmor().getItemStack((short)2) == null) {
+                if (player.getInventory().getArmor().getItemStack((short) 2) == null) {
                     citizen.setNpcGloves(null);
-                }
-                else {
-                    citizen.setNpcGloves(player.getInventory().getArmor().getItemStack((short)2).getItemId());
+                } else {
+                    citizen.setNpcGloves(player.getInventory().getArmor().getItemStack((short) 2).getItemId());
                 }
 
                 // Leggings
-                if (player.getInventory().getArmor().getItemStack((short)3) == null) {
+                if (player.getInventory().getArmor().getItemStack((short) 3) == null) {
                     citizen.setNpcLeggings(null);
-                }
-                else {
-                    citizen.setNpcLeggings(player.getInventory().getArmor().getItemStack((short)3).getItemId());
+                } else {
+                    citizen.setNpcLeggings(player.getInventory().getArmor().getItemStack((short) 3).getItemId());
                 }
 
                 plugin.getCitizensManager().saveCitizen(citizen);
                 plugin.getCitizensManager().updateCitizenNPCItems(citizen);
             });
 
-            playerRef.sendMessage(Message.raw("Successfully the citizen's item in hand, off hand item, armor to your items!").color(Color.GREEN));
+            playerRef.sendMessage(Message.raw("Citizen's equipment updated to match yours!").color(Color.GREEN));
         });
 
         // Save button
@@ -1816,7 +1799,7 @@ public class CitizensUI {
             } else {
                 modelId = currentModelId[0].trim();
                 if (modelId.isEmpty()) {
-                    playerRef.sendMessage(Message.raw("Please enter a model ID!").color(Color.RED));
+                    playerRef.sendMessage(Message.raw("Please select or enter a model ID!").color(Color.RED));
                     return;
                 }
             }
@@ -1840,13 +1823,11 @@ public class CitizensUI {
             // If player model, fetch and cache the skin BEFORE updating
             if (isPlayerModel[0]) {
                 if (skinUsername[0].trim().isEmpty()) {
-                    // Use current player's skin
                     plugin.getCitizensManager().updateCitizenSkinFromPlayer(citizen, playerRef, false);
                     plugin.getCitizensManager().updateCitizen(citizen, true);
                     playerRef.sendMessage(Message.raw("Citizen '" + name + "' updated!").color(Color.GREEN));
                     openCitizensGUI(playerRef, store, Tab.MANAGE);
                 } else {
-                    // Fetch skin from username and wait for it
                     playerRef.sendMessage(Message.raw("Fetching skin for '" + skinUsername[0] + "'...").color(Color.YELLOW));
                     com.electro.hycitizens.util.SkinUtilities.getSkin(skinUsername[0].trim()).thenAccept(skin -> {
                         citizen.setCachedSkin(skin);
@@ -1929,7 +1910,6 @@ public class CitizensUI {
                     openEditCitizenGUI(playerRef, store, citizen);
                 }
             } else {
-                // Return to create screen
                 openCreateCitizenGUI(playerRef, store);
             }
         });
