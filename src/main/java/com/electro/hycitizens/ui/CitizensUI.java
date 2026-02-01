@@ -10,10 +10,12 @@ import com.hypixel.hytale.component.Ref;
 import com.hypixel.hytale.component.Store;
 import com.hypixel.hytale.math.vector.Vector3d;
 import com.hypixel.hytale.math.vector.Vector3f;
+import com.hypixel.hytale.protocol.PlayerSkin;
 import com.hypixel.hytale.protocol.packets.interface_.CustomPageLifetime;
 import com.hypixel.hytale.protocol.packets.interface_.CustomUIEventBindingType;
 import com.hypixel.hytale.server.core.Message;
 import com.hypixel.hytale.server.core.entity.entities.Player;
+import com.hypixel.hytale.server.core.modules.entity.teleport.Teleport;
 import com.hypixel.hytale.server.core.universe.PlayerRef;
 import com.hypixel.hytale.server.core.universe.Universe;
 import com.hypixel.hytale.server.core.universe.world.World;
@@ -29,28 +31,444 @@ import java.util.UUID;
 public class CitizensUI {
     private final HyCitizensPlugin plugin;
 
-    // Common entity types for the dropdown
-    private static final List<String> COMMON_ENTITIES = Arrays.asList(
-            "Player",
-            "PlayerTestModel_V",
-            "Sheep",
+    private static final List<String> ENTITIES = Arrays.asList(
+            "Antelope",
+            "Archaeopteryx",
+            "Armadillo",
+            "Arrow_Crossbow_Signature",
+            "Arrow_Crude",
+            "Arrow_Fire",
+            "Arrow_Frost",
+            "Arrow_Iron",
+            "Arrow_Ricochet",
+            "Arrow_Ricochet_Signature",
+            "Arrow_Shortbow_Signature",
+            "Arrow_Vamp",
+            "Arrow_Vamp_Signature",
+            "Axe_Bone",
+            "Axe_Stone_Trork",
+            "Bat",
+            "Bat_Ice",
+            "Bear_Grizzly",
+            "Bear_Polar",
+            "Bison",
+            "Bison_Calf",
+            "Bluebird",
+            "Bluegill",
+            "Boar",
+            "Boar_Piglet",
+            "Boat",
+            "Bomb",
+            "Bomb_Fire_Goblin",
+            "Bomb_Fire_Goblin_Dud",
+            "Bomb_Large_Fire_Goblin",
+            "Bomb_Popberry",
+            "Bomb_Potion_Poison",
+            "Boy_Trail",
+            "Bramblekin",
+            "Bramblekin_Shaman",
+            "Bullet_Blunderbuss",
+            "Bunny",
+            "Cactee",
+            "Cactee_Spike",
+            "Calf",
+            "Camel",
+            "Camel_Calf",
+            "Cat",
+            "Catfish",
+            "Chick",
+            "Chick_Desert",
             "Chicken",
+            "Chicken_Desert",
+            "Chicken_Undead",
+            "Clownfish",
+            "Corgi",
             "Cow",
-            "Pig",
-            "Wolf",
-            "Trork",
-            "Kweebec",
+            "Cow_Undead",
+            "Crab",
+            "Crawler_Void",
+            "Crocodile",
+            "Crossbow_Turret",
+            "Crossbow_Turret_Item_Projectile",
+            "Crow",
+            "Dagger_Adamantite",
+            "Dagger_Bone",
+            "Dagger_Bronze",
+            "Dagger_Bronze_Ancient",
+            "Dagger_Cobalt",
+            "Dagger_Copper",
+            "Dagger_Crude",
+            "Dagger_Doomed",
+            "Dagger_Fang_Doomed",
+            "Dagger_Iron",
+            "Dagger_Mithril",
+            "Dagger_Onyxium",
+            "Dagger_Stone_Trork",
+            "Dagger_Thorium",
+            "Debug",
+            "Deer_Doe",
+            "Deployable_Fire_Trap",
+            "Deployable_Fire_Trap_Preview",
+            "Dog",
+            "Dragon_Fire",
+            "Dragon_Frost",
+            "Dragon_Void",
+            "Duck",
+            "Eel_Moray",
+            "Egg",
+            "Emberwulf",
+            "Eye_Void",
+            "Eye_Void_Blast",
+            "Fen_Stalker",
             "Feran",
-            "Scarrak",
+            "Feran_Burrower",
+            "Feran_Civilian",
+            "Feran_Cub",
+            "Feran_Longtooth",
+            "Feran_Sharptooth",
+            "Feran_Windwalker",
+            "Feran_Windwalker_Wind_Burst",
+            "Feran_Windwalker_Wind_Vortex",
+            "Finch_Green",
+            "Fireball",
+            "Flamingo",
+            "Fox",
+            "Frog_Blue",
+            "Frog_Green",
+            "Frog_Orange",
+            "Frostgill",
+            "Gecko",
+            "Ghoul",
+            "Goat",
+            "Goat_Kid",
             "Goblin",
+            "Goblin_Boss",
+            "Goblin_Duke",
+            "Goblin_Duke_Large",
+            "Goblin_Hermit",
+            "Goblin_Lobber",
+            "Goblin_Miner",
+            "Goblin_Ogre",
+            "Goblin_Scrapper",
+            "Goblin_Thief",
+            "Golem_Crystal_Earth",
+            "Golem_Crystal_Flame",
+            "Golem_Crystal_Frost",
+            "Golem_Crystal_Sand",
+            "Golem_Crystal_Thunder",
+            "Golem_Firesteel",
+            "Golem_Guardian_Void",
+            "Grooble",
+            "Hatworm",
+            "Hawk",
+            "Healing_Totem",
+            "Healing_Totem_Projectile",
+            "Hedera",
+            "Horse",
+            "Horse_Foal",
+            "Horse_Skeleton",
+            "Horse_Skeleton_Armored",
+            "Hound_Bleached",
+            "Hyena",
+            "Ice_Ball",
+            "Ice_Bolt",
+            "Ingredient_Poop",
+            "Jellyfish_Blue",
+            "Jellyfish_Cyan",
+            "Jellyfish_Green",
+            "Jellyfish_Man_Of_War",
+            "Jellyfish_Red",
+            "Jellyfish_Yellow",
+            "Klops",
+            "Klops_Gentleman",
+            "Klops_Merchant",
+            "Klops_Miner",
+            "Kunai",
+            "Kweebec_Rootling",
+            "Kweebec_Sapling",
+            "Kweebec_Sapling_Brown",
+            "Kweebec_Sapling_Christmas_Blue",
+            "Kweebec_Sapling_Christmas_Green",
+            "Kweebec_Sapling_Christmas_Pink",
+            "Kweebec_Sapling_Green",
+            "Kweebec_Sapling_HardHat",
+            "Kweebec_Sapling_Orange",
+            "Kweebec_Sapling_Pink",
+            "Kweebec_Sapling_Razorleaf",
+            "Kweebec_Sapling_Red",
+            "Kweebec_Sapling_Treesinger",
+            "Kweebec_Sapling_Yellow",
+            "Kweebec_Seedling",
+            "Kweebec_Sproutling",
+            "Kweebec_Sproutling_Blue",
+            "Kweebec_Sproutling_Lime",
+            "Lamb",
+            "Larva_Silk",
+            "Larva_Void",
+            "Leopard_Snow",
+            "Lizard_Sand",
+            "Lobster",
+            "Mannequin",
+            "Meerkat",
+            "Minecart",
+            "Minnow",
+            "Model_Bee_Swarm",
+            "Model_Deer_Stag",
+            "Molerat",
+            "Moose_Bull",
+            "Moose_Cow",
+            "Mosshorn",
+            "Mosshorn_Plain",
+            "Mouflon",
+            "Mouflon_Lamb",
+            "Mouse",
+            "Mushee",
+            "NPC_Elf",
+            "NPC_Path_Marker",
+            "NPC_Santa",
+            "NPC_Sound_Shoe",
+            "NPC_Spawn_Marker",
+            "Necromancer_Void",
+            "Objective_Location_Marker",
+            "Outlander",
+            "Outlander_Berserker",
+            "Outlander_Brute",
+            "Outlander_Cultist",
+            "Outlander_Hunter",
+            "Outlander_Marauder",
+            "Outlander_Peon",
+            "Outlander_Priest",
+            "Outlander_Sorcerer",
+            "Outlander_Stalker",
+            "Owl_Brown",
+            "Owl_Snow",
+            "Parrot",
+            "Penguin",
+            "Pig",
+            "Pig_Undead",
+            "Pig_Wild",
+            "Pigeon",
+            "Piglet",
+            "Piglet_Wild",
+            "Pike",
+            "Piranha",
+            "Piranha_Black",
+            "Player",
+            "PlayerTestModel_G",
+            "PlayerTestModel_V",
+            "Projectile",
+            "Pterodactyl",
+            "Pufferfish",
+            "Rabbit",
+            "Ram",
+            "Ram_Lamb",
+            "Raptor_Cave",
+            "Rat",
+            "Raven",
+            "Reindeer_Christmas",
+            "Rex_Cave",
+            "Rubble_Aqua",
+            "Rubble_Basalt",
+            "Rubble_Calcite",
+            "Rubble_Default",
+            "Rubble_Ice",
+            "Rubble_Marble",
+            "Rubble_Quartzite",
+            "Rubble_Sandstone",
+            "Rubble_Sandstone_Red",
+            "Rubble_Sandstone_White",
+            "Rubble_Shale",
+            "Rubble_Slate",
+            "Rubble_Stone",
+            "Rubble_Stone_Mossy",
+            "Rubble_Volcanic",
+            "Salmon",
+            "Saurian",
+            "Saurian_Hunter",
+            "Saurian_Rogue",
+            "Saurian_Warrior",
+            "Scarak_Broodmother",
+            "Scarak_Broodmother_Young",
+            "Scarak_Defender",
+            "Scarak_Fighter",
+            "Scarak_Fighter_Royal_Guard",
+            "Scarak_Louse",
+            "Scarak_Seeker",
+            "Scarak_Seeker_Spitball",
+            "Scorpion",
+            "Shadow_Knight",
+            "Shark_Hammerhead",
+            "Sheep",
+            "Shellfish_Lava",
+            "Showcase_Cobalt_Gear",
+            "Showcase_Copper_Gear",
+            "Showcase_Iron_Gear",
+            "Showcase_Iron_TargetDummy_1",
+            "Showcase_Mannequin_Heal",
+            "Showcase_Mannequin_Inv_Portal",
+            "Showcase_Mannequin_Inv_Sphere",
+            "Showcase_Mannequin_Lightning",
+            "Showcase_Mannequin_Sitting",
+            "Showcase_Onyxium_Gear",
+            "Showcase_Prisma_Gear",
+            "Showcase_Skeleton_Assasin",
+            "Showcase_Skeleton_Dead",
+            "Showcase_Skeleton_Guard",
+            "Showcase_Skeleton_Tank",
+            "Showcase_Wooden_Gear",
             "Skeleton",
-            "Zombie"
+            "Skeleton_Archer",
+            "Skeleton_Archmage",
+            "Skeleton_Burnt_Alchemist",
+            "Skeleton_Burnt_Archer",
+            "Skeleton_Burnt_Gunner",
+            "Skeleton_Burnt_Knight",
+            "Skeleton_Burnt_Lancer",
+            "Skeleton_Burnt_Praetorian",
+            "Skeleton_Burnt_Soldier",
+            "Skeleton_Burnt_Wizard",
+            "Skeleton_Fighter",
+            "Skeleton_Frost_Archer",
+            "Skeleton_Frost_Archmage",
+            "Skeleton_Frost_Fighter",
+            "Skeleton_Frost_Knight",
+            "Skeleton_Frost_Mage",
+            "Skeleton_Frost_Ranger",
+            "Skeleton_Frost_Scout",
+            "Skeleton_Frost_Soldier",
+            "Skeleton_Incandescent_Fighter",
+            "Skeleton_Incandescent_Footman",
+            "Skeleton_Incandescent_Head",
+            "Skeleton_Incandescent_Mage",
+            "Skeleton_Knight",
+            "Skeleton_Mage",
+            "Skeleton_Mage_Corruption_Orb",
+            "Skeleton_Pirate_Captain",
+            "Skeleton_Pirate_Gunner",
+            "Skeleton_Pirate_Striker",
+            "Skeleton_Ranger",
+            "Skeleton_Sand_Archer",
+            "Skeleton_Sand_Archmage",
+            "Skeleton_Sand_Assassin",
+            "Skeleton_Sand_Guard",
+            "Skeleton_Sand_Mage",
+            "Skeleton_Sand_Ranger",
+            "Skeleton_Sand_Scout",
+            "Skeleton_Sand_Soldier",
+            "Skeleton_Scout",
+            "Skeleton_Soldier",
+            "Skrill",
+            "Skrill_Chick",
+            "Slothian",
+            "Slothian_Elder",
+            "Slothian_Kid",
+            "Slothian_Monk",
+            "Slothian_Scout",
+            "Slothian_Villager",
+            "Slothian_Warrior",
+            "Slowness_Totem",
+            "Slowness_Totem_Projectile",
+            "Slug_Magma",
+            "Snail_Frost",
+            "Snail_Magma",
+            "Snake_Cobra",
+            "Snake_Marsh",
+            "Snake_Rattle",
+            "Snapdragon",
+            "Snapjaw",
+            "Spark_Living",
+            "Sparrow",
+            "Spawn_Void",
+            "Spear_Adamantite",
+            "Spear_Adamantite_Saurian",
+            "Spear_Bone",
+            "Spear_Bronze",
+            "Spear_Cobalt",
+            "Spear_Copper",
+            "Spear_Crude",
+            "Spear_Double_Incandescent",
+            "Spear_Iron",
+            "Spear_Leaf",
+            "Spear_Mithril",
+            "Spear_Onyxium",
+            "Spear_Scrap",
+            "Spear_Stone_Trork",
+            "Spear_Thorium",
+            "Spear_Tribal",
+            "Spectre_Void",
+            "Spider",
+            "Spider_Cave",
+            "Spirit_Ember",
+            "Spirit_Frost",
+            "Spirit_Root",
+            "Spirit_Thunder",
+            "Squirrel",
+            "Swarm_Bees",
+            "Sword_Charged_Test",
+            "Tang_Blue",
+            "Tang_Chevron",
+            "Tang_Lemon_Peel",
+            "Tang_Sailfin",
+            "Tank",
+            "Temple_Mithril_Guard",
+            "Test_Platform",
+            "Tetrabird",
+            "Tiger_Sabertooth",
+            "Toad_Rhino",
+            "Toad_Rhino_Magma",
+            "Tornado",
+            "Tortoise",
+            "Trash",
+            "Trillodon",
+            "Trilobite",
+            "Trilobite_Black",
+            "Trork",
+            "Trork_Brawler",
+            "Trork_Chieftain",
+            "Trork_Christmas",
+            "Trork_Doctor_Witch",
+            "Trork_Guard",
+            "Trork_Hunter",
+            "Trork_Mauler",
+            "Trork_Sentry",
+            "Trork_Shaman",
+            "Trork_Warrior",
+            "Trout_Rainbow",
+            "Tuluk",
+            "Tuluk_Fisherman",
+            "Turkey",
+            "Turkey_Chick",
+            "Vulture",
+            "Warp",
+            "Warrior_Quest",
+            "Warthog",
+            "Warthog_Piglet",
+            "Werewolf",
+            "Whale_Humpback",
+            "Wolf_Black",
+            "Wolf_Outlander_Priest",
+            "Wolf_Outlander_Sorcerer",
+            "Wolf_Trork_Hunter",
+            "Wolf_Trork_Shaman",
+            "Wolf_White",
+            "Woodpecker",
+            "Wraith",
+            "Wraith_Lantern",
+            "Wurmling_Frost",
+            "Yeti",
+            "Zombie",
+            "Zombie_Aberrant",
+            "Zombie_Aberrant_Big",
+            "Zombie_Aberrant_Small",
+            "Zombie_Burnt",
+            "Zombie_Frost",
+            "Zombie_Sand",
+            "Zombie_Werewolf"
     );
 
-    // Helper method to generate dropdown options HTML (avoids template iteration issues with String lists)
     private String generateEntityDropdownOptions(String selectedValue) {
         StringBuilder sb = new StringBuilder();
-        for (String entity : COMMON_ENTITIES) {
+        for (String entity : ENTITIES) {
             boolean isSelected = entity.equals(selectedValue);
             sb.append("<option value=\"").append(entity).append("\"");
             if (isSelected) {
@@ -71,26 +489,7 @@ public class CitizensUI {
 
     private String getSharedStyles() {
         return """
-            <style>                
-                /* Primary Colors */
-                /* Background Dark:    #0d1117 */
-                /* Background Medium:  #161b22 */
-                /* Background Light:   #21262d */
-                /* Surface:            #30363d */
-                /* Border:             #484f58 */
-                
-                /* Accent Colors */
-                /* Primary:            #58a6ff (Blue) */
-                /* Success:            #3fb950 (Green) */
-                /* Warning:            #d29922 (Orange) */
-                /* Danger:             #f85149 (Red) */
-                /* Info:               #a371f7 (Purple) */
-                
-                /* Text Colors */
-                /* Text Primary:       #e6edf3 */
-                /* Text Secondary:     #8b949e */
-                /* Text Muted:         #6e7681 */
-                
+            <style>                                
                 .main-container {
                     layout: top;
                     background-color: #0d1117(0.98);
@@ -147,7 +546,7 @@ public class CitizensUI {
                 }
                 
                 .card-header {
-                    layout: left;
+                    layout: center;
                     flex-weight: 0;
                     padding-bottom: 12;
                 }
@@ -173,8 +572,15 @@ public class CitizensUI {
                 }
                 
                 .section-header {
-                    layout: left;
+                    layout: top;
                     flex-weight: 0;
+                    horizontal-align: center;
+                }
+                
+                .section-title,
+                .section-description {
+                    anchor-width: 100%;
+                    text-align: center;
                 }
                 
                 .section-title {
@@ -189,14 +595,15 @@ public class CitizensUI {
                     padding-top: 4;
                     padding-bottom: 12;
                 }
-                
+
                 .form-group {
                     layout: top;
                     flex-weight: 0;
+                    padding-bottom: 6;
                 }
                 
                 .form-row {
-                    layout: left;
+                    layout: center;
                     flex-weight: 0;
                 }
                 
@@ -251,7 +658,7 @@ public class CitizensUI {
                 }
                 
                 .checkbox-row {
-                    layout: left;
+                    layout: center;
                     flex-weight: 0;
                     padding-top: 8;
                     padding-bottom: 4;
@@ -531,17 +938,20 @@ public class CitizensUI {
                 }
                 
                 .toggle-group {
-                    layout: left;
+                    layout: center;
                     flex-weight: 0;
                     padding: 4;
                     border-radius: 8;
+                    gap: 8;
                 }
                 
                 .toggle-btn {
-                    flex-weight: 1;
                     anchor-height: 36;
+                    padding-left: 12;
+                    padding-right: 12;
                     border-radius: 6;
                 }
+
                 
                 .toggle-active {
                 }
@@ -609,7 +1019,6 @@ public class CitizensUI {
 
     private TemplateProcessor createBaseTemplate() {
         return new TemplateProcessor()
-                // Stat card component
                 .registerComponent("statCard", """
                     <div class="stat-card">
                         <p class="stat-value">{{$value}}</p>
@@ -617,7 +1026,6 @@ public class CitizensUI {
                     </div>
                     """)
 
-                // Form field component
                 .registerComponent("formField", """
                     <div class="form-group">
                         <div class="form-row">
@@ -634,7 +1042,6 @@ public class CitizensUI {
                     </div>
                     """)
 
-                // Number field component
                 .registerComponent("numberField", """
                     <div class="form-group">
                         <p class="form-label">{{$label}}</p>
@@ -651,11 +1058,10 @@ public class CitizensUI {
                     </div>
                     """)
 
-                // Checkbox component
                 .registerComponent("checkbox", """
                     <div class="checkbox-row">
                         <input type="checkbox" id="{{$id}}" {{#if checked}}checked{{/if}} />
-                        <div style="layout: top; flex-weight: 1;">
+                        <div style="layout: top; flex-weight: 0; text-align: center;">
                             <p class="checkbox-label">{{$label}}</p>
                             {{#if description}}
                             <p class="checkbox-description">{{$description}}</p>
@@ -664,23 +1070,21 @@ public class CitizensUI {
                     </div>
                     """)
 
-                // Info box component
                 .registerComponent("infoBox", """
                     <div class="info-box">
                         <p class="info-box-text">{{$text}}</p>
                     </div>
                     """)
 
-                // Section header component
                 .registerComponent("sectionHeader", """
                     <div class="section-header">
                         <p class="section-title">{{$title}}</p>
+                        {{#if description}}
+                        <p class="section-description">{{$description}}</p>
+                        {{else}}
+                        <div class="spacer-sm"></div>
+                        {{/if}}
                     </div>
-                    {{#if description}}
-                    <p class="section-description">{{$description}}</p>
-                    {{else}}
-                    <div class="spacer-sm"></div>
-                    {{/if}}
                     """);
     }
 
@@ -752,7 +1156,11 @@ public class CitizensUI {
                                     <p class="list-item-meta">ID: {{$id}}</p>
                                 </div>
                                 <div class="list-item-actions">
-                                    <button id="edit-{{$id}}" class="btn-info btn-small" style="anchor-width: 80;">Edit</button>
+                                    <button id="tp-{{$id}}" class="btn-info btn-small" style="anchor-width: 110;">TP</button>
+                                    <div class="spacer-h-sm"></div>
+                                    <button id="edit-{{$id}}" class="btn-info btn-small" style="anchor-width: 110;">Edit</button>
+                                    <div class="spacer-h-sm"></div>
+                                    <button id="clone-{{$id}}" class="btn-secondary btn-small" style="anchor-width: 120;">Clone</button>
                                     <div class="spacer-h-sm"></div>
                                     <button id="remove-{{$id}}" class="btn-danger btn-small" style="anchor-width: 140;">Remove</button>
                                 </div>
@@ -786,13 +1194,14 @@ public class CitizensUI {
 
     public void openCreateCitizenGUI(@Nonnull PlayerRef playerRef, @Nonnull Store<EntityStore> store) {
         openCreateCitizenGUI(playerRef, store, true, "", 0, false, "",
-                1.0f, "", "", false, false, "", true);
+                1.0f, "", "", false, false, "", true, true);
     }
 
     public void openCreateCitizenGUI(@Nonnull PlayerRef playerRef, @Nonnull Store<EntityStore> store,
                                      boolean isPlayerModel, String name, float nametagOffset, boolean hideNametag,
                                      String modelId, float scale, String permission, String permMessage, boolean useLiveSkin,
-                                     boolean preserveState, String skinUsername, boolean rotateTowardsPlayer) {
+                                     boolean preserveState, String skinUsername, boolean rotateTowardsPlayer,
+                                     boolean fKeyInteraction) {
 
         TemplateProcessor template = createBaseTemplate()
                 .setVariable("isPlayerModel", isPlayerModel)
@@ -806,6 +1215,7 @@ public class CitizensUI {
                 .setVariable("useLiveSkin", useLiveSkin)
                 .setVariable("skinUsername", skinUsername)
                 .setVariable("rotateTowardsPlayer", rotateTowardsPlayer)
+                .setVariable("fKeyInteraction", fKeyInteraction)
                 .setVariable("entityOptions", generateEntityDropdownOptions(modelId.isEmpty() ? "PlayerTestModel_V" : modelId));
 
         String html = template.process(getSharedStyles() + """
@@ -832,31 +1242,40 @@ public class CitizensUI {
                         <div class="section">
                             {{@sectionHeader:title=Basic Information,description=Set the citizen's name and display settings}}
                             
-                            <div class="form-row">
-                                <div class="form-col">
-                                    <div class="form-group">
-                                        <p class="form-label">Citizen Name *</p>
-                                        <input type="text" id="citizen-name" class="form-input" value="{{$name}}" 
-                                               placeholder="Enter a display name" maxlength="32" />
-                                        <p class="form-hint">This will be displayed above the NPC</p>
-                                    </div>
-                                </div>
-                                <div class="spacer-h-md"></div>
-                                <div class="form-col-fixed" style="anchor-width: 150;">
-                                    <div class="form-group">
-                                        <p class="form-label">Nametag Offset</p>
-                                        <input type="number" id="nametag-offset" class="form-input"
-                                               value="{{$nametagOffset}}"
-                                               placeholder="0.0"
-                                               min="-500" max="500" step="0.25"
-                                               data-hyui-max-decimal-places="2" />
-                                    </div>
-                                </div>
-                            </div>
+                            <div class="form-row" style="horizontal-align: center;">
+                                 <div class="form-col-fixed" style="anchor-width: 250;">
+                                     <div class="form-group">
+                                         <p class="form-label">Citizen Name *</p>
+                                         <input type="text" id="citizen-name" class="form-input" value="{{$name}}"\s
+                                                placeholder="Enter a display name" />
+                                         <p class="form-hint" style="text-align: center;">This will be displayed above the NPC</p>
+                                         <p class="form-hint" style="text-align: center;">You can type "\\n" between lines</p>
+                                     </div>
+                                 </div>
+                
+                                 <div class="spacer-h-md"></div>
+                
+                                 <div class="form-col-fixed" style="anchor-width: 150;">
+                                     <div class="form-group">
+                                         <p class="form-label">Nametag Offset</p>
+                                         <input type="number" id="nametag-offset" class="form-input"
+                                                value="{{$nametagOffset}}"
+                                                placeholder="0.0"
+                                                min="-500" max="500" step="0.25"
+                                                data-hyui-max-decimal-places="2" />
+                                     </div>
+                                 </div>
+                             </div>
                             
                             <div class="spacer-sm"></div>
                             
-                            {{@checkbox:id=hide-nametag-check,checked={{$hideNametag}},label=Hide Nametag,description=Hide the name displayed above the citizen}}
+                            <div class="checkbox-row">
+                                <input type="checkbox" id="hide-nametag-check" {{#if hideNametag}}checked{{/if}} />
+                                <div style="layout: top; flex-weight: 0; text-align: center;">
+                                    <p class="checkbox-label">Hide Nametag</p>
+                                    <p class="checkbox-description">Hide the name displayed above the citizen</p>
+                                </div>
+                            </div>
                         </div>
                         
                         <div class="spacer-md"></div>
@@ -875,41 +1294,53 @@ public class CitizensUI {
                             {{#if isPlayerModel}}
                             <!-- Player Skin Configuration -->
                             <div class="card">
-                                <div class="card-header">
-                                    <p class="card-title">Player Skin Configuration</p>
+                                <div class="card-header" style="layout: center;">
+                                    <p class="card-title" style="text-align: center; flex-weight: 0;">Player Skin Configuration</p>
                                 </div>
                                 <div class="card-body">
                                     <div class="form-group">
-                                        <p class="form-label">Skin Username</p>
+                                        <p class="form-label" style="text-align: center;">Skin Username</p>
                                         <div class="form-row">
                                             <input type="text" id="skin-username" class="form-input" value="{{$skinUsername}}"
-                                                   placeholder="Enter username to fetch skin" style="flex-weight: 1;" />
+                                                   placeholder="Enter username" style="anchor-width: 250;" />
                                             <div class="spacer-h-sm"></div>
                                             <button id="get-player-skin-btn" class="btn-secondary btn-small" style="anchor-width: 160;">Use My Skin</button>
                                         </div>
-                                        <p class="form-hint">Leave empty to use your current skin</p>
+                                        <p class="form-hint" style="text-align: center;">Leave empty to use your current skin</p>
                                     </div>
                                     
                                     <div class="spacer-sm"></div>
                                     
-                                    {{@checkbox:id=live-skin-check,checked={{$useLiveSkin}},label=Enable Live Skin Updates,description=Automatically refresh the skin every 30 minutes}}
+                                    <div class="checkbox-row">
+                                        <input type="checkbox" id="live-skin-check" {{#if useLiveSkin}}checked{{/if}} />
+                                        <div style="layout: top; flex-weight: 0; text-align: center;">
+                                            <p class="checkbox-label">Enable Live Skin Updates</p>
+                                            <p class="checkbox-description">Automatically refresh the skin every 30 minutes</p>
+                                        </div>
+                                    </div>
                                     
-                                    {{@checkbox:id=rotate-towards-player,checked={{$rotateTowardsPlayer}},label=Rotate Towards Player,description=The citizen will face players when they approach}}
+                                    <div class="checkbox-row">
+                                        <input type="checkbox" id="rotate-towards-player" {{#if rotateTowardsPlayer}}checked{{/if}} />
+                                        <div style="layout: top; flex-weight: 0; text-align: center;">
+                                            <p class="checkbox-label">Rotate Towards Player</p>
+                                            <p class="checkbox-description">The citizen will face players when they approach</p>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
                             {{else}}
                             <!-- Entity Selection -->
                             <div class="card">
                                 <div class="card-header">
-                                    <p class="card-title">Entity Selection</p>
+                                    <p class="card-title" style="text-align: center; flex-weight: 0;">Entity Selection</p>
                                 </div>
                                 <div class="card-body">
                                     <div class="form-group">
-                                        <p class="form-label">Select Entity Type</p>
+                                        <p class="form-label" style="text-align: center;">Select Entity Type</p>
                                         <select id="entity-dropdown" value="{{$modelId}}" data-hyui-showlabel="true">
                                             {{$entityOptions}}
                                         </select>
-                                        <p class="form-hint">Choose from common entity types</p>
+                                        <p class="form-hint" style="text-align: center;">Choose from common entity types</p>
                                     </div>
                                     
                                     <div class="spacer-sm"></div>
@@ -917,10 +1348,10 @@ public class CitizensUI {
                                     <div class="spacer-sm"></div>
                                     
                                     <div class="form-group">
-                                        <p class="form-label">Or Enter Custom Model ID</p>
+                                        <p class="form-label" style="text-align: center;">Or Enter An Entity/Model ID</p>
                                         <input type="text" id="citizen-model-id" class="form-input" value="{{$modelId}}"
-                                               placeholder="e.g., PlayerTestModel_V, Sheep" maxlength="64" />
-                                        <p class="form-hint">Type a custom model ID if not in the dropdown</p>
+                                               placeholder="e.g., PlayerTestModel_V, Sheep" maxlength="64" style="anchor-width: 200;" />
+                                        <p class="form-hint" style="text-align: center;">You can also type an entity/model ID</p>
                                     </div>
                                 </div>
                             </div>
@@ -950,6 +1381,21 @@ public class CitizensUI {
                         
                         <div class="spacer-md"></div>
                         
+                        <!-- Interaction Section -->
+                        <div class="section">
+                            {{@sectionHeader:title=Interaction,description=Configure how players interact with this citizen}}
+                            
+                            <div class="checkbox-row">
+                                <input type="checkbox" id="f-key-interaction" {{#if fKeyInteraction}}checked{{/if}} />
+                                <div style="layout: top; flex-weight: 0; text-align: center;">
+                                    <p class="checkbox-label">Enable 'F' Key to Interact</p>
+                                    <p class="checkbox-description">Allow players to use the 'F' key to interact instead of just left clicking</p>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="spacer-md"></div>
+                        
                         <!-- Permissions Section -->
                         <div class="section">
                             {{@sectionHeader:title=Permissions,description=Control who can interact with this citizen}}
@@ -962,8 +1408,8 @@ public class CitizensUI {
                                             <p class="form-label-optional">(Optional)</p>
                                         </div>
                                         <input type="text" id="citizen-permission" class="form-input" value="{{$permission}}" 
-                                               placeholder="e.g., citizens.interact.vip" />
-                                        <p class="form-hint">Leave empty to allow everyone</p>
+                                               placeholder="e.g., citizens.interact.vip" style="anchor-width: 215;" />
+                                        <p class="form-hint" style="text-align: center;">Leave empty to allow everyone</p>
                                     </div>
                                 </div>
                             </div>
@@ -978,8 +1424,8 @@ public class CitizensUI {
                                             <p class="form-label-optional">(Optional)</p>
                                         </div>
                                         <input type="text" id="citizen-perm-message" class="form-input" value="{{$permMessage}}" 
-                                               placeholder="e.g., You need VIP rank to interact!" />
-                                        <p class="form-hint">Message shown when player lacks permission</p>
+                                               placeholder="e.g., You need VIP rank to interact!" style="anchor-width: 250;" />
+                                        <p class="form-hint" style="text-align: center;">Message shown when player lacks permission</p>
                                     </div>
                                 </div>
                             </div>
@@ -993,7 +1439,7 @@ public class CitizensUI {
                     <div class="footer">
                         <button id="cancel-btn" class="btn-ghost">Cancel</button>
                         <div class="spacer-h-md"></div>
-                        <button id="create-btn" class="btn-primary btn-wide">Create Citizen</button>
+                        <button id="create-btn" class="btn-primary btn-wide">Create</button>
                     </div>
                     
                 </div>
@@ -1005,7 +1451,7 @@ public class CitizensUI {
                 .fromHtml(html);
 
         setupCreateCitizenListeners(page, playerRef, store, isPlayerModel, name, nametagOffset, hideNametag,
-                modelId, scale, permission, permMessage, useLiveSkin, skinUsername, rotateTowardsPlayer);
+                modelId, scale, permission, permMessage, useLiveSkin, skinUsername, rotateTowardsPlayer, fKeyInteraction);
 
         page.open(store);
     }
@@ -1014,6 +1460,10 @@ public class CitizensUI {
         TemplateProcessor template = createBaseTemplate()
                 .setVariable("citizen", citizen)
                 .setVariable("isPlayerModel", citizen.isPlayerModel())
+                .setVariable("useLiveSkin", citizen.isUseLiveSkin())
+                .setVariable("rotateTowardsPlayer", citizen.getRotateTowardsPlayer())
+                .setVariable("fKeyInteraction", citizen.getFKeyInteractionEnabled())
+                .setVariable("hideNametag", citizen.isHideNametag())
                 .setVariable("entityOptions", generateEntityDropdownOptions(citizen.getModelId()));
 
         String html = template.process(getSharedStyles() + """
@@ -1033,22 +1483,27 @@ public class CitizensUI {
                         
                         <!-- Basic Information Section -->
                         <div class="section">
-                            {{@sectionHeader:title=Basic Information}}
+                            {{@sectionHeader:title=Basic Information,description=Set the citizen's name and display settings}}
                             
-                            <div class="form-row">
-                                <div class="form-col">
+                            <div class="form-row" style="horizontal-align: center;">
+                                <div class="form-col-fixed" style="anchor-width: 250;">
                                     <div class="form-group">
                                         <p class="form-label">Citizen Name *</p>
-                                        <input type="text" id="citizen-name" class="form-input" value="{{$citizen.name}}" 
+                                        <input type="text" id="citizen-name" class="form-input" value="{{$citizen.name}}"\s
                                                placeholder="Enter a display name" maxlength="32" />
+                                        <p class="form-hint" style="text-align: center;">This will be displayed above the NPC</p>
+                                        <p class="form-hint" style="text-align: center;">You can type "\\n" between lines</p>
                                     </div>
                                 </div>
+                            
                                 <div class="spacer-h-md"></div>
+                            
                                 <div class="form-col-fixed" style="anchor-width: 150;">
                                     <div class="form-group">
                                         <p class="form-label">Nametag Offset</p>
                                         <input type="number" id="nametag-offset" class="form-input"
                                                value="{{$citizen.nametagOffset}}"
+                                               placeholder="0.0"
                                                min="-500" max="500" step="0.25"
                                                data-hyui-max-decimal-places="2" />
                                     </div>
@@ -1057,14 +1512,19 @@ public class CitizensUI {
                             
                             <div class="spacer-sm"></div>
                             
-                            {{@checkbox:id=hide-nametag-check,checked={{$citizen.hideNametag}},label=Hide Nametag}}
+                            <div class="checkbox-row">
+                                <input type="checkbox" id="hide-nametag-check" {{#if hideNametag}}checked{{/if}} />
+                                <div style="layout: top; flex-weight: 0; text-align: center;">
+                                    <p class="checkbox-label">Hide Nametag</p>
+                                </div>
+                            </div>
                         </div>
                         
                         <div class="spacer-md"></div>
                         
                         <!-- Entity Type Section -->
                         <div class="section">
-                            {{@sectionHeader:title=Entity Type}}
+                            {{@sectionHeader:title=Entity Type,description=Choose whether this citizen uses a player model or another entity}}
                             
                             <div class="toggle-group">
                                 <button id="type-player" class="toggle-btn{{#if isPlayerModel}} toggle-active{{/if}}">Player Model</button>
@@ -1076,38 +1536,53 @@ public class CitizensUI {
                             {{#if isPlayerModel}}
                             <!-- Player Skin Configuration -->
                             <div class="card">
-                                <div class="card-header">
-                                    <p class="card-title">Player Skin Configuration</p>
+                                <div class="card-header" style="layout: center;">
+                                    <p class="card-title" style="text-align: center; flex-weight: 0;">Player Skin Configuration</p>
                                 </div>
                                 <div class="card-body">
                                     <div class="form-group">
-                                        <p class="form-label">Skin Username</p>
+                                        <p class="form-label" style="text-align: center;">Skin Username</p>
                                         <div class="form-row">
                                             <input type="text" id="skin-username" class="form-input" value="{{$citizen.skinUsername}}"
-                                                   placeholder="Enter username" style="flex-weight: 1;" />
+                                                   placeholder="Enter username" style="anchor-width: 250;" />
                                             <div class="spacer-h-sm"></div>
                                             <button id="get-player-skin-btn" class="btn-secondary btn-small" style="anchor-width: 160;">Use My Skin</button>
                                         </div>
+                                        <p class="form-hint" style="text-align: center;">Leave empty to use your current skin</p>
                                     </div>
                                     
                                     <div class="spacer-sm"></div>
                                     
-                                    {{@checkbox:id=live-skin-check,checked={{$citizen.useLiveSkin}},label=Enable Live Skin Updates}}
-                                    {{@checkbox:id=rotate-towards-player,checked={{$citizen.rotateTowardsPlayer}},label=Rotate Towards Player}}
+                                    <div class="checkbox-row">
+                                        <input type="checkbox" id="live-skin-check" {{#if useLiveSkin}}checked{{/if}} />
+                                        <div style="layout: top; flex-weight: 0; text-align: center;">
+                                            <p class="checkbox-label">Enable Live Skin Updates</p>
+                                            <p class="checkbox-description">Automatically refresh the skin every 30 minutes</p>
+                                        </div>
+                                    </div>
+                                    
+                                    <div class="checkbox-row">
+                                        <input type="checkbox" id="rotate-towards-player" {{#if rotateTowardsPlayer}}checked{{/if}} />
+                                        <div style="layout: top; flex-weight: 0; text-align: center;">
+                                            <p class="checkbox-label">Rotate Towards Player</p>
+                                            <p class="checkbox-description">The citizen will face players when they approach</p>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
                             {{else}}
                             <!-- Entity Selection -->
                             <div class="card">
                                 <div class="card-header">
-                                    <p class="card-title">Entity Selection</p>
+                                    <p class="card-title" style="text-align: center; flex-weight: 0;">Entity Selection</p>
                                 </div>
                                 <div class="card-body">
                                     <div class="form-group">
-                                        <p class="form-label">Select Entity Type</p>
+                                        <p class="form-label" style="text-align: center;">Select Entity Type</p>
                                         <select id="entity-dropdown" value="{{$citizen.modelId}}" data-hyui-showlabel="true">
                                             {{$entityOptions}}
                                         </select>
+                                        <p class="form-hint" style="text-align: center;">Choose from common entity types</p>
                                     </div>
                                     
                                     <div class="spacer-sm"></div>
@@ -1115,9 +1590,10 @@ public class CitizensUI {
                                     <div class="spacer-sm"></div>
                                     
                                     <div class="form-group">
-                                        <p class="form-label">Or Enter Custom Model ID</p>
+                                        <p class="form-label" style="text-align: center;">Or Enter An Entity/Model ID</p>
                                         <input type="text" id="citizen-model-id" class="form-input" value="{{$citizen.modelId}}"
-                                               placeholder="Custom model ID" maxlength="64" />
+                                               placeholder="Custom model ID" maxlength="64" style="anchor-width: 200;" />
+                                        <p class="form-hint" style="text-align: center;">You can also type an entity/model ID</p>
                                     </div>
                                 </div>
                             </div>
@@ -1128,7 +1604,7 @@ public class CitizensUI {
                         
                         <!-- Scale Section -->
                         <div class="section">
-                            {{@sectionHeader:title=Scale}}
+                            {{@sectionHeader:title=Scale,description=Adjust the size of the citizen}}
                             
                             <div class="form-row">
                                 <div class="form-col-fixed" style="anchor-width: 200;">
@@ -1138,7 +1614,23 @@ public class CitizensUI {
                                                value="{{$citizen.scale}}"
                                                min="0.01" max="500" step="0.25"
                                                data-hyui-max-decimal-places="2" />
+                                        <p class="form-hint">Default: 1.0 (normal size)</p>
                                     </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="spacer-md"></div>
+                        
+                        <!-- Interaction Section -->
+                        <div class="section">
+                            {{@sectionHeader:title=Interaction,description=Configure how players interact with this citizen}}
+                            
+                            <div class="checkbox-row">
+                                <input type="checkbox" id="f-key-interaction" {{#if fKeyInteraction}}checked{{/if}} />
+                                <div style="layout: top; flex-weight: 0; text-align: center;">
+                                    <p class="checkbox-label">Enable 'F' Key to Interact</p>
+                                    <p class="checkbox-description">Allow players to use the 'F' key to interact instead of just left clicking</p>
                                 </div>
                             </div>
                         </div>
@@ -1147,7 +1639,7 @@ public class CitizensUI {
                         
                         <!-- Permissions Section -->
                         <div class="section">
-                            {{@sectionHeader:title=Permissions}}
+                            {{@sectionHeader:title=Permissions,description=Control who can interact with this citizen}}
                             
                             <div class="form-row">
                                 <div class="form-col">
@@ -1157,7 +1649,8 @@ public class CitizensUI {
                                             <p class="form-label-optional">(Optional)</p>
                                         </div>
                                         <input type="text" id="citizen-permission" class="form-input" value="{{$citizen.requiredPermission}}" 
-                                               placeholder="e.g., citizens.interact.vip" />
+                                               placeholder="e.g., citizens.interact.vip" style="anchor-width: 215;" />
+                                        <p class="form-hint" style="text-align: center;">Leave empty to allow everyone</p>
                                     </div>
                                 </div>
                             </div>
@@ -1172,7 +1665,8 @@ public class CitizensUI {
                                             <p class="form-label-optional">(Optional)</p>
                                         </div>
                                         <input type="text" id="citizen-perm-message" class="form-input" value="{{$citizen.noPermissionMessage}}" 
-                                               placeholder="e.g., You need VIP rank!" />
+                                               placeholder="e.g., You need VIP rank!" style="anchor-width: 250;" />
+                                        <p class="form-hint" style="text-align: center;">Message shown when player lacks permission</p>
                                     </div>
                                 </div>
                             </div>
@@ -1182,14 +1676,14 @@ public class CitizensUI {
                         
                         <!-- Quick Actions Section -->
                         <div class="section">
-                            {{@sectionHeader:title=Quick Actions,description=Manage commands and items and position}}
+                            {{@sectionHeader:title=Quick Actions,description= }}
                             
                             <div class="form-row">
                                 <button id="edit-commands-btn" class="btn-info" style="anchor-width: 200; anchor-height: 44;">Edit Commands</button>
                                 <div class="spacer-h-sm"></div>
                                 <button id="set-items-btn" class="btn-warning" style="anchor-width: 200; anchor-height: 44;">Set Items</button>
                                 <div class="spacer-h-sm"></div>
-                                <button id="change-position-btn" class="btn-secondary" style="anchor-width: 200; anchor-height: 44;">Update Position</button>
+                                <button id="change-position-btn" class="btn-secondary" style="anchor-width: 210; anchor-height: 44;">Update Position</button>
                             </div>
                         </div>
                         
@@ -1217,7 +1711,6 @@ public class CitizensUI {
         page.open(store);
     }
 
-    // Helper class to provide index information for command actions in templates
     public static class IndexedCommandAction {
         private final int index;
         private final String command;
@@ -1238,7 +1731,6 @@ public class CitizensUI {
                                       @Nonnull String citizenId, @Nonnull List<CommandAction> actions,
                                       boolean isCreating) {
 
-        // Create indexed actions for the template
         List<IndexedCommandAction> indexedActions = new ArrayList<>();
         for (int i = 0; i < actions.size(); i++) {
             indexedActions.add(new IndexedCommandAction(i, actions.get(i)));
@@ -1348,26 +1840,96 @@ public class CitizensUI {
 
     private void setupMainEventListeners(PageBuilder page, PlayerRef playerRef, Store<EntityStore> store,
                                          Tab currentTab, List<CitizenData> citizens) {
-        // Tab switching
         page.addEventListener("tab-create", CustomUIEventBindingType.Activating, event ->
                 openCitizensGUI(playerRef, store, Tab.CREATE));
 
         page.addEventListener("tab-manage", CustomUIEventBindingType.Activating, event ->
                 openCitizensGUI(playerRef, store, Tab.MANAGE));
 
-        // Create button
         if (currentTab == Tab.CREATE) {
             page.addEventListener("start-create", CustomUIEventBindingType.Activating, event ->
                     openCreateCitizenGUI(playerRef, store));
         }
 
-        // Manage tab - edit and remove buttons
         if (currentTab == Tab.MANAGE) {
             for (CitizenData citizen : citizens) {
                 final String cid = citizen.getId();
 
+                page.addEventListener("tp-" + cid, CustomUIEventBindingType.Activating, event -> {
+                    UUID citizenWorldUUID = citizen.getWorldUUID();
+                    UUID playerWorldUUID = playerRef.getWorldUuid();
+
+                    if (citizenWorldUUID == null) {
+                        playerRef.sendMessage(Message.raw("Failed to teleport: Citizen has no world!").color(Color.RED));
+                        return;
+                    }
+
+                    World world = Universe.get().getWorld(citizenWorldUUID);
+                    if (world == null) {
+                        playerRef.sendMessage(Message.raw("Failed to teleport: World not found!").color(Color.RED));
+                        return;
+                    }
+
+                    playerRef.getReference().getStore().addComponent(playerRef.getReference(),
+                            Teleport.getComponentType(), new Teleport(world, new Vector3d(citizen.getPosition()),
+                                    new Vector3f(0, 0, 0)));
+
+                    playerRef.sendMessage(Message.raw("Teleported to citizen '" + citizen.getName() + "'!").color(Color.GREEN));
+                });
+
                 page.addEventListener("edit-" + cid, CustomUIEventBindingType.Activating, event ->
                         openEditCitizenGUI(playerRef, store, citizen));
+
+                page.addEventListener("clone-" + cid, CustomUIEventBindingType.Activating, event -> {
+                    Vector3d position = new Vector3d(playerRef.getTransform().getPosition());
+                    Vector3f rotation = new Vector3f(playerRef.getTransform().getRotation());
+
+                    UUID worldUUID = playerRef.getWorldUuid();
+                    if (worldUUID == null) {
+                        playerRef.sendMessage(Message.raw("Failed to clone citizen!").color(Color.RED));
+                        return;
+                    }
+
+                    PlayerSkin playerSkin = null;
+                    if (citizen.getCachedSkin() != null) {
+                        playerSkin = new PlayerSkin(citizen.getCachedSkin());
+                    }
+
+                    CitizenData clonedCitizen = new CitizenData(
+                            UUID.randomUUID().toString(),
+                            citizen.getName(),
+                            citizen.getModelId(),
+                            worldUUID,
+                            position,
+                            rotation,
+                            citizen.getScale(),
+                            null,
+                            new ArrayList<>(),
+                            citizen.getRequiredPermission(),
+                            citizen.getNoPermissionMessage(),
+                            new ArrayList<>(citizen.getCommandActions()),
+                            citizen.isPlayerModel(),
+                            citizen.isUseLiveSkin(),
+                            citizen.getSkinUsername(),
+                            playerSkin,
+                            citizen.getLastSkinUpdate(),
+                            citizen.getRotateTowardsPlayer()
+                    );
+
+                    clonedCitizen.setNametagOffset(citizen.getNametagOffset());
+                    clonedCitizen.setHideNametag(citizen.isHideNametag());
+                    clonedCitizen.setFKeyInteractionEnabled(citizen.getFKeyInteractionEnabled());
+                    clonedCitizen.setNpcHelmet(citizen.getNpcHelmet());
+                    clonedCitizen.setNpcChest(citizen.getNpcChest());
+                    clonedCitizen.setNpcGloves(citizen.getNpcGloves());
+                    clonedCitizen.setNpcLeggings(citizen.getNpcLeggings());
+                    clonedCitizen.setNpcHand(citizen.getNpcHand());
+                    clonedCitizen.setNpcOffHand(citizen.getNpcOffHand());
+
+                    plugin.getCitizensManager().addCitizen(clonedCitizen, true);
+                    playerRef.sendMessage(Message.raw("Citizen '" + citizen.getName() + "' cloned at your position!").color(Color.GREEN));
+                    openCitizensGUI(playerRef, store, Tab.MANAGE);
+                });
 
                 page.addEventListener("remove-" + cid, CustomUIEventBindingType.Activating, event -> {
                     plugin.getCitizensManager().removeCitizen(cid);
@@ -1382,7 +1944,8 @@ public class CitizensUI {
                                              boolean initialIsPlayerModel, String initialName, float initialNametagOffset,
                                              boolean initialHideNametag, String initialModelId, float initialScale,
                                              String initialPermission, String initialPermMessage, boolean initialUseLiveSkin,
-                                             String initialSkinUsername, boolean initialRotateTowardsPlayer) {
+                                             String initialSkinUsername, boolean initialRotateTowardsPlayer,
+                                             boolean initialFKeyInteraction) {
         final List<CommandAction> tempActions = new ArrayList<>();
         final String[] currentName = {initialName};
         final float[] nametagOffset = {initialNametagOffset};
@@ -1395,19 +1958,17 @@ public class CitizensUI {
         final boolean[] useLiveSkin = {initialUseLiveSkin};
         final String[] skinUsername = {initialSkinUsername};
         final boolean[] rotateTowardsPlayer = {initialRotateTowardsPlayer};
+        final boolean[] FKeyInteraction = {initialFKeyInteraction};
 
-        // Track input changes
         page.addEventListener("citizen-name", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
             currentName[0] = ctx.getValue("citizen-name", String.class).orElse("");
         });
 
-        // Entity-specific listeners (only when NOT in player model mode)
         if (!initialIsPlayerModel) {
             page.addEventListener("citizen-model-id", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
                 currentModelId[0] = ctx.getValue("citizen-model-id", String.class).orElse("");
             });
 
-            // Entity dropdown selection
             page.addEventListener("entity-dropdown", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
                 ctx.getValue("entity-dropdown", String.class).ifPresent(val -> {
                     currentModelId[0] = val;
@@ -1415,7 +1976,6 @@ public class CitizensUI {
             });
         }
 
-        // Player-specific listeners (only when in player model mode)
         if (initialIsPlayerModel) {
             page.addEventListener("skin-username", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
                 skinUsername[0] = ctx.getValue("skin-username", String.class).orElse("");
@@ -1429,7 +1989,6 @@ public class CitizensUI {
                 rotateTowardsPlayer[0] = ctx.getValue("rotate-towards-player", Boolean.class).orElse(true);
             });
 
-            // Get current player skin button
             page.addEventListener("get-player-skin-btn", CustomUIEventBindingType.Activating, event -> {
                 skinUsername[0] = playerRef.getUsername();
                 playerRef.sendMessage(Message.raw("Using your skin for this citizen!").color(Color.GREEN));
@@ -1446,7 +2005,6 @@ public class CitizensUI {
                             try {
                                 nametagOffset[0] = Float.parseFloat(val);
                             } catch (NumberFormatException e) {
-                                // Ignore
                             }
                         });
             }
@@ -1454,6 +2012,10 @@ public class CitizensUI {
 
         page.addEventListener("hide-nametag-check", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
             hideNametag[0] = ctx.getValue("hide-nametag-check", Boolean.class).orElse(false);
+        });
+
+        page.addEventListener("f-key-interaction", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
+            FKeyInteraction[0] = ctx.getValue("f-key-interaction", Boolean.class).orElse(true);
         });
 
         page.addEventListener("citizen-scale", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
@@ -1466,7 +2028,6 @@ public class CitizensUI {
                             try {
                                 currentScale[0] = Float.parseFloat(val);
                             } catch (NumberFormatException e) {
-                                // Ignore
                             }
                         });
             }
@@ -1480,20 +2041,18 @@ public class CitizensUI {
             currentPermMessage[0] = ctx.getValue("citizen-perm-message", String.class).orElse("");
         });
 
-        // Entity type toggle buttons
         page.addEventListener("type-player", CustomUIEventBindingType.Activating, (event, ctx) -> {
             openCreateCitizenGUI(playerRef, store, true, currentName[0], nametagOffset[0], hideNametag[0], currentModelId[0],
                     currentScale[0], currentPermission[0], currentPermMessage[0], useLiveSkin[0], true,
-                    skinUsername[0], rotateTowardsPlayer[0]);
+                    skinUsername[0], rotateTowardsPlayer[0], FKeyInteraction[0]);
         });
 
         page.addEventListener("type-entity", CustomUIEventBindingType.Activating, (event, ctx) -> {
             openCreateCitizenGUI(playerRef, store, false, currentName[0], nametagOffset[0], hideNametag[0], currentModelId[0],
                     currentScale[0], currentPermission[0], currentPermMessage[0], useLiveSkin[0], true,
-                    skinUsername[0], rotateTowardsPlayer[0]);
+                    skinUsername[0], rotateTowardsPlayer[0], FKeyInteraction[0]);
         });
 
-        // Create button
         page.addEventListener("create-btn", CustomUIEventBindingType.Activating, event -> {
             String name = currentName[0].trim();
 
@@ -1526,7 +2085,6 @@ public class CitizensUI {
                 skinUsername[0] = playerRef.getUsername();
             }
 
-            // Create the citizen
             CitizenData citizen = new CitizenData(
                     UUID.randomUUID().toString(),
                     name,
@@ -1536,7 +2094,7 @@ public class CitizensUI {
                     rotation,
                     currentScale[0],
                     null,
-                    null,
+                    new ArrayList<>(),
                     currentPermission[0].trim(),
                     currentPermMessage[0].trim(),
                     new ArrayList<>(tempActions),
@@ -1550,8 +2108,8 @@ public class CitizensUI {
 
             citizen.setNametagOffset(nametagOffset[0]);
             citizen.setHideNametag(hideNametag[0]);
+            citizen.setFKeyInteractionEnabled(FKeyInteraction[0]);
 
-            // If player model, fetch and cache the skin BEFORE adding
             if (isPlayerModel[0]) {
                 if (skinUsername[0].trim().isEmpty()) {
                     plugin.getCitizensManager().updateCitizenSkinFromPlayer(citizen, playerRef, false);
@@ -1575,7 +2133,6 @@ public class CitizensUI {
             }
         });
 
-        // Cancel button
         page.addEventListener("cancel-btn", CustomUIEventBindingType.Activating, event ->
                 openCitizensGUI(playerRef, store, Tab.CREATE));
     }
@@ -1592,20 +2149,18 @@ public class CitizensUI {
         final boolean[] isPlayerModel = {citizen.isPlayerModel()};
         final boolean[] useLiveSkin = {citizen.isUseLiveSkin()};
         final boolean[] rotateTowardsPlayer = {citizen.getRotateTowardsPlayer()};
+        final boolean[] FKeyInteraction = {citizen.getFKeyInteractionEnabled()};
         final String[] skinUsername = {citizen.getSkinUsername()};
 
-        // Track input changes
         page.addEventListener("citizen-name", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
             currentName[0] = ctx.getValue("citizen-name", String.class).orElse("");
         });
 
-        // Entity-specific listeners (only when NOT in player model mode)
         if (!citizen.isPlayerModel()) {
             page.addEventListener("citizen-model-id", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
                 currentModelId[0] = ctx.getValue("citizen-model-id", String.class).orElse("");
             });
 
-            // Entity dropdown selection
             page.addEventListener("entity-dropdown", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
                 ctx.getValue("entity-dropdown", String.class).ifPresent(val -> {
                     currentModelId[0] = val;
@@ -1613,7 +2168,6 @@ public class CitizensUI {
             });
         }
 
-        // Player-specific listeners (only when in player model mode)
         if (citizen.isPlayerModel()) {
             page.addEventListener("skin-username", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
                 skinUsername[0] = ctx.getValue("skin-username", String.class).orElse("");
@@ -1627,7 +2181,6 @@ public class CitizensUI {
                 rotateTowardsPlayer[0] = ctx.getValue("rotate-towards-player", Boolean.class).orElse(true);
             });
 
-            // Get current player skin button
             page.addEventListener("get-player-skin-btn", CustomUIEventBindingType.Activating, event -> {
                 skinUsername[0] = playerRef.getUsername();
                 playerRef.sendMessage(Message.raw("Using your skin for this citizen!").color(Color.GREEN));
@@ -1644,7 +2197,6 @@ public class CitizensUI {
                             try {
                                 nametagOffset[0] = Float.parseFloat(val);
                             } catch (NumberFormatException e) {
-                                // Ignore
                             }
                         });
             }
@@ -1652,6 +2204,10 @@ public class CitizensUI {
 
         page.addEventListener("hide-nametag-check", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
             hideNametag[0] = ctx.getValue("hide-nametag-check", Boolean.class).orElse(false);
+        });
+
+        page.addEventListener("f-key-interaction", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
+            FKeyInteraction[0] = ctx.getValue("f-key-interaction", Boolean.class).orElse(true);
         });
 
         page.addEventListener("citizen-scale", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
@@ -1664,7 +2220,6 @@ public class CitizensUI {
                             try {
                                 currentScale[0] = Float.parseFloat(val);
                             } catch (NumberFormatException e) {
-                                // Ignore
                             }
                         });
             }
@@ -1678,7 +2233,6 @@ public class CitizensUI {
             currentPermMessage[0] = ctx.getValue("citizen-perm-message", String.class).orElse("");
         });
 
-        // Entity type toggle buttons
         page.addEventListener("type-player", CustomUIEventBindingType.Activating, (event, ctx) -> {
             isPlayerModel[0] = true;
             citizen.setPlayerModel(true);
@@ -1691,13 +2245,11 @@ public class CitizensUI {
             openEditCitizenGUI(playerRef, store, citizen);
         });
 
-        // Edit commands button
         page.addEventListener("edit-commands-btn", CustomUIEventBindingType.Activating, event -> {
             openCommandActionsGUI(playerRef, store, citizen.getId(),
                     new ArrayList<>(citizen.getCommandActions()), false);
         });
 
-        // Change position button
         page.addEventListener("change-position-btn", CustomUIEventBindingType.Activating, event -> {
             Vector3d newPosition = new Vector3d(playerRef.getTransform().getPosition());
             Vector3f newRotation = new Vector3f(playerRef.getTransform().getRotation());
@@ -1716,7 +2268,6 @@ public class CitizensUI {
             playerRef.sendMessage(Message.raw("Position updated to your current location!").color(Color.GREEN));
         });
 
-        // Set items button
         page.addEventListener("set-items-btn", CustomUIEventBindingType.Activating, event -> {
             World world = Universe.get().getWorld(playerRef.getWorldUuid());
             if (world == null) {
@@ -1735,42 +2286,36 @@ public class CitizensUI {
                     return;
                 }
 
-                // Main hand
                 if (player.getInventory().getItemInHand() == null) {
                     citizen.setNpcHand(null);
                 } else {
                     citizen.setNpcHand(player.getInventory().getItemInHand().getItemId());
                 }
 
-                // Off hand
                 if (player.getInventory().getUtilityItem() == null) {
                     citizen.setNpcOffHand(null);
                 } else {
                     citizen.setNpcOffHand(player.getInventory().getUtilityItem().getItemId());
                 }
 
-                // Helmet
                 if (player.getInventory().getArmor().getItemStack((short) 0) == null) {
                     citizen.setNpcHelmet(null);
                 } else {
                     citizen.setNpcHelmet(player.getInventory().getArmor().getItemStack((short) 0).getItemId());
                 }
 
-                // Chest
                 if (player.getInventory().getArmor().getItemStack((short) 1) == null) {
                     citizen.setNpcChest(null);
                 } else {
                     citizen.setNpcChest(player.getInventory().getArmor().getItemStack((short) 1).getItemId());
                 }
 
-                // Gloves
                 if (player.getInventory().getArmor().getItemStack((short) 2) == null) {
                     citizen.setNpcGloves(null);
                 } else {
                     citizen.setNpcGloves(player.getInventory().getArmor().getItemStack((short) 2).getItemId());
                 }
 
-                // Leggings
                 if (player.getInventory().getArmor().getItemStack((short) 3) == null) {
                     citizen.setNpcLeggings(null);
                 } else {
@@ -1784,7 +2329,6 @@ public class CitizensUI {
             playerRef.sendMessage(Message.raw("Citizen's equipment updated to match yours!").color(Color.GREEN));
         });
 
-        // Save button
         page.addEventListener("save-btn", CustomUIEventBindingType.Activating, event -> {
             String name = currentName[0].trim();
 
@@ -1816,11 +2360,11 @@ public class CitizensUI {
             citizen.setPlayerModel(isPlayerModel[0]);
             citizen.setUseLiveSkin(useLiveSkin[0]);
             citizen.setRotateTowardsPlayer(rotateTowardsPlayer[0]);
+            citizen.setFKeyInteractionEnabled(FKeyInteraction[0]);
             citizen.setSkinUsername(skinUsername[0].trim());
             citizen.setNametagOffset(nametagOffset[0]);
             citizen.setHideNametag(hideNametag[0]);
 
-            // If player model, fetch and cache the skin BEFORE updating
             if (isPlayerModel[0]) {
                 if (skinUsername[0].trim().isEmpty()) {
                     plugin.getCitizensManager().updateCitizenSkinFromPlayer(citizen, playerRef, false);
@@ -1844,7 +2388,6 @@ public class CitizensUI {
             }
         });
 
-        // Cancel button
         page.addEventListener("cancel-btn", CustomUIEventBindingType.Activating, event ->
                 openCitizensGUI(playerRef, store, Tab.MANAGE));
     }
@@ -1853,12 +2396,10 @@ public class CitizensUI {
                                               String citizenId, List<CommandAction> actions, boolean isCreating) {
         final String[] currentCommand = {""};
 
-        // Track command input
         page.addEventListener("new-command", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
             currentCommand[0] = ctx.getValue("new-command", String.class).orElse("");
         });
 
-        // Add command button
         page.addEventListener("add-command-btn", CustomUIEventBindingType.Activating, event -> {
             String command = currentCommand[0].trim();
 
@@ -1867,7 +2408,6 @@ public class CitizensUI {
                 return;
             }
 
-            // Remove leading slash if present
             if (command.startsWith("/")) {
                 command = command.substring(1);
             }
@@ -1878,7 +2418,6 @@ public class CitizensUI {
             openCommandActionsGUI(playerRef, store, citizenId, actions, isCreating);
         });
 
-        // Toggle and delete buttons for each command
         for (int i = 0; i < actions.size(); i++) {
             final int index = i;
 
@@ -1899,7 +2438,6 @@ public class CitizensUI {
             });
         }
 
-        // Done button
         page.addEventListener("done-btn", CustomUIEventBindingType.Activating, event -> {
             if (!isCreating) {
                 CitizenData citizen = plugin.getCitizensManager().getCitizen(citizenId);
@@ -1914,7 +2452,6 @@ public class CitizensUI {
             }
         });
 
-        // Cancel button
         page.addEventListener("cancel-btn", CustomUIEventBindingType.Activating, event -> {
             if (!isCreating) {
                 CitizenData citizen = plugin.getCitizensManager().getCitizen(citizenId);
