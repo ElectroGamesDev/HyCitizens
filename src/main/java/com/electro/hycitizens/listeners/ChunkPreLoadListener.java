@@ -49,14 +49,16 @@ public class ChunkPreLoadListener {
             long chunkIndex = ChunkUtil.indexChunkFromBlock(citizen.getPosition().x, citizen.getPosition().z);
             WorldChunk loadedChunk = world.getChunkIfLoaded(chunkIndex);
             if (loadedChunk != null) {
-                if (world.getEntityRef(citizen.getSpawnedUUID()) == null) {
-                    plugin.getCitizensManager().spawnCitizenNPC(citizen, true);
-                } else {
-                    // Entity exists, update skin if live skin is enabled
-                    if (citizen.isPlayerModel() && citizen.isUseLiveSkin()) {
-                        plugin.getCitizensManager().updateCitizenSkin(citizen, true);
+                world.execute(() -> {
+                    if (world.getEntityRef(citizen.getSpawnedUUID()) == null) {
+                        plugin.getCitizensManager().spawnCitizenNPC(citizen, true);
+                    } else {
+                        // Entity exists, update skin if live skin is enabled
+                        if (citizen.isPlayerModel() && citizen.isUseLiveSkin()) {
+                            plugin.getCitizensManager().updateCitizenSkin(citizen, true);
+                        }
                     }
-                }
+                });
 
                 continue;
             }
@@ -89,15 +91,17 @@ public class ChunkPreLoadListener {
 
                         world.loadChunkIfInMemory(chunkIndex);
 
-                        // If the chunk loads, try to spawn the citizen if it doesn't exist
-                        if (world.getEntityRef(citizen.getSpawnedUUID()) == null) {
-                            plugin.getCitizensManager().spawnCitizenNPC(citizen, true);
-                        } else {
-                            // Entity exists, update skin if live skin is enabled
-                            if (citizen.isPlayerModel() && citizen.isUseLiveSkin()) {
-                                plugin.getCitizensManager().updateCitizenSkin(citizen, true);
+                        world.execute(() -> {
+                            // If the chunk loads, try to spawn the citizen if it doesn't exist
+                            if (world.getEntityRef(citizen.getSpawnedUUID()) == null) {
+                                plugin.getCitizensManager().spawnCitizenNPC(citizen, true);
+                            } else {
+                                // Entity exists, update skin if live skin is enabled
+                                if (citizen.isPlayerModel() && citizen.isUseLiveSkin()) {
+                                    plugin.getCitizensManager().updateCitizenSkin(citizen, true);
+                                }
                             }
-                        }
+                        });
 
                         boolean shouldSpawnHologram = citizen.getHologramLineUuids() == null || citizen.getHologramLineUuids().isEmpty();
                         if (!shouldSpawnHologram) {
