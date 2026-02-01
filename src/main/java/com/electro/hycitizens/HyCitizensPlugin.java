@@ -1,5 +1,6 @@
 package com.electro.hycitizens;
 
+import com.electro.hycitizens.actions.BuilderActionInteract;
 import com.electro.hycitizens.commands.CitizensCommand;
 import com.electro.hycitizens.listeners.*;
 import com.electro.hycitizens.managers.CitizensManager;
@@ -10,6 +11,7 @@ import com.hypixel.hytale.server.core.event.events.player.*;
 import com.hypixel.hytale.server.core.plugin.JavaPlugin;
 import com.hypixel.hytale.server.core.plugin.JavaPluginInit;
 import com.hypixel.hytale.server.core.universe.world.events.ChunkPreLoadProcessEvent;
+import com.hypixel.hytale.server.npc.NPCPlugin;
 
 import javax.annotation.Nonnull;
 import java.nio.file.Paths;
@@ -44,6 +46,8 @@ public class HyCitizensPlugin extends JavaPlugin {
         this.addToWorldListener = new PlayerAddToWorldListener(this);
         this.chunkPreLoadListener = new ChunkPreLoadListener(this);
         this.connectionListener = new PlayerConnectionListener(this);
+
+        NPCPlugin.get().registerCoreComponentType("CitizenInteraction", BuilderActionInteract::new);
 
         // Register event listeners
         registerEventListeners();
