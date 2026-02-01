@@ -3,7 +3,7 @@ plugins {
 }
 
 group = "com.electro"
-version = "1.2"
+version = "1.3"
 
 repositories {
     mavenCentral()
@@ -11,7 +11,7 @@ repositories {
 
 dependencies {
     compileOnly(files("../../Server/HytaleServer.jar"))
-    implementation(files("libs/HyUI-0.5.8-all.jar"))
+    implementation(files("libs/HyUI-0.5.11-all.jar"))
 
     testImplementation(platform("org.junit:junit-bom:5.10.0"))
     testImplementation("org.junit.jupiter:junit-jupiter")
