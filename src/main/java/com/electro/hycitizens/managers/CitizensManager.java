@@ -396,14 +396,12 @@ public class CitizensManager {
         }
 
         // Item in offhand
-        // Off hand is not supported by NPCs
-//        if (citizen.getNpcOffHand() == null) {
-//            npcEntity.getInventory().getUtility().setItemStackForSlot((short) 0, null);
-//        }
-//        else {
-//            npcEntity.getInventory().getUtility().setItemStackForSlot((short) 0, new ItemStack(citizen.getNpcHand()));
-//            npcEntity.getInventory().setActiveUtilitySlot((byte) 0); // Todo: This likely isnt needed
-//        }
+        if (citizen.getNpcOffHand() == null) {
+            npcEntity.getInventory().getUtility().setItemStackForSlot((short) 0, null);
+        }
+        else {
+            npcEntity.getInventory().getUtility().setItemStackForSlot((short) 0, new ItemStack(citizen.getNpcHand()));
+        }
 
         // Set helmet
         if (citizen.getNpcHelmet() == null) {
@@ -567,6 +565,8 @@ public class CitizensManager {
         if (npc == null)
             return;
 
+        npc.second().setInventorySize(9, 30, 5);
+
         Ref<EntityStore> ref = npc.second().getReference();
         Store<EntityStore> store = npc.first().getStore();
 
@@ -619,6 +619,8 @@ public class CitizensManager {
 
         if (npc == null)
             return;
+
+        npc.second().setInventorySize(9, 30, 5);
 
         // Apply skin component
         PlayerSkinComponent skinComponent = new PlayerSkinComponent(skinToUse);
