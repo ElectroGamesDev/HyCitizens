@@ -28,6 +28,7 @@ public class ChunkPreLoadListener {
     public void onChunkPreload(ChunkPreLoadProcessEvent event) {
         World world = event.getChunk().getWorld();
 
+        boolean hasCitizens = false;
 
         for (CitizenData citizen : plugin.getCitizensManager().getAllCitizens()) {
             if (!world.getWorldConfig().getUuid().equals(citizen.getWorldUUID()))
@@ -43,6 +44,14 @@ public class ChunkPreLoadListener {
             long citizenChunkIndex = ChunkUtil.indexChunkFromBlock((int)citizen.getPosition().x, (int)citizen.getPosition().getZ());
             if (event.getChunk().getIndex() != citizenChunkIndex) {
                 continue;
+            }
+
+            if (!hasCitizens) {
+                // We need to do this, due to a hytale bug
+                for (int i = 0; i < 25; i++) {
+                    event.getChunk().addKeepLoaded();
+                }
+                hasCitizens = true;
             }
 
             // First check if the chunk is already loaded
