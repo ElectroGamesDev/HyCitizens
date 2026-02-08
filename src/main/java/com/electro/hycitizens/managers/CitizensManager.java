@@ -130,13 +130,6 @@ public class CitizensManager {
                         if (citizen.getSpawnedUUID() == null || citizen.getNpcRef() == null || !citizen.getNpcRef().isValid())
                             continue;
 
-                        if (!citizen.getRotateTowardsPlayer())
-                            continue;
-
-                        // Only look at player if idle
-                        if (!citizen.getMovementBehavior().getType().equals("IDLE"))
-                            continue;
-
                         long chunkIndex = ChunkUtil.indexChunkFromBlock(citizen.getPosition().x, citizen.getPosition().z);
                         WorldChunk chunk = world.getChunkIfLoaded(chunkIndex);
                         if (chunk == null)
@@ -159,6 +152,13 @@ public class CitizensManager {
                             if (!citizen.getAnimationBehaviors().isEmpty()) {
                                 checkProximityAnimations(citizen, playerRef, distSq);
                             }
+
+                            if (!citizen.getRotateTowardsPlayer())
+                                continue;
+
+                            // Only look at player if idle
+                            if (!citizen.getMovementBehavior().getType().equals("IDLE"))
+                                continue;
 
                             rotateCitizenToPlayer(citizen, playerRef);
                         }
@@ -814,6 +814,19 @@ public class CitizensManager {
 
         Ref<EntityStore> ref = npc.second().getReference();
         Store<EntityStore> store = npc.first().getStore();
+
+        // This is required since the "Player" entity's scale resets to 0
+        if (citizen.getModelId().equals("Player")) {
+            PersistentModel persistentModel = npc.first().getStore().getComponent(npc.second().getReference(), PersistentModel.getComponentType());
+            if (persistentModel != null) {
+                persistentModel.setModelReference(new Model.ModelReference(
+                        citizenModel.getModelAssetId(),
+                        citizenModel.getScale(),
+                        citizenModel.getRandomAttachmentIds(),
+                        citizenModel.getAnimationSetMap() == null
+                ));
+            }
+        }
 
         UUIDComponent uuidComponent = store.getComponent(ref, UUIDComponent.getComponentType());
 
@@ -1513,7 +1526,7 @@ public class CitizensManager {
 
             float range = ab.getProximityRange();
             double rangeSq = range * range;
-            String key = citizen.getId() + "_" + playerUUID;
+            //String key = citizen.getId() + "_" + playerUUID;
             boolean wasInRange = citizen.getPlayersInProximity().getOrDefault(playerUUID, false);
             boolean isInRange = distanceSq <= rangeSq;
 
@@ -1540,6 +1553,8 @@ public class CitizensManager {
 
         if (isWander) {
             int radius = getEffectiveRadius(citizen);
+            getLogger().atInfo().log("wander radius " + radius);
+
             String base = switch (attitude) {
                 case "NEUTRAL" -> "Citizen_Wander_Neutral_R" + radius;
                 case "AGGRESSIVE" -> "Citizen_Wander_Aggressive_R" + radius;
@@ -1559,9 +1574,10 @@ public class CitizensManager {
 
     private int getEffectiveRadius(@Nonnull CitizenData citizen) {
         float radius = citizen.getMovementBehavior().getWanderRadius();
-        // Snap to nearest supported radius: 0, 2, 5, 10, 15
-        if (radius <= 1) return 0;
-        if (radius <= 3) return 2;
+        // Snap to nearest supported radius: 0, 1, 2, 5, 10, 15
+        if (radius < 1) return 0;
+        if (radius < 2) return 1;
+        if (radius < 3) return 2;
         if (radius <= 7) return 5;
         if (radius <= 12) return 10;
         return 15;
