@@ -1,0 +1,58 @@
+﻿{
+  "Type": "Variant",
+  "Reference": "Template_Citizen",
+  "Appearance": "Player",
+  "Parameters": {
+    "DefaultPlayerAttitude": {
+      "Value": "Ignore",
+      "Description": "NPC ignores players"
+    },
+    "ViewRange": {
+      "Value": 0,
+      "Description": "Visual detection range"
+    },
+    "HearingRange": {
+      "Value": 0,
+      "Description": "Hearing detection range"
+    },
+    "AbsoluteDetectionRange": {
+      "Value": 0,
+      "Description": "Absolute detection range"
+    },
+    "MaxHealth": {
+      "Value": 100,
+      "Description": "Max health for the NPC"
+    },
+    "WanderRadius": {
+      "Value": 10,
+      "Description": "Wander circle radius in blocks"
+    }
+  },
+  "InteractionInstruction": {
+    "Instructions": [
+      {
+        "Continue": true,
+        "Sensor": {
+          "Type": "Any"
+        },
+        "Actions": [
+          {
+            "Type": "SetInteractable",
+            "Interactable": true
+          }
+        ]
+      },
+      {
+        "Sensor": {
+          "Type": "HasInteracted"
+        },
+        "Actions": [
+          {
+            "Type": "CitizenInteraction"
+          }
+        ]
+      }
+    ]
+  },
+  "NameTranslationKey": "Citizen"
+}

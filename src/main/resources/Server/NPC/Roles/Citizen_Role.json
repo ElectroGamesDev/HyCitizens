@@ -1,0 +1,20 @@
+{
+  "Type": "Generic",
+  "MotionControllerList": [
+    {
+      "Type": "Walk"
+    }
+  ],
+  "Appearance": "Player",
+  "MaxHealth": { "Compute": "MaxHealth" },
+  "Parameters": {
+    "MaxHealth": {
+      "Value": 100,
+      "Description": "Max health for the NPC"
+    }
+  },
+  "Instructions": [
+    {}
+  ],
+  "NameTranslationKey": "Citizen"
+}
