@@ -14,22 +14,37 @@ import java.io.*;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.*;
+import static com.hypixel.hytale.logger.HytaleLogger.getLogger;
 
 public class ConfigManager {
     private final Path configFile;
     private final Gson gson;
     private Map<String, Object> config;
+    private boolean deferSave = false;
+    private boolean dirty = false;
 
     public ConfigManager(@Nonnull Path pluginDataFolder) {
         this.configFile = pluginDataFolder.resolve("data.json");
         this.gson = new GsonBuilder().setPrettyPrinting().create();
-        this.config = new HashMap<>();
+        this.config = new LinkedHashMap<>();
         loadConfig();
+    }
+
+    public void beginBatch() {
+        this.deferSave = true;
+        this.dirty = false;
+    }
+
+    public void endBatch() {
+        this.deferSave = false;
+        if (this.dirty) {
+            saveConfig();
+            this.dirty = false;
+        }
     }
 
     public void loadConfig() {
         if (!Files.exists(configFile)) {
-            // Create default config
             setDefaults();
             saveConfig();
             return;
@@ -37,16 +52,137 @@ public class ConfigManager {
 
         try (Reader reader = new FileReader(configFile.toFile())) {
             JsonObject jsonObject = JsonParser.parseReader(reader).getAsJsonObject();
-            config = gson.fromJson(jsonObject, Map.class);
+            config = gson.fromJson(jsonObject, LinkedHashMap.class);
+            if (config == null) {
+                config = new LinkedHashMap<>();
+            }
+
+            // Migrate old flat-key format to nested format
+            if (needsMigration()) {
+                migrateToNested();
+                saveConfig();
+            }
         } catch (IOException e) {
-            System.err.println("Failed to load config: " + e.getMessage());
+            getLogger().atInfo().log("Failed to load config: " + e.getMessage());
             setDefaults();
+        }
+    }
+
+    private boolean needsMigration() {
+        for (String key : config.keySet()) {
+            if (key.contains(".")) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private void migrateToNested() {
+        Map<String, Object> newConfig = new LinkedHashMap<>();
+
+        for (Map.Entry<String, Object> entry : config.entrySet()) {
+            String key = entry.getKey();
+            Object value = entry.getValue();
+
+            if (key.contains(".")) {
+                // Old flat key - nest it
+                setNestedValue(newConfig, key, value);
+            } else {
+                // Already a top-level key (could be from new format mixed in)
+                newConfig.put(key, value);
+            }
+        }
+
+        config = newConfig;
+    }
+
+    @SuppressWarnings("unchecked")
+    private void setNestedValue(@Nonnull Map<String, Object> root, @Nonnull String path, @Nullable Object value) {
+        String[] parts = path.split("\\.");
+        Map<String, Object> current = root;
+
+        for (int i = 0; i < parts.length - 1; i++) {
+            Object existing = current.get(parts[i]);
+            if (existing instanceof Map) {
+                current = (Map<String, Object>) existing;
+            } else {
+                Map<String, Object> newMap = new LinkedHashMap<>();
+                current.put(parts[i], newMap);
+                current = newMap;
+            }
+        }
+
+        String finalKey = parts[parts.length - 1];
+        if (value == null) {
+            current.remove(finalKey);
+        } else {
+            current.put(finalKey, value);
+        }
+    }
+
+    /**
+     * Retrieves a value from the nested map structure using a dot-notation path.
+     */
+    @SuppressWarnings("unchecked")
+    @Nullable
+    private Object getNestedValue(@Nonnull String path) {
+        String[] parts = path.split("\\.");
+        Object current = config;
+
+        for (String part : parts) {
+            if (current instanceof Map) {
+                current = ((Map<String, Object>) current).get(part);
+            } else {
+                return null;
+            }
+        }
+
+        return current;
+    }
+
+    /**
+     * Removes a nested value and cleans up empty parent maps.
+     */
+    @SuppressWarnings("unchecked")
+    private void removeNestedValue(@Nonnull String path) {
+        String[] parts = path.split("\\.");
+        if (parts.length == 1) {
+            config.remove(parts[0]);
+            return;
+        }
+
+        // Walk to the parent of the target
+        List<Map<String, Object>> parents = new ArrayList<>();
+        parents.add(config);
+        Map<String, Object> current = config;
+
+        for (int i = 0; i < parts.length - 1; i++) {
+            Object existing = current.get(parts[i]);
+            if (existing instanceof Map) {
+                current = (Map<String, Object>) existing;
+                parents.add(current);
+            } else {
+                return; // Path doesn't exist
+            }
+        }
+
+        // Remove the target key
+        current.remove(parts[parts.length - 1]);
+
+        // Clean up empty parent maps (walk backwards)
+        for (int i = parts.length - 2; i >= 0; i--) {
+            Map<String, Object> parent = parents.get(i);
+            Map<String, Object> child = parents.get(i + 1);
+            if (child.isEmpty()) {
+                parent.remove(parts[i]);
+            } else {
+                break;
+            }
         }
     }
 
     public void saveConfig() {
         try {
-            // Ensure parent directories exist
             Files.createDirectories(configFile.getParent());
 
             try (Writer writer = new FileWriter(configFile.toFile())) {
@@ -57,14 +193,26 @@ public class ConfigManager {
         }
     }
 
+    /**
+     * Saves to disk unless we're in a batch operation, in which case just marks dirty.
+     */
+    private void conditionalSave() {
+        if (deferSave) {
+            dirty = true;
+        } else {
+            saveConfig();
+        }
+    }
+
     @Nullable
     public Object get(@Nonnull String path) {
-        return config.get(path);
+        return getNestedValue(path);
     }
 
     @Nonnull
     public Object get(@Nonnull String path, @Nonnull Object defaultValue) {
-        return config.getOrDefault(path, defaultValue);
+        Object value = getNestedValue(path);
+        return value != null ? value : defaultValue;
     }
 
     @Nullable
@@ -103,9 +251,25 @@ public class ConfigManager {
         return defaultValue;
     }
 
+    public long getLong(@Nonnull String path, long defaultValue) {
+        Object value = get(path);
+        if (value instanceof Number) {
+            return ((Number) value).longValue();
+        }
+        return defaultValue;
+    }
+
+    public double getDouble(@Nonnull String path, double defaultValue) {
+        Object value = get(path);
+        if (value instanceof Number) {
+            return ((Number) value).doubleValue();
+        }
+        return defaultValue;
+    }
+
     @Nullable
     public Vector3f getVector3f(@Nonnull String path) {
-        Object value = config.get(path);
+        Object value = get(path);
         if (!(value instanceof Map<?, ?> map)) return null;
 
         try {
@@ -120,22 +284,23 @@ public class ConfigManager {
 
     public void setVector3f(@Nonnull String path, @Nullable Vector3f vec) {
         if (vec == null) {
-            config.remove(path);
+            removeNestedValue(path);
+            conditionalSave();
             return;
         }
 
-        Map<String, Object> map = new HashMap<>();
+        Map<String, Object> map = new LinkedHashMap<>();
         map.put("x", vec.x);
         map.put("y", vec.y);
         map.put("z", vec.z);
 
-        config.put(path, map);
-        saveConfig();
+        setNestedValue(config, path, map);
+        conditionalSave();
     }
 
     @Nullable
     public Vector3d getVector3d(@Nonnull String path) {
-        Object value = config.get(path);
+        Object value = get(path);
         if (!(value instanceof Map<?, ?> map)) return null;
 
         try {
@@ -150,22 +315,23 @@ public class ConfigManager {
 
     public void setVector3d(@Nonnull String path, @Nullable Vector3d vec) {
         if (vec == null) {
-            config.remove(path);
+            removeNestedValue(path);
+            conditionalSave();
             return;
         }
 
-        Map<String, Object> map = new HashMap<>();
+        Map<String, Object> map = new LinkedHashMap<>();
         map.put("x", vec.x);
         map.put("y", vec.y);
         map.put("z", vec.z);
 
-        config.put(path, map);
-        saveConfig();
+        setNestedValue(config, path, map);
+        conditionalSave();
     }
 
     @Nullable
     public UUID getUUID(@Nonnull String path) {
-        Object value = config.get(path);
+        Object value = get(path);
         if (!(value instanceof String str)) return null;
 
         try {
@@ -177,7 +343,7 @@ public class ConfigManager {
 
     @Nullable
     public List<UUID> getUUIDList(@Nonnull String path) {
-        Object value = config.get(path);
+        Object value = get(path);
         if (value == null) return null;
 
         List<UUID> uuids = new ArrayList<>();
@@ -195,8 +361,7 @@ public class ConfigManager {
             // Backwards compatibility
             try {
                 uuids.add(UUID.fromString(str));
-            }
-            catch (IllegalArgumentException ignored) {
+            } catch (IllegalArgumentException ignored) {
             }
         }
 
@@ -205,43 +370,41 @@ public class ConfigManager {
 
     public void setUUID(@Nonnull String path, @Nullable UUID uuid) {
         if (uuid == null) {
-            config.remove(path);
+            removeNestedValue(path);
         } else {
-            config.put(path, uuid.toString());
+            setNestedValue(config, path, uuid.toString());
         }
-        saveConfig();
+        conditionalSave();
     }
 
     public void setUUIDList(@Nonnull String path, @Nullable List<UUID> uuids) {
         if (uuids == null || uuids.isEmpty()) {
-            config.remove(path);
+            removeNestedValue(path);
         } else {
             List<String> uuidStrings = new ArrayList<>();
             for (UUID uuid : uuids) {
-                if (uuid == null) {
-                    continue;
+                if (uuid != null) {
+                    uuidStrings.add(uuid.toString());
                 }
-
-                uuidStrings.add(uuid.toString());
             }
 
             if (uuidStrings.isEmpty()) {
-                config.remove(path);
+                removeNestedValue(path);
             } else {
-                config.put(path, uuidStrings);
+                setNestedValue(config, path, uuidStrings);
             }
         }
 
-        saveConfig();
+        conditionalSave();
     }
 
     public void set(@Nonnull String path, @Nullable Object value) {
         if (value == null) {
-            config.remove(path);
+            removeNestedValue(path);
         } else {
-            config.put(path, value);
+            setNestedValue(config, path, value);
         }
-        saveConfig();
+        conditionalSave();
     }
 
     private void setDefaults() {
@@ -254,12 +417,27 @@ public class ConfigManager {
 
     @Nonnull
     public Map<String, Object> getAll() {
-        return new HashMap<>(config);
+        return new LinkedHashMap<>(config);
+    }
+
+    /**
+     * Returns the keys of the nested map at the given path.
+     * Useful for iterating over citizens, etc.
+     * e.g. getKeys("citizens") returns all citizen IDs.
+     */
+    @SuppressWarnings("unchecked")
+    @Nonnull
+    public Set<String> getKeys(@Nonnull String path) {
+        Object value = getNestedValue(path);
+        if (value instanceof Map) {
+            return ((Map<String, Object>) value).keySet();
+        }
+        return Collections.emptySet();
     }
 
     @Nullable
     public PlayerSkin getPlayerSkin(@Nonnull String path) {
-        Object value = config.get(path);
+        Object value = get(path);
         if (!(value instanceof Map<?, ?> map)) return null;
 
         try {
@@ -292,12 +470,12 @@ public class ConfigManager {
 
     public void setPlayerSkin(@Nonnull String path, @Nullable PlayerSkin skin) {
         if (skin == null) {
-            config.remove(path);
-            saveConfig();
+            removeNestedValue(path);
+            conditionalSave();
             return;
         }
 
-        Map<String, Object> map = new HashMap<>();
+        Map<String, Object> map = new LinkedHashMap<>();
         map.put("bodyCharacteristic", skin.bodyCharacteristic);
         map.put("underwear", skin.underwear);
         map.put("face", skin.face);
@@ -319,15 +497,34 @@ public class ConfigManager {
         map.put("gloves", skin.gloves);
         map.put("cape", skin.cape);
 
-        config.put(path, map);
-        saveConfig();
+        setNestedValue(config, path, map);
+        conditionalSave();
     }
 
-    public long getLong(@Nonnull String path, long defaultValue) {
+    @Nullable
+    public List<String> getStringList(@Nonnull String path) {
         Object value = get(path);
-        if (value instanceof Number) {
-            return ((Number) value).longValue();
+        if (value == null) return null;
+
+        List<String> strings = new ArrayList<>();
+
+        if (value instanceof List<?> list) {
+            for (Object obj : list) {
+                if (obj != null) {
+                    strings.add(obj.toString());
+                }
+            }
         }
-        return defaultValue;
+
+        return strings.isEmpty() ? null : strings;
+    }
+
+    public void setStringList(@Nonnull String path, @Nullable List<String> strings) {
+        if (strings == null || strings.isEmpty()) {
+            removeNestedValue(path);
+        } else {
+            setNestedValue(config, path, new ArrayList<>(strings));
+        }
+        conditionalSave();
     }
 }
