@@ -1,6 +1,7 @@
 package com.electro.hycitizens.listeners;
 
 import com.electro.hycitizens.HyCitizensPlugin;
+import com.electro.hycitizens.managers.CitizensManager;
 import com.electro.hycitizens.models.CitizenData;
 import com.hypixel.hytale.builtin.adventure.farming.states.FarmingBlock;
 import com.hypixel.hytale.component.Holder;
@@ -61,7 +62,7 @@ public class ChunkPreLoadListener {
                         entityRef = world.getEntityRef(citizen.getSpawnedUUID());
                     }
 
-                    if (entityRef == null) {
+                    if (entityRef == null || !entityRef.isValid()) {
                         plugin.getCitizensManager().spawnCitizenNPC(citizen, true);
                     } else {
                         // Entity exists, update skin
@@ -71,6 +72,7 @@ public class ChunkPreLoadListener {
 
                         // Update NPC ref
                         citizen.setNpcRef(entityRef);
+                        HyCitizensPlugin.get().getCitizensManager().setInteractionComponent(entityRef.getStore(), entityRef, citizen);
                     }
                 });
 
@@ -128,6 +130,7 @@ public class ChunkPreLoadListener {
 
                                 // Update NPC ref
                                 citizen.setNpcRef(entityRef);
+                                HyCitizensPlugin.get().getCitizensManager().setInteractionComponent(entityRef.getStore(), entityRef, citizen);
                             }
                         });
 
@@ -173,6 +176,7 @@ public class ChunkPreLoadListener {
 
                         // Update NPC ref
                         citizen.setNpcRef(entityRef);
+                        HyCitizensPlugin.get().getCitizensManager().setInteractionComponent(entityRef.getStore(), entityRef, citizen);
                     }
 
                     // Schedule delayed hologram check after periodic spawn

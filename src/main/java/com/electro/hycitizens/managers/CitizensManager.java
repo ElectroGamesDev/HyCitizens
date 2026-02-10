@@ -21,6 +21,7 @@ import com.hypixel.hytale.server.core.Message;
 import com.hypixel.hytale.server.core.asset.HytaleAssetStore;
 import com.hypixel.hytale.server.core.asset.type.model.config.Model;
 import com.hypixel.hytale.server.core.asset.type.model.config.ModelAsset;
+import com.hypixel.hytale.server.core.command.commands.world.entity.EntityMakeInteractableCommand;
 import com.hypixel.hytale.server.core.cosmetics.CosmeticsModule;
 import com.hypixel.hytale.server.core.entity.AnimationUtils;
 import com.hypixel.hytale.server.core.entity.UUIDComponent;
@@ -28,16 +29,14 @@ import com.hypixel.hytale.server.core.entity.entities.Player;
 import com.hypixel.hytale.server.core.entity.entities.ProjectileComponent;
 import com.hypixel.hytale.server.core.entity.nameplate.Nameplate;
 import com.hypixel.hytale.server.core.inventory.ItemStack;
-import com.hypixel.hytale.server.core.modules.entity.component.Invulnerable;
-import com.hypixel.hytale.server.core.modules.entity.component.ModelComponent;
-import com.hypixel.hytale.server.core.modules.entity.component.PersistentModel;
-import com.hypixel.hytale.server.core.modules.entity.component.TransformComponent;
+import com.hypixel.hytale.server.core.modules.entity.component.*;
 import com.hypixel.hytale.server.core.modules.entity.player.PlayerSkinComponent;
 import com.hypixel.hytale.server.core.modules.entity.tracker.NetworkId;
 import com.hypixel.hytale.server.core.modules.entitystats.EntityStatMap;
 import com.hypixel.hytale.server.core.modules.entitystats.EntityStatValue;
 import com.hypixel.hytale.server.core.modules.entitystats.EntityStatsModule;
 import com.hypixel.hytale.server.core.modules.entitystats.asset.DefaultEntityStatTypes;
+import com.hypixel.hytale.server.core.modules.interaction.Interactions;
 import com.hypixel.hytale.server.core.universe.PlayerRef;
 import com.hypixel.hytale.server.core.universe.Universe;
 import com.hypixel.hytale.server.core.universe.world.World;
@@ -763,11 +762,13 @@ public class CitizensManager {
     }
 
     public void spawnCitizenNPC(CitizenData citizen, boolean save) {
+
         World world = Universe.get().getWorld(citizen.getWorldUUID());
         if (world == null) {
             getLogger().atWarning().log("Failed to spawn citizen NPC: " + citizen.getName() + ". Failed to find world. Try updating the citizen's position.");
             return;
         }
+
 
         if (citizen.getSpawnedUUID() != null || citizen.getNpcRef() != null) {
             despawnCitizenNPC(citizen);
@@ -801,6 +802,7 @@ public class CitizensManager {
                 null
         );
 
+
         if (npc == null)
             return;
 
@@ -815,6 +817,8 @@ public class CitizensManager {
         if (!citizen.isTakesDamage()) {
             store.addComponent(ref, Invulnerable.getComponentType());
         }
+
+        setInteractionComponent(store, ref, citizen);
 
         // This is required since the "Player" entity's scale resets to 0
         if (citizen.getModelId().equals("Player")) {
@@ -833,6 +837,7 @@ public class CitizensManager {
 
         citizen.setNpcRef(ref);
 
+
         if (uuidComponent != null) {
             citizen.setSpawnedUUID(uuidComponent.getUuid());
 
@@ -845,6 +850,7 @@ public class CitizensManager {
     }
 
     public void spawnPlayerModelNPC(CitizenData citizen, World world, boolean save) {
+
         if (citizen.getSpawnedUUID() != null || citizen.getNpcRef() != null) {
             despawnCitizenNPC(citizen);
         }
@@ -887,6 +893,7 @@ public class CitizensManager {
         if (npc == null)
             return;
 
+
         npc.second().setLeashPoint(citizen.getPosition());
 
         npc.second().setInventorySize(9, 30, 5);
@@ -897,6 +904,7 @@ public class CitizensManager {
         if (!citizen.isTakesDamage()) {
             npcStore.addComponent(npcRef, Invulnerable.getComponentType());
         }
+
 
         // Apply skin component
         PlayerSkinComponent skinComponent = new PlayerSkinComponent(skinToUse);
@@ -927,6 +935,7 @@ public class CitizensManager {
         }
 
         updateCitizenNPCItems(citizen);
+        setInteractionComponent(npcStore, npcRef, citizen);
         triggerAnimations(citizen, "DEFAULT");
     }
 
@@ -937,6 +946,26 @@ public class CitizensManager {
             return citizen.getCachedSkin() != null ? citizen.getCachedSkin() : SkinUtilities.createDefaultSkin();
         } else {
             return citizen.getCachedSkin() != null ? citizen.getCachedSkin() : SkinUtilities.createDefaultSkin();
+        }
+    }
+
+    public void setInteractionComponent(Store<EntityStore> store, Ref<EntityStore> ref, CitizenData citizenData) {
+
+        if (ref == null || !ref.isValid()) {
+            HyCitizensPlugin.get().getLogger().atSevere().log("Unable to executes setInteractionComponent");
+            return;
+        }
+
+        if (citizenData.getFKeyInteractionEnabled()) {
+            store.putComponent(ref, Interactable.getComponentType(), Interactable.INSTANCE);
+        }
+
+        if (citizenData.hasCommands()) {
+            Interactions interactions = new Interactions();
+            interactions.setInteractionId(InteractionType.Use, "UseNPC");
+            interactions.setInteractionId(InteractionType.Secondary, "UseNPC");
+            interactions.setInteractionId(InteractionType.Primary, "UseNPC");
+            store.putComponent(ref, Interactions.getComponentType(), interactions);
         }
     }
 
@@ -1189,9 +1218,7 @@ public class CitizensManager {
         Ref<EntityStore> npcRef = citizen.getNpcRef();
         if (npcRef != null && npcRef.isValid()) {
             despawned = true;
-            world.execute(() -> {
-                world.getEntityStore().getStore().removeEntity(npcRef, RemoveReason.REMOVE);
-            });
+            world.execute(() -> world.getEntityStore().getStore().removeEntity(npcRef, RemoveReason.REMOVE));
 
             citizen.setSpawnedUUID(null);
             citizen.setNpcRef(null);
@@ -1554,7 +1581,7 @@ public class CitizensManager {
     @Nonnull
     private String getRoleName(@Nonnull CitizenData citizen) {
         String moveType = citizen.getMovementBehavior().getType();
-        boolean interactable = citizen.getFKeyInteractionEnabled();
+        boolean interactable = false;
         String attitude = citizen.getAttitude();
         boolean isWander = "WANDER".equals(moveType) || "WANDER_CIRCLE".equals(moveType) || "WANDER_RECT".equals(moveType);
 
