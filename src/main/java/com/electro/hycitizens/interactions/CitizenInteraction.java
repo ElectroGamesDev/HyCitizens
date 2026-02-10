@@ -128,7 +128,7 @@ public class CitizenInteraction {
         return msg;
     }
 
-    static public void handleInteraction(CitizenData citizen, PlayerRef playerRef) {
+    public static void handleInteraction(CitizenData citizen, PlayerRef playerRef) {
         Ref<EntityStore> ref = playerRef.getReference();
 
         Player player = ref.getStore().getComponent(ref, Player.getComponentType());
@@ -193,34 +193,21 @@ public class CitizenInteraction {
 
         // Run commands
         for (CommandAction commandAction : citizen.getCommandActions()) {
-            String command = commandAction.getCommand();
+            String command = commandAction.getCommand().trim();
 
-            // Replace {PlayerName} placeholders
-            command = Pattern.compile("\\{PlayerName}", Pattern.CASE_INSENSITIVE)
-                    .matcher(command)
-                    .replaceAll(playerRef.getUsername());
+            if (command.isBlank()) continue;
 
-            // Replace {CitizenName} placeholders
-            command = Pattern.compile("\\{CitizenName}", Pattern.CASE_INSENSITIVE)
-                    .matcher(command)
-                    .replaceAll(citizen.getName());
+            command = replacePlaceholders(command, playerRef, citizen);
 
             // Check if this is a "send message" command
             if (command.startsWith("{SendMessage}")) {
                 String messageContent = command.substring("{SendMessage}".length()).trim();
 
                 Message msg = parseColoredMessage(messageContent);
-                if (msg != null) {
-                    playerRef.sendMessage(msg);
-                }
-            } else {
-                // Regular command execution
-                if (commandAction.isRunAsServer()) {
-                    CommandManager.get().handleCommand(ConsoleSender.INSTANCE, command);
-                } else {
-                    CommandManager.get().handleCommand(player, command);
-                }
+                if (msg == null) continue;
+                playerRef.sendMessage(msg);
             }
+            CommandManager.get().handleCommand(commandAction.isRunAsServer() ? ConsoleSender.INSTANCE : player, command);
         }
 
     }
