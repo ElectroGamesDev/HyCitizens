@@ -63,23 +63,15 @@ public class EntityDamageListener extends DamageEventSystem {
         assert uuidComponent != null;
 
         Damage.Source source = event.getSource();
-        PlayerRef attackerPlayerRef;
+        PlayerRef attackerPlayerRef = null;
 
-        if (source instanceof Damage.ProjectileSource) { // This doesn't work for arrows. Using a workaround
-            Damage.ProjectileSource projectileSource = (Damage.ProjectileSource) source;
+        if (source instanceof Damage.ProjectileSource projectileSource) { // This doesn't work for arrows. Using a workaround
             Ref<EntityStore> shooterRef = projectileSource.getRef();
-            if (shooterRef != null) {
-                attackerPlayerRef = store.getComponent(shooterRef, PlayerRef.getComponentType());
-            } else {
-                attackerPlayerRef = null;
-            }
+            attackerPlayerRef = store.getComponent(shooterRef, PlayerRef.getComponentType());
         }
-        else if (source instanceof Damage.EntitySource) {
-            Damage.EntitySource entitySource = (Damage.EntitySource) source;
+        else if (source instanceof Damage.EntitySource entitySource) {
             Ref<EntityStore> attackerRef = entitySource.getRef();
             attackerPlayerRef = store.getComponent(attackerRef, PlayerRef.getComponentType());
-        } else {
-            attackerPlayerRef = null;
         }
 
         if (attackerPlayerRef == null)
