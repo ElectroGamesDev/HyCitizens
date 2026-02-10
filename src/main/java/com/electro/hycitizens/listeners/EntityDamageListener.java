@@ -18,6 +18,7 @@ import com.hypixel.hytale.server.core.console.ConsoleSender;
 import com.hypixel.hytale.server.core.entity.UUIDComponent;
 import com.hypixel.hytale.server.core.entity.entities.Player;
 import com.hypixel.hytale.server.core.entity.knockback.KnockbackComponent;
+import com.hypixel.hytale.server.core.modules.entity.component.Invulnerable;
 import com.hypixel.hytale.server.core.modules.entity.component.ModelComponent;
 import com.hypixel.hytale.server.core.modules.entity.component.TransformComponent;
 import com.hypixel.hytale.server.core.modules.entity.damage.Damage;
@@ -57,13 +58,9 @@ public class EntityDamageListener extends DamageEventSystem {
     @Override
     public void handle(int i, @Nonnull ArchetypeChunk<EntityStore> archetypeChunk, @Nonnull Store<EntityStore> store, @Nonnull CommandBuffer<EntityStore> commandBuffer, @Nonnull Damage event) {
         Ref<EntityStore> targetRef = archetypeChunk.getReferenceTo(i);
+
         UUIDComponent uuidComponent = store.getComponent(targetRef, UUIDComponent.getComponentType());
-
         assert uuidComponent != null;
-        NPCEntity npcEntity = store.getComponent(targetRef, NPCEntity.getComponentType());
-
-        if (npcEntity == null)
-            return;
 
         Damage.Source source = event.getSource();
         PlayerRef attackerPlayerRef;
@@ -98,13 +95,16 @@ public class EntityDamageListener extends DamageEventSystem {
                 continue;
 
             // Passive citizens always cancel damage - they never enter combat
-            boolean cancelDamage = !citizen.isTakesDamage() || "PASSIVE".equals(citizen.getAttitude());
+          //  boolean cancelDamage = !citizen.isTakesDamage() || "PASSIVE".equals(citizen.getAttitude());
 
             // Trigger ON_ATTACK animations regardless of damage setting
             HyCitizensPlugin.get().getCitizensManager().triggerAnimations(citizen, "ON_ATTACK");
 
             CitizenInteraction.handleInteraction(citizen, attackerPlayerRef);
 
+            //The invulnerable component is added don't need that
+
+            /*
             if (cancelDamage) {
                 event.setCancelled(true);
                 event.setAmount(0);
@@ -137,7 +137,8 @@ public class EntityDamageListener extends DamageEventSystem {
                     }, 2000, TimeUnit.MILLISECONDS);
                 }
             }
-            else {
+             */
+            if (store.getComponent(targetRef, Invulnerable.getComponentType()) != null) {
                 // Check if the citizen will die from this damage
                 EntityStatMap statMap = store.getComponent(targetRef, EntityStatsModule.get().getEntityStatMapComponentType());
                 if (statMap == null) {
@@ -169,9 +170,7 @@ public class EntityDamageListener extends DamageEventSystem {
                                     return;
 
                                 citizen.setAwaitingRespawn(false);
-                                world.execute(() -> {
-                                    plugin.getCitizensManager().spawnCitizen(citizen, true);
-                                });
+                                world.execute(() -> plugin.getCitizensManager().spawnCitizen(citizen, true));
                             }, (long)(citizen.getRespawnDelaySeconds() * 1000), TimeUnit.MILLISECONDS);
                         }
                     }
@@ -184,7 +183,7 @@ public class EntityDamageListener extends DamageEventSystem {
 
     @Nullable
     public Query<EntityStore> getQuery() {
-        return Query.and(new Query[]{UUIDComponent.getComponentType()});
+        return Query.and(UUIDComponent.getComponentType(), NPCEntity.getComponentType());
     }
 
     @Nullable
