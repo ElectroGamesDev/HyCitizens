@@ -30,7 +30,7 @@ public class CitizenData {
     private List<CommandAction> commandActions;
     private UUID spawnedUUID;
     private List<UUID> hologramLineUuids = new ArrayList<>();
-    private Ref<EntityStore> npcRef;
+    private @Nullable Ref<EntityStore> npcRef;
     public final Map<UUID, Direction> lastLookDirections = new ConcurrentHashMap<>();
     private boolean rotateTowardsPlayer;
     private boolean hideNametag = false;
@@ -113,7 +113,7 @@ public class CitizenData {
         this.nametagOffset = 0;
         this.hideNametag = false;
 
-        this.fKeyInteractionEnabled = false;
+        this.fKeyInteractionEnabled = true;
     }
 
     @Nonnull
@@ -258,7 +258,7 @@ public class CitizenData {
         this.skinUsername = skinUsername != null ? skinUsername : "";
     }
 
-    public Ref<EntityStore> getNpcRef() {
+    public @Nullable Ref<EntityStore> getNpcRef() {
         return npcRef;
     }
 

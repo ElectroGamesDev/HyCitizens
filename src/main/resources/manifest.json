@@ -11,5 +11,10 @@
   ],
   "Website": "https://github.com/ElectroGamesDev",
   "Main": "com.electro.hycitizens.HyCitizensPlugin",
-  "IncludesAssetPack": true
+  "IncludesAssetPack": true,
+  "Dependencies": {
+    "Hytale:DamageModule": "*",
+    "Hytale:EntityModule": "*",
+    "Hytale:InteractionModule": "*"
+  }
 }

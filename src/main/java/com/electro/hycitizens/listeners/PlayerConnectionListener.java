@@ -89,9 +89,6 @@ public class PlayerConnectionListener {
                     }
 
                     world.execute(() -> {
-                        if (player == null) {
-                            return;
-                        }
 
                         player.sendMessage(
                                 Message.join(
@@ -120,7 +117,7 @@ public class PlayerConnectionListener {
                 }, 5, TimeUnit.SECONDS);
 
             });
-        }, 0, 1, TimeUnit.SECONDS);
+        }, 0, 30, TimeUnit.SECONDS);
     }
 
     public void onPlayerDisconnect(@Nonnull PlayerDisconnectEvent event) {

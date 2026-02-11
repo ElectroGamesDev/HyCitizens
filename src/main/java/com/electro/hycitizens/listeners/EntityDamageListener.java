@@ -18,6 +18,7 @@ import com.hypixel.hytale.server.core.console.ConsoleSender;
 import com.hypixel.hytale.server.core.entity.UUIDComponent;
 import com.hypixel.hytale.server.core.entity.entities.Player;
 import com.hypixel.hytale.server.core.entity.knockback.KnockbackComponent;
+import com.hypixel.hytale.server.core.modules.entity.component.Invulnerable;
 import com.hypixel.hytale.server.core.modules.entity.component.ModelComponent;
 import com.hypixel.hytale.server.core.modules.entity.component.TransformComponent;
 import com.hypixel.hytale.server.core.modules.entity.damage.Damage;
@@ -57,32 +58,19 @@ public class EntityDamageListener extends DamageEventSystem {
     @Override
     public void handle(int i, @Nonnull ArchetypeChunk<EntityStore> archetypeChunk, @Nonnull Store<EntityStore> store, @Nonnull CommandBuffer<EntityStore> commandBuffer, @Nonnull Damage event) {
         Ref<EntityStore> targetRef = archetypeChunk.getReferenceTo(i);
+
         UUIDComponent uuidComponent = store.getComponent(targetRef, UUIDComponent.getComponentType());
-
         assert uuidComponent != null;
-        NPCEntity npcEntity = store.getComponent(targetRef, NPCEntity.getComponentType());
-
-        if (npcEntity == null)
-            return;
 
         Damage.Source source = event.getSource();
-        PlayerRef attackerPlayerRef;
+        PlayerRef attackerPlayerRef = null;
 
-        if (source instanceof Damage.ProjectileSource) { // This doesn't work for arrows. Using a workaround
-            Damage.ProjectileSource projectileSource = (Damage.ProjectileSource) source;
+        if (source instanceof Damage.ProjectileSource projectileSource) { // This doesn't work for arrows. Using a workaround
             Ref<EntityStore> shooterRef = projectileSource.getRef();
-            if (shooterRef != null) {
-                attackerPlayerRef = store.getComponent(shooterRef, PlayerRef.getComponentType());
-            } else {
-                attackerPlayerRef = null;
-            }
-        }
-        else if (source instanceof Damage.EntitySource) {
-            Damage.EntitySource entitySource = (Damage.EntitySource) source;
+            attackerPlayerRef = store.getComponent(shooterRef, PlayerRef.getComponentType());
+        } else if (source instanceof Damage.EntitySource entitySource) {
             Ref<EntityStore> attackerRef = entitySource.getRef();
             attackerPlayerRef = store.getComponent(attackerRef, PlayerRef.getComponentType());
-        } else {
-            attackerPlayerRef = null;
         }
 
         if (attackerPlayerRef == null)
@@ -105,75 +93,48 @@ public class EntityDamageListener extends DamageEventSystem {
 
             CitizenInteraction.handleInteraction(citizen, attackerPlayerRef);
 
+            //The invulnerable component is added don't need that
+
+
             if (cancelDamage) {
                 event.setCancelled(true);
                 event.setAmount(0);
-                World world = Universe.get().getWorld(citizen.getWorldUUID());
-                // Todo: This does not work
-//                if (world != null) {
-//                    // Prevent knockback
-//                    world.execute(() -> {
-//                        store.removeComponentIfExists(targetRef, KnockbackComponent.getComponentType());
-//                    });
-//                }
-                // Temporary solution to knockback
-                TransformComponent transformComponent = store.getComponent(targetRef, TransformComponent.getComponentType());
-                if (transformComponent != null && world != null) {
-                    Vector3d lockedPosition = new Vector3d(transformComponent.getPosition());
-
-                    ScheduledFuture<?> lockTask = HytaleServer.SCHEDULED_EXECUTOR.scheduleAtFixedRate(() -> {
-                        if (!targetRef.isValid()) {
-                            return;
-                        }
-
-                        Vector3d currentPosition = transformComponent.getPosition();
-                        if (!currentPosition.equals(lockedPosition)) {
-                            transformComponent.setPosition(lockedPosition);
-                        }
-                    }, 0, 20, TimeUnit.MILLISECONDS);
-
-                    HytaleServer.SCHEDULED_EXECUTOR.schedule(() -> {
-                        lockTask.cancel(false);
-                    }, 2000, TimeUnit.MILLISECONDS);
-                }
+                break;
             }
-            else {
-                // Check if the citizen will die from this damage
-                EntityStatMap statMap = store.getComponent(targetRef, EntityStatsModule.get().getEntityStatMapComponentType());
-                if (statMap == null) {
-                    return;
-                }
 
-                float currentHealth = statMap.get(DefaultEntityStatTypes.getHealth()).get();
-                float damageAmount = event.getAmount();
+            // Check if the citizen will die from this damage
+            EntityStatMap statMap = store.getComponent(targetRef, EntityStatsModule.get().getEntityStatMapComponentType());
+            if (statMap == null) {
+                return;
+            }
 
-                if (currentHealth - damageAmount <= 0) {
-                    long now = System.currentTimeMillis();
+            float currentHealth = statMap.get(DefaultEntityStatTypes.getHealth()).get();
+            float damageAmount = event.getAmount();
 
-                    if (!citizen.isAwaitingRespawn()) {
-                        citizen.setLastDeathTime(now);
+            if (currentHealth - damageAmount <= 0) {
+                long now = System.currentTimeMillis();
 
-                        // Despawn nametag
-                        plugin.getCitizensManager().despawnCitizenHologram(citizen);
+                if (!citizen.isAwaitingRespawn()) {
+                    citizen.setLastDeathTime(now);
 
-                        citizen.setSpawnedUUID(null);
-                        citizen.setNpcRef(null);
+                    // Despawn nametag
+                    plugin.getCitizensManager().despawnCitizenHologram(citizen);
 
-                        // Mark for respawn
-                        if (citizen.isRespawnOnDeath()) {
-                            citizen.setAwaitingRespawn(true);
+                    citizen.setSpawnedUUID(null);
+                    citizen.setNpcRef(null);
 
-                            HytaleServer.SCHEDULED_EXECUTOR.schedule(() -> {
-                                World world = Universe.get().getWorld(citizen.getWorldUUID());
-                                if (world == null)
-                                    return;
+                    // Mark for respawn
+                    if (citizen.isRespawnOnDeath()) {
+                        citizen.setAwaitingRespawn(true);
 
-                                citizen.setAwaitingRespawn(false);
-                                world.execute(() -> {
-                                    plugin.getCitizensManager().spawnCitizen(citizen, true);
-                                });
-                            }, (long)(citizen.getRespawnDelaySeconds() * 1000), TimeUnit.MILLISECONDS);
-                        }
+                        HytaleServer.SCHEDULED_EXECUTOR.schedule(() -> {
+                            World world = Universe.get().getWorld(citizen.getWorldUUID());
+                            if (world == null)
+                                return;
+
+                            citizen.setAwaitingRespawn(false);
+                            world.execute(() -> plugin.getCitizensManager().spawnCitizen(citizen, true));
+                        }, (long) (citizen.getRespawnDelaySeconds() * 1000), TimeUnit.MILLISECONDS);
                     }
                 }
             }
@@ -184,7 +145,7 @@ public class EntityDamageListener extends DamageEventSystem {
 
     @Nullable
     public Query<EntityStore> getQuery() {
-        return Query.and(new Query[]{UUIDComponent.getComponentType()});
+        return Query.and(UUIDComponent.getComponentType(), NPCEntity.getComponentType());
     }
 
     @Nullable

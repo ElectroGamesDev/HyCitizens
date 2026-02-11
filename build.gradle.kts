@@ -1,5 +1,8 @@
+import com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar
+
 plugins {
     java
+    id("com.gradleup.shadow") version "9.3.1"
 }
 
 group = "com.electro"
@@ -7,11 +10,13 @@ version = "1.4.1"
 
 repositories {
     mavenCentral()
+    maven("https://maven.hytale.com/release")
+    maven("https://www.cursemaven.com")
 }
 
 dependencies {
-    compileOnly(files("../../Server/HytaleServer.jar"))
-    implementation(files("libs/HyUI-0.5.11-all.jar"))
+    compileOnly("com.hypixel.hytale:Server:2026.02.06-aa1b071c2")
+    implementation("curse.maven:hyui-1431415:7598682")
 
     testImplementation(platform("org.junit:junit-bom:5.10.0"))
     testImplementation("org.junit.jupiter:junit-jupiter")
@@ -31,16 +36,15 @@ tasks.test {
     useJUnitPlatform()
 }
 
-tasks.register<Jar>("fatJar") {
+tasks.withType<ShadowJar> {
     archiveBaseName.set("HyCitizens")
-    archiveVersion.set(version.toString())
+    archiveVersion.set(project.version.toString())
     archiveClassifier.set("")
 
-    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
-    from(sourceSets.main.get().output)
-    from(configurations.runtimeClasspath.get().map { if (it.isDirectory) it else zipTree(it) })
+    relocate("au.ellie.hyui", "com.electro.hycitizens.shaded.hyui")
+    relocate("org.jsoup", "com.electro.hycitizens.shaded.jsoup")
 }
 
 tasks.build {
-    dependsOn("fatJar")
+    dependsOn("shadowJar")
 }

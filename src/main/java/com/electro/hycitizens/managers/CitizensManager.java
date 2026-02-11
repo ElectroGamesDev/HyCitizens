@@ -21,6 +21,7 @@ import com.hypixel.hytale.server.core.Message;
 import com.hypixel.hytale.server.core.asset.HytaleAssetStore;
 import com.hypixel.hytale.server.core.asset.type.model.config.Model;
 import com.hypixel.hytale.server.core.asset.type.model.config.ModelAsset;
+import com.hypixel.hytale.server.core.command.commands.world.entity.EntityMakeInteractableCommand;
 import com.hypixel.hytale.server.core.cosmetics.CosmeticsModule;
 import com.hypixel.hytale.server.core.entity.AnimationUtils;
 import com.hypixel.hytale.server.core.entity.UUIDComponent;
@@ -28,15 +29,14 @@ import com.hypixel.hytale.server.core.entity.entities.Player;
 import com.hypixel.hytale.server.core.entity.entities.ProjectileComponent;
 import com.hypixel.hytale.server.core.entity.nameplate.Nameplate;
 import com.hypixel.hytale.server.core.inventory.ItemStack;
-import com.hypixel.hytale.server.core.modules.entity.component.ModelComponent;
-import com.hypixel.hytale.server.core.modules.entity.component.PersistentModel;
-import com.hypixel.hytale.server.core.modules.entity.component.TransformComponent;
+import com.hypixel.hytale.server.core.modules.entity.component.*;
 import com.hypixel.hytale.server.core.modules.entity.player.PlayerSkinComponent;
 import com.hypixel.hytale.server.core.modules.entity.tracker.NetworkId;
 import com.hypixel.hytale.server.core.modules.entitystats.EntityStatMap;
 import com.hypixel.hytale.server.core.modules.entitystats.EntityStatValue;
 import com.hypixel.hytale.server.core.modules.entitystats.EntityStatsModule;
 import com.hypixel.hytale.server.core.modules.entitystats.asset.DefaultEntityStatTypes;
+import com.hypixel.hytale.server.core.modules.interaction.Interactions;
 import com.hypixel.hytale.server.core.universe.PlayerRef;
 import com.hypixel.hytale.server.core.universe.Universe;
 import com.hypixel.hytale.server.core.universe.world.World;
@@ -416,7 +416,7 @@ public class CitizensManager {
         citizenData.setHideNametag(config.getBoolean(basePath + ".hide-nametag", false));
         citizenData.setHideNpc(config.getBoolean(basePath + ".hide-npc", false));
         citizenData.setNametagOffset(config.getFloat(basePath + ".nametag-offset", 0));
-        citizenData.setFKeyInteractionEnabled(config.getBoolean(basePath + ".f-key-interaction", false));
+        citizenData.setFKeyInteractionEnabled(config.getBoolean(basePath + ".f-key-interaction", true));
 
         // Load animation behaviors
         List<AnimationBehavior> animBehaviors = new ArrayList<>();
@@ -642,48 +642,42 @@ public class CitizensManager {
         // Item in hand
         if (citizen.getNpcHand() == null) {
             npcEntity.getInventory().getHotbar().setItemStackForSlot((short) 0, null);
-        }
-        else {
+        } else {
             npcEntity.getInventory().getHotbar().setItemStackForSlot((short) 0, new ItemStack(citizen.getNpcHand()));
         }
 
         // Item in offhand
         if (citizen.getNpcOffHand() == null) {
             npcEntity.getInventory().getUtility().setItemStackForSlot((short) 0, null);
-        }
-        else {
+        } else {
             npcEntity.getInventory().getUtility().setItemStackForSlot((short) 0, new ItemStack(citizen.getNpcHand()));
         }
 
         // Set helmet
         if (citizen.getNpcHelmet() == null) {
             npcEntity.getInventory().getArmor().setItemStackForSlot((short) 0, null);
-        }
-        else {
+        } else {
             npcEntity.getInventory().getArmor().setItemStackForSlot((short) 0, new ItemStack(citizen.getNpcHelmet()));
         }
 
         // Set chest
         if (citizen.getNpcChest() == null) {
             npcEntity.getInventory().getArmor().setItemStackForSlot((short) 1, null);
-        }
-        else {
+        } else {
             npcEntity.getInventory().getArmor().setItemStackForSlot((short) 1, new ItemStack(citizen.getNpcChest()));
         }
 
         // Set gloves
         if (citizen.getNpcGloves() == null) {
             npcEntity.getInventory().getArmor().setItemStackForSlot((short) 2, null);
-        }
-        else {
+        } else {
             npcEntity.getInventory().getArmor().setItemStackForSlot((short) 2, new ItemStack(citizen.getNpcGloves()));
         }
 
         // Set leggings
         if (citizen.getNpcLeggings() == null) {
             npcEntity.getInventory().getArmor().setItemStackForSlot((short) 3, null);
-        }
-        else {
+        } else {
             npcEntity.getInventory().getArmor().setItemStackForSlot((short) 3, new ItemStack(citizen.getNpcLeggings()));
         }
 
@@ -704,6 +698,7 @@ public class CitizensManager {
 
         despawnCitizen(citizen);
     }
+
     public void spawnCitizen(CitizenData citizen, boolean save) {
         World world = Universe.get().getWorld(citizen.getWorldUUID());
         if (world == null) {
@@ -721,8 +716,8 @@ public class CitizensManager {
 
         long start = System.currentTimeMillis();
         final ScheduledFuture<?>[] futureRef = new ScheduledFuture<?>[1];
-        boolean[] spawned = { false };
-        boolean[] queued = { false };
+        boolean[] spawned = {false};
+        boolean[] queued = {false};
 
         futureRef[0] = HytaleServer.SCHEDULED_EXECUTOR.scheduleAtFixedRate(() -> {
             if (spawned[0]) {
@@ -767,11 +762,13 @@ public class CitizensManager {
     }
 
     public void spawnCitizenNPC(CitizenData citizen, boolean save) {
+
         World world = Universe.get().getWorld(citizen.getWorldUUID());
         if (world == null) {
             getLogger().atWarning().log("Failed to spawn citizen NPC: " + citizen.getName() + ". Failed to find world. Try updating the citizen's position.");
             return;
         }
+
 
         if (citizen.getSpawnedUUID() != null || citizen.getNpcRef() != null) {
             despawnCitizenNPC(citizen);
@@ -784,7 +781,7 @@ public class CitizensManager {
         }
 
         // Regular model spawning
-        float scale = Math.max((float)0.01, citizen.getScale());
+        float scale = Math.max((float) 0.01, citizen.getScale());
         Map<String, String> randomAttachmentIds = new HashMap<>();
         Model citizenModel = new Model.ModelReference(citizen.getModelId(), scale, randomAttachmentIds).toModel();
 
@@ -805,8 +802,10 @@ public class CitizensManager {
                 null
         );
 
+
         if (npc == null)
             return;
+
 
         npc.second().setLeashPoint(citizen.getPosition());
 
@@ -815,9 +814,15 @@ public class CitizensManager {
         Ref<EntityStore> ref = npc.second().getReference();
         Store<EntityStore> store = npc.first().getStore();
 
+//        if (!citizen.isTakesDamage()) {
+//            store.addComponent(ref, Invulnerable.getComponentType());
+//        }
+
+        setInteractionComponent(store, ref, citizen);
+
         // This is required since the "Player" entity's scale resets to 0
         if (citizen.getModelId().equals("Player")) {
-            PersistentModel persistentModel = npc.first().getStore().getComponent(npc.second().getReference(), PersistentModel.getComponentType());
+            PersistentModel persistentModel = store.getComponent(ref, PersistentModel.getComponentType());
             if (persistentModel != null) {
                 persistentModel.setModelReference(new Model.ModelReference(
                         citizenModel.getModelAssetId(),
@@ -832,6 +837,7 @@ public class CitizensManager {
 
         citizen.setNpcRef(ref);
 
+
         if (uuidComponent != null) {
             citizen.setSpawnedUUID(uuidComponent.getUuid());
 
@@ -844,6 +850,7 @@ public class CitizensManager {
     }
 
     public void spawnPlayerModelNPC(CitizenData citizen, World world, boolean save) {
+
         if (citizen.getSpawnedUUID() != null || citizen.getNpcRef() != null) {
             despawnCitizenNPC(citizen);
         }
@@ -854,7 +861,7 @@ public class CitizensManager {
             skinToUse = SkinUtilities.createDefaultSkin();
         }
 
-        float scale = Math.max((float)0.01, citizen.getScale());
+        float scale = Math.max((float) 0.01, citizen.getScale());
         //Model playerModel = CosmeticsModule.get().createModel(skinToUse, scale);
         Model playerModel = CosmeticsModule.get().createModel(skinToUse, scale);
         //Map<String, String> randomAttachmentIds = new HashMap<>();
@@ -886,30 +893,39 @@ public class CitizensManager {
         if (npc == null)
             return;
 
+
         npc.second().setLeashPoint(citizen.getPosition());
 
         npc.second().setInventorySize(9, 30, 5);
 
+        Store<EntityStore> npcStore = npc.first().getStore();
+        Ref<EntityStore> npcRef = npc.second().getReference();
+
+//        if (!citizen.isTakesDamage()) {
+//            npcStore.addComponent(npcRef, Invulnerable.getComponentType());
+//        }
+
+
         // Apply skin component
         PlayerSkinComponent skinComponent = new PlayerSkinComponent(skinToUse);
-        npc.first().getStore().putComponent(npc.second().getReference(), PlayerSkinComponent.getComponentType(), skinComponent);
+        npcStore.putComponent(npcRef, PlayerSkinComponent.getComponentType(), skinComponent);
 
-        PersistentModel persistentModel = npc.first().getStore().getComponent(npc.second().getReference(), PersistentModel.getComponentType());
+        PersistentModel persistentModel = npcStore.getComponent(npcRef, PersistentModel.getComponentType());
         if (persistentModel != null) {
             persistentModel.setModelReference(new Model.ModelReference(
                     playerModel.getModelAssetId(),
                     playerModel.getScale(),
                     playerModel.getRandomAttachmentIds(),
                     playerModel.getAnimationSetMap() == null
-                    ));
+            ));
         }
 
-        UUIDComponent uuidComponent = npc.first().getStore().getComponent(
-                npc.second().getReference(),
+        UUIDComponent uuidComponent = npcStore.getComponent(
+                npcRef,
                 UUIDComponent.getComponentType()
         );
 
-        citizen.setNpcRef(npc.first());
+        citizen.setNpcRef(npcRef);
 
         if (uuidComponent != null) {
             citizen.setSpawnedUUID(uuidComponent.getUuid());
@@ -919,6 +935,7 @@ public class CitizensManager {
         }
 
         updateCitizenNPCItems(citizen);
+        setInteractionComponent(npcStore, npcRef, citizen);
         triggerAnimations(citizen, "DEFAULT");
     }
 
@@ -929,6 +946,26 @@ public class CitizensManager {
             return citizen.getCachedSkin() != null ? citizen.getCachedSkin() : SkinUtilities.createDefaultSkin();
         } else {
             return citizen.getCachedSkin() != null ? citizen.getCachedSkin() : SkinUtilities.createDefaultSkin();
+        }
+    }
+
+    public void setInteractionComponent(Store<EntityStore> store, Ref<EntityStore> ref, CitizenData citizenData) {
+
+        if (ref == null || !ref.isValid()) {
+            HyCitizensPlugin.get().getLogger().atSevere().log("Unable to executes setInteractionComponent");
+            return;
+        }
+
+        if (citizenData.getFKeyInteractionEnabled()) {
+            store.putComponent(ref, Interactable.getComponentType(), Interactable.INSTANCE);
+        }
+
+        if (citizenData.hasCommands()) {
+            Interactions interactions = new Interactions();
+            interactions.setInteractionId(InteractionType.Use, "UseNPC");
+            interactions.setInteractionId(InteractionType.Secondary, "UseNPC");
+            interactions.setInteractionId(InteractionType.Primary, "UseNPC");
+            store.putComponent(ref, Interactions.getComponentType(), interactions);
         }
     }
 
@@ -981,8 +1018,7 @@ public class CitizensManager {
                     }
                 }
             });
-        }
-        else {
+        } else {
             if (citizen.getSpawnedUUID() != null) {
                 World world = Universe.get().getWorld(citizen.getWorldUUID());
                 if (world != null) {
@@ -1182,9 +1218,7 @@ public class CitizensManager {
         Ref<EntityStore> npcRef = citizen.getNpcRef();
         if (npcRef != null && npcRef.isValid()) {
             despawned = true;
-            world.execute(() -> {
-                world.getEntityStore().getStore().removeEntity(npcRef, RemoveReason.REMOVE);
-            });
+            world.execute(() -> world.getEntityStore().getStore().removeEntity(npcRef, RemoveReason.REMOVE));
 
             citizen.setSpawnedUUID(null);
             citizen.setNpcRef(null);
@@ -1318,11 +1352,11 @@ public class CitizensManager {
             EntityUpdate entityUpdate = new EntityUpdate(
                     citizenNetworkId.getId(),
                     null,
-                    new ComponentUpdate[] { update }
+                    new ComponentUpdate[]{update}
             );
 
             // Send the packet
-            EntityUpdates packet = new EntityUpdates(null, new EntityUpdate[] { entityUpdate });
+            EntityUpdates packet = new EntityUpdates(null, new EntityUpdate[]{entityUpdate});
             playerRef.getPacketHandler().write(packet);
         }
     }
@@ -1484,7 +1518,7 @@ public class CitizensManager {
                 // Remove from tracking map
                 citizen.getAnimationStopTasks().remove(taskKey);
 
-            }, (long)(stopTime * 1000), TimeUnit.MILLISECONDS);
+            }, (long) (stopTime * 1000), TimeUnit.MILLISECONDS);
 
             // Track the stop task
             citizen.getAnimationStopTasks().put(taskKey, stopTask);
@@ -1547,7 +1581,7 @@ public class CitizensManager {
     @Nonnull
     private String getRoleName(@Nonnull CitizenData citizen) {
         String moveType = citizen.getMovementBehavior().getType();
-        boolean interactable = citizen.getFKeyInteractionEnabled();
+        boolean interactable = false;
         String attitude = citizen.getAttitude();
         boolean isWander = "WANDER".equals(moveType) || "WANDER_CIRCLE".equals(moveType) || "WANDER_RECT".equals(moveType);
 

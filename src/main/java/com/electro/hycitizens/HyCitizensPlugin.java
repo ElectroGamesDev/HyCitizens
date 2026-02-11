@@ -1,27 +1,23 @@
 package com.electro.hycitizens;
 
-import com.electro.hycitizens.actions.BuilderActionInteract;
+import com.electro.hycitizens.actions.NpcInteractAction;
 import com.electro.hycitizens.commands.CitizensCommand;
 import com.electro.hycitizens.listeners.*;
 import com.electro.hycitizens.managers.CitizensManager;
-import com.electro.hycitizens.models.CitizenData;
+import com.electro.hycitizens.systems.NpcKnockbackRemoverSystem;
 import com.electro.hycitizens.ui.CitizensUI;
 import com.electro.hycitizens.util.ConfigManager;
 import com.electro.hycitizens.util.UpdateChecker;
 import com.hypixel.hytale.event.EventPriority;
-import com.hypixel.hytale.server.core.event.events.ShutdownEvent;
+import com.hypixel.hytale.server.core.entity.knockback.KnockbackSystems;
 import com.hypixel.hytale.server.core.event.events.player.*;
+import com.hypixel.hytale.server.core.modules.interaction.interaction.config.Interaction;
 import com.hypixel.hytale.server.core.plugin.JavaPlugin;
 import com.hypixel.hytale.server.core.plugin.JavaPluginInit;
 import com.hypixel.hytale.server.core.universe.world.events.ChunkPreLoadProcessEvent;
-import com.hypixel.hytale.server.core.universe.world.events.ecs.ChunkUnloadEvent;
-import com.hypixel.hytale.server.core.universe.world.storage.ChunkStore;
-import com.hypixel.hytale.server.npc.NPCPlugin;
 
 import javax.annotation.Nonnull;
 import java.nio.file.Paths;
-import java.util.ArrayList;
-import java.util.List;
 
 public class HyCitizensPlugin extends JavaPlugin {
     private static HyCitizensPlugin instance;
@@ -30,7 +26,6 @@ public class HyCitizensPlugin extends JavaPlugin {
     private CitizensUI citizensUI;
 
     // Listeners
-    private PlayerAddToWorldListener addToWorldListener;
     private ChunkPreLoadListener chunkPreLoadListener;
     private PlayerConnectionListener connectionListener;
 
@@ -50,15 +45,17 @@ public class HyCitizensPlugin extends JavaPlugin {
         getCommandRegistry().registerCommand(new CitizensCommand(this));
 
         // Initialize listeners
-        this.addToWorldListener = new PlayerAddToWorldListener(this);
         this.chunkPreLoadListener = new ChunkPreLoadListener(this);
         this.connectionListener = new PlayerConnectionListener(this);
 
-        NPCPlugin.get().registerCoreComponentType("CitizenInteraction", BuilderActionInteract::new);
-
+        getEntityStoreRegistry().registerSystem(new NpcKnockbackRemoverSystem());
+        this.getCodecRegistry(Interaction.CODEC).register("CitizenInteraction", NpcInteractAction.class, NpcInteractAction.CODEC);
         // Register event listeners
         registerEventListeners();
     }
+
+
+
 
     @Override
     protected void start() {
