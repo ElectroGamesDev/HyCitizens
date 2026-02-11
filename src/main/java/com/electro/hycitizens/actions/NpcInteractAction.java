@@ -8,6 +8,7 @@ import com.hypixel.hytale.component.Ref;
 import com.hypixel.hytale.protocol.InteractionType;
 import com.hypixel.hytale.server.core.entity.InteractionContext;
 import com.hypixel.hytale.server.core.entity.UUIDComponent;
+import com.hypixel.hytale.server.core.modules.interaction.interaction.config.SimpleInteraction;
 import com.hypixel.hytale.server.core.universe.PlayerRef;
 import com.hypixel.hytale.server.core.universe.world.storage.EntityStore;
 import com.hypixel.hytale.server.npc.interactions.UseNPCInteraction;
@@ -23,7 +24,7 @@ import java.util.List;
  * @version 1.0
  * @since 1.0.0-SNAPSHOT
  */
-public class NpcInteractAction extends UseNPCInteraction {
+public class NpcInteractAction extends SimpleInteraction {
 
     public static final BuilderCodec<NpcInteractAction> CODEC = BuilderCodec.builder(NpcInteractAction.class, NpcInteractAction::new).build();
 

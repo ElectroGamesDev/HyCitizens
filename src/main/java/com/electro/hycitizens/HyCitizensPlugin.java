@@ -8,6 +8,7 @@ import com.electro.hycitizens.ui.CitizensUI;
 import com.electro.hycitizens.util.ConfigManager;
 import com.electro.hycitizens.util.UpdateChecker;
 import com.hypixel.hytale.event.EventPriority;
+import com.hypixel.hytale.server.core.entity.knockback.KnockbackSystems;
 import com.hypixel.hytale.server.core.event.events.player.*;
 import com.hypixel.hytale.server.core.modules.interaction.interaction.config.Interaction;
 import com.hypixel.hytale.server.core.plugin.JavaPlugin;
@@ -46,6 +47,7 @@ public class HyCitizensPlugin extends JavaPlugin {
         this.chunkPreLoadListener = new ChunkPreLoadListener(this);
         this.connectionListener = new PlayerConnectionListener(this);
 
+        getEntityStoreRegistry().registerSystem(new KnockbackSystems.ApplyKnockback());
         this.getCodecRegistry(Interaction.CODEC).register("CitizenInteraction", NpcInteractAction.class, NpcInteractAction.CODEC);
         // Register event listeners
         registerEventListeners();
