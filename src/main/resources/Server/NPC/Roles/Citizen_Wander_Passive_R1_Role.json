@@ -1,0 +1,32 @@
+{
+  "Type": "Variant",
+  "Reference": "Template_Citizen",
+  "Modify": {
+    "DefaultPlayerAttitude": "Ignore",
+    "WanderRadius": 1
+  },
+  "Appearance": "Player",
+  "Parameters": {
+    "ViewRange": {
+      "Value": 0,
+      "Description": "Visual detection range"
+    },
+    "HearingRange": {
+      "Value": 0,
+      "Description": "Hearing detection range"
+    },
+    "AbsoluteDetectionRange": {
+      "Value": 0,
+      "Description": "Absolute detection range"
+    },
+    "AlertedRange": {
+      "Value": 0,
+      "Description": "Alerted detection range"
+    },
+    "MaxHealth": {
+      "Value": 100,
+      "Description": "Max health for the NPC"
+    }
+  },
+  "NameTranslationKey": "Citizen"
+}

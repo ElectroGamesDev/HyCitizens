@@ -1,0 +1,15 @@
+{
+  "Type": "Variant",
+  "Reference": "Template_Citizen",
+  "Appearance": "Player",
+  "Parameters": {
+    "MaxHealth": {
+      "Value": 100,
+      "Description": "Max health for the NPC"
+    }
+  },
+  "NameTranslationKey": "Citizen",
+  "Modify": {
+    "WanderRadius": 1
+  }
+}

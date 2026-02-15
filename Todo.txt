@@ -1,0 +1,145 @@
+
+Able to update commands
+Entity model selector maybe
+It might not load NPCs if they're in a chunk not loaded yet
+When a player enters a world, its not very performant when an NPC is in an unloaded chunk since it loads it just to see if it exists
+
+Let Citizens have armor and old item
+
+Create a github page for 
+
+
+FAQ:
+  "You do not have permissions" message when hitting the NPC:
+  	There are a few reasons you might be getting this message.
+  	1. You set up the Citizen to require a permission which the player does not have
+    2. You set the command to run as the player instead of server
+  Citizen is not spawning:
+	 Invalid model ID, Scale to small, etc.
+   Other mods interfering like OrbisGuard mob-spawning set to false
+  Citizens are running in place:
+    1. Open your world's config.json and ensure you have "IsAllNPCFrozen" set to "false"
+    2. You have a plugin interfering with this
+  I enabled F Key intereactions but it's not working:
+    1. F Key interactions only work while you're in survival mode
+    2. You have another plugin interfering with this
+
+
+Playerdb.co updates skins every ~7 days
+Citizens sometimes takes awhile to spawn in
+data.json not getting cleaned up it seems?
+Fix nametag position with other entities - CHECK MODEL SCALE	
+Saved Data section in plugin descriptions are not accurate
+Delays between commands
+Issues with world guard?
+If I change an entity from/to Player/Entity, it keeps the old entity, until the world unloads
+Entities with player skins need to manaully load and not saved in world which takes awhile. Could we someone save a normal Player entity in world and then replace it? OR is there a better solution?
+Instead of loading unloaded chunks, use ChunkPreLoadProcessEvent with a schedueler checkig when its done loading, of course first check if there's citizens in the chunk, IF possible. Save found citizens to a temp list
+Send Messages - Have a dedicated "Messages" area to set messages. They can also be configured to set all messages, or a random message
+Player skin NPCs don't save to world and need to be respawned. What about non-skinned NPCs?
+In Edit Commands, fix the command rows to fill the entire horizontal. Make the toggle and delete button bigger too
+Store spawned citizens in a list. we would need to check when a chunk unloads though. This would be mainly for NPC rotations for performance
+Make it so there's an "Add Line" button for the nametag instead of just requiring "\n" since it could get long
+Ability to hide NPC so it's just text
+Todo: Citizen Cosmetic Customizer - https://www.curseforge.com/hytale/mods/lalyan-cosmetic-core . Put it to the right so people can see changes in real time
+TODO: Make head rotate when possible, then rotate body for look at player
+Todo: Disable left click interaction. This is because some NPCs might take damage.
+Todo: Make it so NPCs cant be interacted with while in combat
+TODO: Add max health and damage setters
+TODO: Dialogs like this: https://www.curseforge.com/hytale/mods/npc-dialog or even better, https://www.curseforge.com/hytale/mods/hyspeech. Make sure it can run commands, send events, etc. Make sure it can be used like quests (but require developer api), so once they finish a dialog, every time player tries to interact, it will say the same thing like "YOu need to do xyz", until another plugin says its done.
+TODO: Ability to add particles citizens. Default/always, on interact, on timer, on proximity enter/exit, etc.
+Todo: Delay between action Commands and Messages
+Todo: Messages - Add support for bold, italic, new lines, etc.
+Todo: Right click interactions
+Todo BUG: NPCs wielding weapons deal fist damage
+Todo BUG: Potentially. Armor does not have an effect
+Todo: Health regeneration
+Todo: A stick that allows you to select citizens and also spawn new ones if you right click
+Todo: Ability to use another entity for nametag
+Todo: Companions. Spawn eggs or something for them. Maybe able to pick them up. Follow you, defend, harvest trees, mine, etc.
+Todo: Check how HyCompanion handles knockback. They have a custom knockback system. I think they use roles though?
+Todo: Ability to change group name
+Todo: Ability to use real nametag on citizen entities for single lines, no offset.
+Bug Todo: Seems like cloning doesnt copy over behaviors
+Bug: Player NPCs respawn naked. Must set their skin
+Todo: Remove multi-line comments
+Todo: API callback for removing and adding a citizen. This way they can check if a citizen they're using is removed.
+Todo: Remove the "Create" tab and just add a "Create" button at the top of the manage page
+Todo: Add a "Config/Settings" tab with multi-language selection
+Todo: Add button to edit trades, if they have the NPCTrading mod, and the Citizen is binded/linked, then give option to edit trader
+Mention NPC Trading on the HyCitizens websites and link to page.
+Bug: Healthbar when giving armor not fixed
+Issue: Fix "TP" to teleport to actual NPC, not citizen stored position. Fall back to stored citizen positon tho
+Bug: If wandering NPCs go into a different chunk, it may duplicate it when the chunk is loaded
+Bug: All entities are using humanoid attack
+Todo: The cat can hold offhand items, but not humans?
+Todo: Play audio on interact, within range, etc. Like with animations. 
+Todo: Animation cooldowns (can set global (all players) or per player)
+Bug: Hycitizens data.json emptying. Happened to me and AsyFox
+Todo: "F" interactions and left click could lead to different interactions.
+Bug: IF a citizen is set to random skin, apparently you cant changed it to a player skin with username after
+Todo: Add button to edit closest citizen to you (assuming their is one in your world)
+
+
+consider making it so it changes the model with each click in the model/entity dropdown without having to click the save button. 
+Make Citizens attack like skeletons and stuff
+
+BUG: Respawn system doesnt always work. Nametag doesnt disapear either. Its like it doesnt detect the death
+TODO: Ability to make NPC not use gravity
+BUG: When "Live Skin" is enabled when using a random skin, it bugs and changes the skin to a brown skin
+
+TODO: UPDATE DOCUMENTATION
+
+Todo: When NPC dies, give option to drop all items. Also give option to drop specific items, add a death listener, and also make it possible to run commands on death
+Todo/bug: RPG Levels adds a levels nametag above Citizens. Apparently they do check if the NPC has a nametag, so I need to figure out what they do, so I can add nametag component and bypass this
+Bug: Wandering citizens sometimes end up losing their nametag apparently and nametag stops moving?
+
+New Update:
+  (already done): Fixed it so commands execute in the correct order
+  (Done) Changed it so it gets the player's skin if they're online instead of fetching from online api
+  (Already done): Fixed updateCitizenHologram() and updateSpawnedCitizenHologram() for developer API
+  (Already done): Fixed exceptions/warnings that would sometimes show in console when a player joins
+  (alrady done): Fixed an issue where the data.json would sometimes be emptied
+  Fixed an issue with changing citizen player skin after it's already created
+  Added a fallback skin if it fails to get the player's skin. This way the NPC isn't invisible when it fails to fetch it
+
+  TODO: Add "Citizen", "HyCitizens", and "HyCitizen" as aliases
+
+
+Error - There is an issue when using "<" and ">" in NPC names due to HTML. Also look for other things that can cause issues
+  [2026/02/03 10:46:45   INFO]            [CommandManager] Mwoarten executed command: citizens
+[2026/02/03 10:46:45 SEVERE]           [AbstractCommand] Exception while running that command:
+java.lang.IllegalArgumentException: No element found with ID 'tp-edd2fa4b-8277-4614-8b4f-3732b921baac'.
+    at ThirdPartyPlugin//au.ellie.hyui.builders.InterfaceBuilder.addEventListener(InterfaceBuilder.java:295)
+    at ThirdPartyPlugin//au.ellie.hyui.builders.InterfaceBuilder.addEventListener(InterfaceBuilder.java:302)
+    at ThirdPartyPlugin//com.electro.hycitizens.ui.CitizensUI.setupMainEventListeners(CitizensUI.java:1858)
+    at ThirdPartyPlugin//com.electro.hycitizens.ui.CitizensUI.openCitizensGUI(CitizensUI.java:1190)
+    at ThirdPartyPlugin//com.electro.hycitizens.commands.CitizensCommand.execute(CitizensCommand.java:26)
+    at com.hypixel.hytale.server.core.command.system.basecommands.AbstractPlayerCommand.lambda$executeAsync$0(AbstractPlayerCommand.java:85)
+    at com.hypixel.hytale.server.core.command.system.basecommands.AbstractAsyncCommand.lambda$runAsync$0(AbstractAsyncCommand.java:76)
+    at java.base/java.util.concurrent.CompletableFuture$AsyncRun.run(Unknown Source)
+    at com.hypixel.hytale.server.core.universe.world.World.consumeTaskQueue(World.java:904)
+    at com.hypixel.hytale.server.core.universe.world.World.tick(World.java:403)
+    at com.hypixel.hytale.server.core.util.thread.TickingThread.run(TickingThread.java:89)
+    at java.base/java.lang.Thread.run(Unknown Source)
+
+
+  Error:
+  java.lang.ArrayIndexOutOfBoundsException: Index 32 out of bounds for length 32at com.electro.hycitizens.listeners.ChunkPreLoadListener (or within the ChunkPreLoadProcessEvent hook)
+Technical Context:
+The error happens when players move through the world and trigger new chunk loads. It seems the plugin is attempting to access a 33rd section of a chunk (Index 32), while Hytale chunks only contain 32 sections (indices 0-31).
+
+
+
+
+Todo Next:
+  Walking NPCs/behaviors
+  Animations
+  Players are claiming there are double NPCs. He says it happens when he hits the npc in creative mode a few times
+  Players are claiming when they move the citizen position, the old nametag stays
+  Fix item offhand
+  Update the BuiltByBit and HytalePlaza descriptions to include v1.3 changes
+  "Yesterday I downloaded 1.2 version. Spawned NPC, assigned my own skin, changed my skin, tried to re-assign, waited for 1 hour and still nothing. Today, I've noticed an update, so I installed 1.3 vesrion to my server. You did a great work with UI, but skin problem still remais."
+
+
+https://hytalemodding.dev/en/docs/official-documentation/npc/1-know-your-enemy

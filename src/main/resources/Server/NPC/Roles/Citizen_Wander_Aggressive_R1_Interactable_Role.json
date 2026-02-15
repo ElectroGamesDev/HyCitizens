@@ -1,0 +1,41 @@
+{
+  "Type": "Variant",
+  "Reference": "Template_Citizen",
+  "Appearance": "Player",
+  "Parameters": {
+    "MaxHealth": {
+      "Value": 100,
+      "Description": "Max health for the NPC"
+    }
+  },
+  "InteractionInstruction": {
+    "Instructions": [
+      {
+        "Continue": true,
+        "Sensor": {
+          "Type": "Any"
+        },
+        "Actions": [
+          {
+            "Type": "SetInteractable",
+            "Interactable": true
+          }
+        ]
+      },
+      {
+        "Sensor": {
+          "Type": "HasInteracted"
+        },
+        "Actions": [
+          {
+            "Type": "CitizenInteraction"
+          }
+        ]
+      }
+    ]
+  },
+  "NameTranslationKey": "Citizen",
+  "Modify": {
+    "WanderRadius": 1
+  }
+}
