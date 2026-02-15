@@ -4,7 +4,6 @@ import au.ellie.hyui.builders.PageBuilder;
 import au.ellie.hyui.html.TemplateProcessor;
 import com.electro.hycitizens.HyCitizensPlugin;
 import com.electro.hycitizens.models.*;
-import com.electro.hycitizens.util.ConfigManager;
 import com.hypixel.hytale.common.util.RandomUtil;
 import com.hypixel.hytale.component.Ref;
 import com.hypixel.hytale.component.Store;
@@ -14,7 +13,6 @@ import com.hypixel.hytale.protocol.PlayerSkin;
 import com.hypixel.hytale.protocol.packets.interface_.CustomPageLifetime;
 import com.hypixel.hytale.protocol.packets.interface_.CustomUIEventBindingType;
 import com.hypixel.hytale.server.core.Message;
-import com.hypixel.hytale.server.core.asset.type.model.config.Model;
 import com.hypixel.hytale.server.core.asset.type.model.config.ModelAsset;
 import com.hypixel.hytale.server.core.cosmetics.CosmeticsModule;
 import com.hypixel.hytale.server.core.entity.entities.Player;
@@ -29,7 +27,6 @@ import javax.annotation.Nullable;
 import java.awt.*;
 import java.util.*;
 import java.util.List;
-import java.util.stream.Collectors;
 
 public class CitizensUI {
     private final HyCitizensPlugin plugin;
