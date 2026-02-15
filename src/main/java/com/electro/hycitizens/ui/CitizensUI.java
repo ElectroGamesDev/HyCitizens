@@ -16,6 +16,7 @@ import com.hypixel.hytale.server.core.Message;
 import com.hypixel.hytale.server.core.asset.type.model.config.ModelAsset;
 import com.hypixel.hytale.server.core.cosmetics.CosmeticsModule;
 import com.hypixel.hytale.server.core.entity.entities.Player;
+import com.hypixel.hytale.server.core.modules.entity.component.TransformComponent;
 import com.hypixel.hytale.server.core.modules.entity.teleport.Teleport;
 import com.hypixel.hytale.server.core.universe.PlayerRef;
 import com.hypixel.hytale.server.core.universe.Universe;
@@ -1618,11 +1619,13 @@ public class CitizensUI {
         private final int index;
         private final String command;
         private final boolean runAsServer;
+        private final float delaySeconds;
 
         public IndexedCommandAction(int index, CommandAction action) {
             this.index = index;
             this.command = action.getCommand();
             this.runAsServer = action.isRunAsServer();
+            this.delaySeconds = action.getDelaySeconds();
         }
 
         public int getIndex() {
@@ -1635,6 +1638,10 @@ public class CitizensUI {
 
         public boolean isRunAsServer() {
             return runAsServer;
+        }
+
+        public float getDelaySeconds() {
+            return delaySeconds;
         }
     }
 
@@ -1703,7 +1710,7 @@ public class CitizensUI {
                                     </div>
                                     <div class="command-content">
                                         <p class="command-text">/{{$command}}</p>
-                                        <p class="command-type">Runs as {{#if runAsServer}}SERVER{{else}}PLAYER{{/if}}</p>
+                                        <p class="command-type">Runs as {{#if runAsServer}}SERVER{{else}}PLAYER{{/if}}{{#if $delaySeconds}} | Delay: {{$delaySeconds}}s{{/if}}</p>
                                     </div>
                                     <div class="command-actions">
                                         <button id="edit-cmd-{{$index}}" class="btn-info btn-small">Edit</button>
@@ -1800,9 +1807,19 @@ public class CitizensUI {
                             return;
                         }
 
+                        Vector3d tpPos = new Vector3d(citizen.getPosition());
+
+                        // Try to teleport to the actual NPC's position
+                        if (citizen.getNpcRef() != null && citizen.getNpcRef().isValid()) {
+                            TransformComponent transform = citizen.getNpcRef().getStore().getComponent(citizen.getNpcRef(), TransformComponent.getComponentType());
+
+                            if (transform != null) {
+                                tpPos = new Vector3d(transform.getPosition());
+                            }
+                        }
+
                         playerRef.getReference().getStore().addComponent(playerRef.getReference(),
-                                Teleport.getComponentType(), new Teleport(world, new Vector3d(citizen.getPosition()),
-                                        new Vector3f(0, 0, 0)));
+                                Teleport.getComponentType(), new Teleport(world, tpPos, new Vector3f(0, 0, 0)));
 
                         playerRef.sendMessage(Message.raw("Teleported to citizen '" + citizen.getName() + "'!").color(Color.GREEN));
                     });
@@ -2477,7 +2494,7 @@ public class CitizensUI {
                 command = command.substring(1);
             }
 
-            actions.add(new CommandAction(command, false));
+            actions.add(new CommandAction(command, false, 0.0f));
             playerRef.sendMessage(Message.raw("Command added!").color(Color.GREEN));
 
             openCommandActionsGUI(playerRef, store, citizenId, actions, isCreating);
@@ -2539,11 +2556,12 @@ public class CitizensUI {
                                    boolean isCreating, @Nonnull CommandAction command, int editIndex) {
         TemplateProcessor template = createBaseTemplate()
                 .setVariable("command", command.getCommand())
-                .setVariable("runAsServer", command.isRunAsServer());
+                .setVariable("runAsServer", command.isRunAsServer())
+                .setVariable("delaySeconds", command.getDelaySeconds());
 
         String html = template.process(getSharedStyles() + """
                 <div class="page-overlay">
-                    <div class="main-container" style="anchor-width: 650; anchor-height: 400;">
+                    <div class="main-container" style="anchor-width: 650; anchor-height: 500;">
 
                         <!-- Header -->
                         <div class="header">
@@ -2564,6 +2582,14 @@ public class CitizensUI {
                                 <p class="form-hint">The command to execute. Do not include the leading /</p>
                             </div>
 
+                            <div class="spacer-md"></div>
+                            
+                            <!-- Delay Input -->
+                            <div class="section">
+                                {{@sectionHeader:title=Delay}}
+                                {{@numberField:id=delay-seconds,label=Delay Before Command (seconds),value={{$delaySeconds}},placeholder=0,min=0,max=300,step=0.5,decimals=1,hint=Wait time before executing this command}}
+                            </div>
+    
                             <div class="spacer-md"></div>
 
                             <!-- Run As Server Toggle -->
@@ -2597,9 +2623,25 @@ public class CitizensUI {
 
         final String[] commandText = {command.getCommand()};
         final boolean[] runAsServer = {command.isRunAsServer()};
+        final float[] delaySeconds = {command.getDelaySeconds()};
 
         page.addEventListener("command-input", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
             commandText[0] = ctx.getValue("command-input", String.class).orElse("");
+        });
+
+        page.addEventListener("delay-seconds", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
+            ctx.getValue("delay-seconds", Double.class)
+                    .ifPresent(val -> delaySeconds[0] = val.floatValue());
+
+            if (delaySeconds[0] == 0.0f) {
+                ctx.getValue("delay-seconds", String.class)
+                        .ifPresent(val -> {
+                            try {
+                                delaySeconds[0] = Float.parseFloat(val);
+                            } catch (NumberFormatException e) {
+                            }
+                        });
+            }
         });
 
         page.addEventListener("run-as-server", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
@@ -2612,7 +2654,7 @@ public class CitizensUI {
                 return;
             }
 
-            actions.set(editIndex, new CommandAction(commandText[0].trim(), runAsServer[0]));
+            actions.set(editIndex, new CommandAction(commandText[0].trim(), runAsServer[0], delaySeconds[0]));
             playerRef.sendMessage(Message.raw("Command updated!").color(Color.GREEN));
             openCommandActionsGUI(playerRef, store, citizenId, actions, isCreating);
         });
