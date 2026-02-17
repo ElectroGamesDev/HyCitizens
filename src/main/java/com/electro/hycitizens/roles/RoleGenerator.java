@@ -11,6 +11,7 @@ import javax.annotation.Nullable;
 import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Collection;
 import java.util.List;
@@ -409,8 +410,22 @@ public class RoleGenerator {
 
     public void writeRoleFile(@Nonnull String roleName, @Nonnull JsonObject roleJson) {
         File roleFile = new File(generatedRolesDir, roleName + ".json");
+        String newContent = gson.toJson(roleJson);
+
+        // Skip writing if the file content hasn't changed to avoid triggering
+        // Hytale's hot-reload which resets NPC appearance (including skins)
+        if (roleFile.exists()) {
+            try {
+                String existingContent = Files.readString(roleFile.toPath());
+                if (existingContent.equals(newContent)) {
+                    return;
+                }
+            } catch (IOException ignored) {
+            }
+        }
+
         try (FileWriter writer = new FileWriter(roleFile)) {
-            gson.toJson(roleJson, writer);
+            writer.write(newContent);
         } catch (IOException e) {
             getLogger().atSevere().log("Failed to write role file: " + roleName + " - " + e.getMessage());
         }
