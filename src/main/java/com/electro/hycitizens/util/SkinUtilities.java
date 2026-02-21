@@ -13,6 +13,9 @@ import com.hypixel.hytale.server.core.universe.playerdata.PlayerStorage;
 import com.hypixel.hytale.server.core.universe.world.World;
 import com.hypixel.hytale.server.core.universe.world.storage.EntityStore;
 
+import com.hypixel.hytale.common.util.RandomUtil;
+import com.hypixel.hytale.server.core.cosmetics.CosmeticsModule;
+
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
 import java.net.URI;
@@ -20,7 +23,7 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
-import java.util.UUID;
+import java.util.*;
 import java.util.concurrent.CompletableFuture;
 
 import static com.hypixel.hytale.logger.HytaleLogger.getLogger;
@@ -340,5 +343,154 @@ public class SkinUtilities {
         skin.undertop = "shirt_tshirt";
         skin.shoes = "shoes_sneakers";
         return skin;
+    }
+
+    public static final String[] SLOT_NAMES = {
+            "bodyCharacteristic", "underwear", "skinFeature",
+            "face", "eyes", "ears", "mouth", "eyebrows", "facialHair",
+            "haircut",
+            "pants", "overpants", "undertop", "overtop", "shoes", "gloves",
+            "headAccessory", "faceAccessory", "earAccessory", "cape"
+    };
+
+    public static final String[][] SLOT_CATEGORIES = {
+            {"Body", "bodyCharacteristic", "underwear", "skinFeature"},
+            {"Face", "face", "eyes", "ears", "mouth", "eyebrows", "facialHair"},
+            {"Hair", "haircut"},
+            {"Clothing", "pants", "overpants", "undertop", "overtop", "shoes", "gloves"},
+            {"Accessories", "headAccessory", "faceAccessory", "earAccessory", "cape"}
+    };
+
+    @Nonnull
+    public static Map<String, List<String>> discoverCosmeticOptions(int sampleSize) {
+        Map<String, Set<String>> optionSets = new LinkedHashMap<>();
+        for (String slot : SLOT_NAMES) {
+            optionSets.put(slot, new TreeSet<>(String.CASE_INSENSITIVE_ORDER));
+        }
+
+        Random random = RandomUtil.getSecureRandom();
+        for (int i = 0; i < sampleSize; i++) {
+            try {
+                PlayerSkin skin = CosmeticsModule.get().generateRandomSkin(random);
+                for (String slot : SLOT_NAMES) {
+                    String value = getSkinField(skin, slot);
+                    if (value != null && !value.isEmpty()) {
+                        optionSets.get(slot).add(value);
+                    }
+                }
+            } catch (Exception ignored) {
+            }
+        }
+
+        Map<String, List<String>> result = new LinkedHashMap<>();
+        for (Map.Entry<String, Set<String>> entry : optionSets.entrySet()) {
+            result.put(entry.getKey(), new ArrayList<>(entry.getValue()));
+        }
+        return result;
+    }
+
+    @Nonnull
+    public static PlayerSkin copySkin(@Nonnull PlayerSkin source) {
+        return new PlayerSkin(
+                source.bodyCharacteristic,
+                source.underwear,
+                source.face,
+                source.eyes,
+                source.ears,
+                source.mouth,
+                source.facialHair,
+                source.haircut,
+                source.eyebrows,
+                source.pants,
+                source.overpants,
+                source.undertop,
+                source.overtop,
+                source.shoes,
+                source.headAccessory,
+                source.faceAccessory,
+                source.earAccessory,
+                source.skinFeature,
+                source.gloves,
+                source.cape
+        );
+    }
+
+    @Nullable
+    public static String getSkinField(@Nonnull PlayerSkin skin, @Nonnull String slotName) {
+        return switch (slotName) {
+            case "bodyCharacteristic" -> skin.bodyCharacteristic;
+            case "underwear" -> skin.underwear;
+            case "skinFeature" -> skin.skinFeature;
+            case "face" -> skin.face;
+            case "eyes" -> skin.eyes;
+            case "ears" -> skin.ears;
+            case "mouth" -> skin.mouth;
+            case "eyebrows" -> skin.eyebrows;
+            case "facialHair" -> skin.facialHair;
+            case "haircut" -> skin.haircut;
+            case "pants" -> skin.pants;
+            case "overpants" -> skin.overpants;
+            case "undertop" -> skin.undertop;
+            case "overtop" -> skin.overtop;
+            case "shoes" -> skin.shoes;
+            case "gloves" -> skin.gloves;
+            case "headAccessory" -> skin.headAccessory;
+            case "faceAccessory" -> skin.faceAccessory;
+            case "earAccessory" -> skin.earAccessory;
+            case "cape" -> skin.cape;
+            default -> null;
+        };
+    }
+
+    public static void setSkinField(@Nonnull PlayerSkin skin, @Nonnull String slotName, @Nullable String value) {
+        switch (slotName) {
+            case "bodyCharacteristic" -> skin.bodyCharacteristic = value;
+            case "underwear" -> skin.underwear = value;
+            case "skinFeature" -> skin.skinFeature = value;
+            case "face" -> skin.face = value;
+            case "eyes" -> skin.eyes = value;
+            case "ears" -> skin.ears = value;
+            case "mouth" -> skin.mouth = value;
+            case "eyebrows" -> skin.eyebrows = value;
+            case "facialHair" -> skin.facialHair = value;
+            case "haircut" -> skin.haircut = value;
+            case "pants" -> skin.pants = value;
+            case "overpants" -> skin.overpants = value;
+            case "undertop" -> skin.undertop = value;
+            case "overtop" -> skin.overtop = value;
+            case "shoes" -> skin.shoes = value;
+            case "gloves" -> skin.gloves = value;
+            case "headAccessory" -> skin.headAccessory = value;
+            case "faceAccessory" -> skin.faceAccessory = value;
+            case "earAccessory" -> skin.earAccessory = value;
+            case "cape" -> skin.cape = value;
+        }
+    }
+
+    @Nonnull
+    public static String slotDisplayName(@Nonnull String slotName) {
+        return switch (slotName) {
+            case "bodyCharacteristic" -> "Body Type";
+            case "underwear" -> "Underwear";
+            case "skinFeature" -> "Skin Feature";
+            case "face" -> "Face";
+            case "eyes" -> "Eyes";
+            case "ears" -> "Ears";
+            case "mouth" -> "Mouth";
+            case "eyebrows" -> "Eyebrows";
+            case "facialHair" -> "Facial Hair";
+            case "haircut" -> "Haircut";
+            case "pants" -> "Pants";
+            case "overpants" -> "Overpants";
+            case "undertop" -> "Undertop";
+            case "overtop" -> "Overtop";
+            case "shoes" -> "Shoes";
+            case "gloves" -> "Gloves";
+            case "headAccessory" -> "Head Acc.";
+            case "faceAccessory" -> "Face Acc.";
+            case "earAccessory" -> "Ear Acc.";
+            case "cape" -> "Cape";
+            default -> slotName;
+        };
     }
 }

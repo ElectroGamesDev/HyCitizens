@@ -20,11 +20,11 @@ public class DetectionConfig {
     private float investigateRange;
 
     public DetectionConfig() {
-        this.viewRange = 0;
+        this.viewRange = 15;
         this.viewSector = 180;
-        this.hearingRange = 0;
-        this.absoluteDetectionRange = 0;
-        this.alertedRange = 0;
+        this.hearingRange = 8;
+        this.absoluteDetectionRange = 2;
+        this.alertedRange = 45;
         this.alertedTimeMin = 1.0f;
         this.alertedTimeMax = 2.0f;
         this.chanceToBeAlertedWhenReceivingCallForHelp = 70;

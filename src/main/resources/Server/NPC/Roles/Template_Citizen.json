@@ -3,7 +3,7 @@
   "StartState": "Idle",
   "Parameters": {
     "Appearance": {
-      "Value": "Trork_Hunter",
+      "Value": "Player",
       "Description": "Model to be used."
     },
     "ApplySeparation": {

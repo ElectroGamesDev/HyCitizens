@@ -48,7 +48,7 @@ import com.hypixel.hytale.server.core.universe.world.storage.EntityStore;
 import com.hypixel.hytale.server.npc.NPCPlugin;
 import com.hypixel.hytale.server.npc.entities.NPCEntity;
 import it.unimi.dsi.fastutil.Pair;
-import org.bouncycastle.math.raw.Mod;
+
 
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
@@ -74,6 +74,7 @@ public class CitizensManager {
     private final Set<String> groups = new HashSet<>();
     private final Set<String> registeredNoLoopAnimations = ConcurrentHashMap.newKeySet();
     private final RoleGenerator roleGenerator;
+    private ScheduledFuture<?> positionSaveTask;
 
     public CitizensManager(@Nonnull HyCitizensPlugin plugin) {
         this.plugin = plugin;
@@ -87,6 +88,7 @@ public class CitizensManager {
         startCitizensByWorldScheduler();
         startAnimationScheduler();
         startNametagMoveScheduler();
+        startPositionSaveScheduler();
     }
 
     private void startSkinUpdateScheduler() {
@@ -135,7 +137,9 @@ public class CitizensManager {
                         if (citizen.getSpawnedUUID() == null || citizen.getNpcRef() == null || !citizen.getNpcRef().isValid())
                             continue;
 
-                        long chunkIndex = ChunkUtil.indexChunkFromBlock(citizen.getPosition().x, citizen.getPosition().z);
+                        Vector3d citizenPos = citizen.getPosition();
+
+                        long chunkIndex = ChunkUtil.indexChunkFromBlock(citizenPos.x, citizenPos.z);
                         WorldChunk chunk = world.getChunkIfLoaded(chunkIndex);
                         if (chunk == null)
                             continue;
@@ -144,8 +148,8 @@ public class CitizensManager {
                             float maxDistance = 25.0f;
                             float maxDistanceSq = maxDistance * maxDistance;
 
-                            double dx = playerRef.getTransform().getPosition().x - citizen.getPosition().x;
-                            double dz = playerRef.getTransform().getPosition().z - citizen.getPosition().z;
+                            double dx = playerRef.getTransform().getPosition().x - citizenPos.x;
+                            double dz = playerRef.getTransform().getPosition().z - citizenPos.z;
 
                             double distSq = dx * dx + dz * dz;
 
@@ -207,17 +211,20 @@ public class CitizensManager {
                             continue;
                         }
 
-                        long chunkIndex = ChunkUtil.indexChunkFromBlock(citizen.getPosition().x, citizen.getPosition().z);
-                        WorldChunk chunk = world.getChunkIfLoaded(chunkIndex);
-                        if (chunk == null)
-                            continue;
-
                         TransformComponent npcTransformComponent = citizen.getNpcRef().getStore().getComponent(citizen.getNpcRef(), TransformComponent.getComponentType());
                         if (npcTransformComponent == null) {
                             continue;
                         }
 
                         Vector3d npcPosition = npcTransformComponent.getPosition();
+
+                        long chunkIndex = ChunkUtil.indexChunkFromBlock(npcPosition.x, npcPosition.z);
+                        WorldChunk chunk = world.getChunkIfLoaded(chunkIndex);
+                        if (chunk == null)
+                            continue;
+
+                        // Track the NPC's actual position for wandering citizens
+                        citizen.setPosition(new Vector3d(npcPosition));
 
                         // Todo: It would be better to store the nametags as a ref
 
@@ -284,6 +291,27 @@ public class CitizensManager {
         }, 0, 1000, TimeUnit.MILLISECONDS);
     }
 
+    // Todo: move position saving to chunk unload event when it becomes available
+    private void startPositionSaveScheduler() {
+        positionSaveTask = HytaleServer.SCHEDULED_EXECUTOR.scheduleAtFixedRate(() -> {
+            config.beginBatch();
+            try {
+                for (CitizenData citizen : citizens.values()) {
+                    if (citizen.getSpawnedUUID() == null || citizen.getNpcRef() == null || !citizen.getNpcRef().isValid())
+                        continue;
+
+                    if (citizen.getMovementBehavior().getType().equals("IDLE"))
+                        continue;
+
+                    String basePath = "citizens." + citizen.getId();
+                    config.setVector3d(basePath + ".position", citizen.getPosition());
+                }
+            } finally {
+                config.endBatch();
+            }
+        }, 5, 5, TimeUnit.SECONDS);
+    }
+
     public void shutdown() {
         if (skinUpdateTask != null && !skinUpdateTask.isCancelled()) {
             skinUpdateTask.cancel(false);
@@ -299,6 +327,10 @@ public class CitizensManager {
 
         if (nametagMoveTask != null && !nametagMoveTask.isCancelled()) {
             nametagMoveTask.cancel(false);
+        }
+
+        if (positionSaveTask != null && !positionSaveTask.isCancelled()) {
+            positionSaveTask.cancel(false);
         }
     }
 
@@ -446,7 +478,7 @@ public class CitizensManager {
 
         // Load movement behavior
         String moveType = config.getString(basePath + ".movement.type", "IDLE");
-        float walkSpeed = config.getFloat(basePath + ".movement.walk-speed", 1.0f);
+        float walkSpeed = config.getFloat(basePath + ".movement.walk-speed", 10.0f);
         float wanderRadius = config.getFloat(basePath + ".movement.wander-radius", 10.0f);
         float wanderWidth = config.getFloat(basePath + ".movement.wander-width", 10.0f);
         float wanderDepth = config.getFloat(basePath + ".movement.wander-depth", 10.0f);
@@ -519,11 +551,11 @@ public class CitizensManager {
 
         // Load detection config
         DetectionConfig detectionConfig = new DetectionConfig();
-        detectionConfig.setViewRange(config.getFloat(basePath + ".detection.view-range", 0));
+        detectionConfig.setViewRange(config.getFloat(basePath + ".detection.view-range", 15));
         detectionConfig.setViewSector(config.getFloat(basePath + ".detection.view-sector", 180));
-        detectionConfig.setHearingRange(config.getFloat(basePath + ".detection.hearing-range", 0));
-        detectionConfig.setAbsoluteDetectionRange(config.getFloat(basePath + ".detection.absolute-detection-range", 0));
-        detectionConfig.setAlertedRange(config.getFloat(basePath + ".detection.alerted-range", 0));
+        detectionConfig.setHearingRange(config.getFloat(basePath + ".detection.hearing-range", 8));
+        detectionConfig.setAbsoluteDetectionRange(config.getFloat(basePath + ".detection.absolute-detection-range", 2));
+        detectionConfig.setAlertedRange(config.getFloat(basePath + ".detection.alerted-range", 45));
         detectionConfig.setAlertedTimeMin(config.getFloat(basePath + ".detection.alerted-time-min", 1.0f));
         detectionConfig.setAlertedTimeMax(config.getFloat(basePath + ".detection.alerted-time-max", 2.0f));
         detectionConfig.setChanceToBeAlertedWhenReceivingCallForHelp(config.getInt(basePath + ".detection.chance-alerted-call-for-help", 70));
@@ -561,6 +593,11 @@ public class CitizensManager {
         citizenData.setChanceToEquipFromIdleHotbarSlot(config.getInt(basePath + ".chance-equip-idle-hotbar", 5));
         citizenData.setDefaultOffHandSlot(config.getInt(basePath + ".default-offhand-slot", -1));
         citizenData.setNighttimeOffhandSlot(config.getInt(basePath + ".nighttime-offhand-slot", 0));
+        citizenData.setKnockbackScale(config.getFloat(basePath + ".knockback-scale", 0.5f));
+        List<String> weaponsList = config.getStringList(basePath + ".weapons");
+        if (weaponsList != null) citizenData.setWeapons(weaponsList);
+        List<String> offHandItemsList = config.getStringList(basePath + ".offhand-items");
+        if (offHandItemsList != null) citizenData.setOffHandItems(offHandItemsList);
         List<String> combatTargetGroups = config.getStringList(basePath + ".combat-message-target-groups");
         if (combatTargetGroups != null) citizenData.setCombatMessageTargetGroups(combatTargetGroups);
         List<String> flockArr = config.getStringList(basePath + ".flock-array");
@@ -752,17 +789,59 @@ public class CitizensManager {
             config.set(basePath + ".chance-equip-idle-hotbar", citizen.getChanceToEquipFromIdleHotbarSlot());
             config.set(basePath + ".default-offhand-slot", citizen.getDefaultOffHandSlot());
             config.set(basePath + ".nighttime-offhand-slot", citizen.getNighttimeOffhandSlot());
+            config.set(basePath + ".knockback-scale", citizen.getKnockbackScale());
+            config.setStringList(basePath + ".weapons", citizen.getWeapons());
+            config.setStringList(basePath + ".offhand-items", citizen.getOffHandItems());
             config.setStringList(basePath + ".combat-message-target-groups", citizen.getCombatMessageTargetGroups());
             config.setStringList(basePath + ".flock-array", citizen.getFlockArray());
             config.setStringList(basePath + ".disable-damage-groups", citizen.getDisableDamageGroups());
 
-            // Auto-regenerate role file on save (roles hot-reload)
-            roleGenerator.generateRole(citizen);
+            boolean npcSpawned = citizen.getNpcRef() != null && citizen.getNpcRef().isValid();
+
+            // Only write role file if role-relevant data actually changed
+            boolean roleChanged = roleGenerator.generateRoleIfChanged(citizen);
 
             // Add group to groups set if not empty
             if (!citizen.getGroup().isEmpty()) {
                 groups.add(citizen.getGroup());
                 saveGroups();
+            }
+
+            // When the role file updates, Hytale respawns the NPC so we need to re-acquire the npcRef
+            if (npcSpawned && roleChanged) {
+                long start = System.currentTimeMillis();
+                final ScheduledFuture<?>[] futureRef = new ScheduledFuture<?>[1];
+
+                futureRef[0] = HytaleServer.SCHEDULED_EXECUTOR.scheduleAtFixedRate(() -> {
+                    long elapsedMs = System.currentTimeMillis() - start;
+                    if (elapsedMs >= 10_000) {
+                        futureRef[0].cancel(false);
+                        return;
+                    }
+
+                    if (citizen.getNpcRef() != null && citizen.getNpcRef().isValid()) {
+                        return;
+                    }
+
+                    futureRef[0].cancel(false);
+
+                    HytaleServer.SCHEDULED_EXECUTOR.schedule(() -> {
+                        if (citizen.getSpawnedUUID() == null) {
+                            return;
+                        }
+
+                        World world = Universe.get().getWorld(citizen.getWorldUUID());
+                        if (world == null) {
+                            return;
+                        }
+
+                        world.execute(() -> {
+                            citizen.setNpcRef(world.getEntityRef(citizen.getSpawnedUUID()));
+                        });
+
+                    }, 250, TimeUnit.MILLISECONDS);
+
+                }, 100, 250, TimeUnit.MILLISECONDS);
             }
         } finally {
             // Always end batch, even if an exception occurs
@@ -847,7 +926,7 @@ public class CitizensManager {
             npcEntity.getInventory().getUtility().setItemStackForSlot((short) 0, null);
         }
         else {
-            npcEntity.getInventory().getUtility().setItemStackForSlot((short) 0, new ItemStack(citizen.getNpcHand()));
+            npcEntity.getInventory().getUtility().setItemStackForSlot((short) 0, new ItemStack(citizen.getNpcOffHand()));
         }
 
         // Set helmet
@@ -1068,6 +1147,7 @@ public class CitizensManager {
         WorldChunk chunk = world.getChunkIfLoaded(chunkIndex);
         if (chunk == null) {
             getLogger().atInfo().log("Failed to spawn player model for citizen NPC: " + citizen.getName() + ". The world chunk is unloaded.");
+            return;
         }
 
         String roleName = resolveRoleName(citizen);
@@ -1211,6 +1291,38 @@ public class CitizensManager {
                             }
                         });
                     }
+                }
+            }
+        }
+    }
+
+    public void applySkinPreview(CitizenData citizen, PlayerSkin skin) {
+        if (citizen.getSpawnedUUID() != null) {
+            World world = Universe.get().getWorld(citizen.getWorldUUID());
+            if (world != null) {
+                Ref<EntityStore> npcRef = world.getEntityRef(citizen.getSpawnedUUID());
+                if (npcRef != null && npcRef.isValid()) {
+                    world.execute(() -> {
+                        PlayerSkinComponent skinComponent = new PlayerSkinComponent(skin);
+                        npcRef.getStore().putComponent(npcRef, PlayerSkinComponent.getComponentType(), skinComponent);
+
+                        float scale = Math.max((float) 0.01, citizen.getScale());
+                        Model newModel = CosmeticsModule.get().createModel(skin, scale);
+                        if (newModel != null) {
+                            ModelComponent modelComponent = new ModelComponent(newModel);
+                            npcRef.getStore().putComponent(npcRef, ModelComponent.getComponentType(), modelComponent);
+                        }
+
+                        PersistentModel persistentModel = npcRef.getStore().getComponent(npcRef, PersistentModel.getComponentType());
+                        if (persistentModel != null) {
+                            persistentModel.setModelReference(new Model.ModelReference(
+                                    newModel.getModelAssetId(),
+                                    newModel.getScale(),
+                                    newModel.getRandomAttachmentIds(),
+                                    newModel.getAnimationSetMap() == null
+                            ));
+                        }
+                    });
                 }
             }
         }
@@ -1663,10 +1775,8 @@ public class CitizensManager {
             transform.lookOrientation = lookDirection;
             transform.bodyOrientation = bodyDirection;
 
-            // Create ComponentUpdate
-            ComponentUpdate update = new ComponentUpdate();
-            update.type = ComponentUpdateType.Transform;
-            update.transform = transform;
+            // Create TransformUpdate
+            TransformUpdate update = new TransformUpdate(transform);
 
             // Create EntityUpdate
             EntityUpdate entityUpdate = new EntityUpdate(
@@ -1900,7 +2010,7 @@ public class CitizensManager {
 
     @Nonnull
     private String resolveRoleName(@Nonnull CitizenData citizen) {
-        // Generate/update the role file on disk (roles hot-reload via asset pack)
+        // Generate/update the role file
         String generatedRoleName = roleGenerator.generateRole(citizen);
 
         // With hot-reload, generated roles are indexed automatically
@@ -1934,7 +2044,9 @@ public class CitizensManager {
                 }
 
                 World world = Universe.get().getWorld(citizen.getWorldUUID());
-                if (world == null) return;
+                if (world == null) {
+                    return;
+                }
 
                 world.execute(() -> {
                     try {
@@ -1945,7 +2057,42 @@ public class CitizensManager {
                             npcEntity.setRoleIndex(newRoleIndex);
                             npcEntity.setRoleName(generatedRoleName);
 
-                            //npcEntity.setRole(role);
+                            // When the role updates, Hytale respawns the NPC, which means the citizen's npcRef needs to be updated
+
+                            long start = System.currentTimeMillis();
+                            final ScheduledFuture<?>[] futureRef = new ScheduledFuture<?>[1];
+
+                            futureRef[0] = HytaleServer.SCHEDULED_EXECUTOR.scheduleAtFixedRate(() -> {
+                                long elapsedMs = System.currentTimeMillis() - start;
+                                if (elapsedMs >= 10_000) {
+                                    futureRef[0].cancel(false);
+                                    return;
+                                }
+
+                                if (citizen.getNpcRef() != null && citizen.getNpcRef().isValid()) {
+                                    return;
+                                }
+
+                                futureRef[0].cancel(false);
+
+                                // npcRef is invalid, which means the role likely updated. Try to update it.
+                                HytaleServer.SCHEDULED_EXECUTOR.schedule(() -> {
+                                    if (citizen.getSpawnedUUID() == null) {
+                                        return;
+                                    }
+
+                                    if (world == null) {
+                                        return;
+                                    }
+
+                                    world.execute(() -> {
+                                        citizen.setNpcRef(world.getEntityRef(citizen.getSpawnedUUID()));
+                                    });
+
+                                }, 250, TimeUnit.MILLISECONDS);
+
+                            }, 100, 250, TimeUnit.MILLISECONDS);
+
                             getLogger().atInfo().log("Successfully applied generated role '" + generatedRoleName + "' to citizen '" + citizen.getName() + "'.");
                         }
                     } catch (Exception e) {

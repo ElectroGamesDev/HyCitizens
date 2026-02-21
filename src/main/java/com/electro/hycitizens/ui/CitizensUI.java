@@ -1447,6 +1447,13 @@ public class CitizensUI {
 
                                         <div class="spacer-sm"></div>
 
+                                        <div class="form-group">
+                                            <button id="customize-skin-btn" class="btn-info" style="anchor-width: 225;">Customize Skin</button>
+                                            <p class="form-hint" style="text-align: center;">Edit individual cosmetic slots</p>
+                                        </div>
+
+                                        <div class="spacer-sm"></div>
+
                                         <div class="checkbox-row">
                                             <input type="checkbox" id="live-skin-check" {{#if useLiveSkin}}checked{{/if}} />
                                             <div style="layout: top; flex-weight: 0; text-align: center;">
@@ -1973,6 +1980,9 @@ public class CitizensUI {
                         clonedCitizen.setChanceToEquipFromIdleHotbarSlot(citizen.getChanceToEquipFromIdleHotbarSlot());
                         clonedCitizen.setDefaultOffHandSlot(citizen.getDefaultOffHandSlot());
                         clonedCitizen.setNighttimeOffhandSlot(citizen.getNighttimeOffhandSlot());
+                        clonedCitizen.setKnockbackScale(citizen.getKnockbackScale());
+                        clonedCitizen.setWeapons(new ArrayList<>(citizen.getWeapons()));
+                        clonedCitizen.setOffHandItems(new ArrayList<>(citizen.getOffHandItems()));
                         clonedCitizen.setCombatMessageTargetGroups(new ArrayList<>(citizen.getCombatMessageTargetGroups()));
                         clonedCitizen.setFlockArray(new ArrayList<>(citizen.getFlockArray()));
                         clonedCitizen.setDisableDamageGroups(new ArrayList<>(citizen.getDisableDamageGroups()));
@@ -2304,6 +2314,13 @@ public class CitizensUI {
                     playerRef.sendMessage(Message.raw("Failed to generate random skin: " + e.getMessage()).color(Color.RED));
                 }
             });
+
+            page.addEventListener("customize-skin-btn", CustomUIEventBindingType.Activating, event -> {
+                if (citizen.getCachedSkin() == null) {
+                    citizen.setCachedSkin(com.electro.hycitizens.util.SkinUtilities.createDefaultSkin());
+                }
+                plugin.getSkinCustomizerUI().openSkinCustomizerGUI(playerRef, store, citizen);
+            });
         }
 
         page.addEventListener("rotate-towards-player", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
@@ -2518,6 +2535,10 @@ public class CitizensUI {
                     playerRef.sendMessage(Message.raw("Citizen '" + name + "' updated!").color(Color.GREEN));
                     openCitizensGUI(playerRef, store, Tab.MANAGE);
                 } else if (skinUsername[0].trim().startsWith("random_") && citizen.getCachedSkin() != null) {
+                    plugin.getCitizensManager().updateCitizen(citizen, true);
+                    playerRef.sendMessage(Message.raw("Citizen '" + name + "' updated!").color(Color.GREEN));
+                    openCitizensGUI(playerRef, store, Tab.MANAGE);
+                } else if (skinUsername[0].trim().startsWith("custom_") && citizen.getCachedSkin() != null) {
                     plugin.getCitizensManager().updateCitizen(citizen, true);
                     playerRef.sendMessage(Message.raw("Citizen '" + name + "' updated!").color(Color.GREEN));
                     openCitizensGUI(playerRef, store, Tab.MANAGE);
@@ -2787,7 +2808,7 @@ public class CitizensUI {
 
         String html = template.process(getSharedStyles() + """
                 <div class="page-overlay">
-                    <div class="main-container" style="anchor-width: 950; anchor-height: 1000;">
+                    <div class="main-container" style="layout-mode: TopScrolling; anchor-width: 950; anchor-height: 1000;">
                 
                         <!-- Header -->
                         <div class="header">
@@ -2899,6 +2920,10 @@ public class CitizensUI {
                 
                                 {{#if isAnyWander}}
                                 <div class="spacer-sm"></div>
+                                <div class="form-row">
+                                    {{@numberField:id=walk-speed,label=Walk Speed,value={{$walkSpeed}},placeholder=10,min=1,max=100,step=1,decimals=0}}
+                                </div>
+                                <div class="spacer-sm"></div>
                                 <p style="color: #c9d1d9; font-size: 12; font-weight: bold; text-align: center;">Wander Radius</p>
                                 <div class="card-body">
                                     <p style="color: #8b949e; font-size: 12; text-align: center;">Note: The wander system uses Hytale's built in wander system. While Citizens usually stay close to the selected radius, they sometimes go a bit further.</p>
@@ -2977,6 +3002,8 @@ public class CitizensUI {
                             </div>
 
                         </div>
+                        
+                        <div class="spacer-sm"></div>
 
                         <!-- Footer -->
                         <div class="footer">
@@ -3076,8 +3103,19 @@ public class CitizensUI {
 //            openBehaviorsGUI(playerRef, store, citizen);
 //        });
 
-        // Radius buttons
+        // Walk speed input (only for wander modes)
         boolean isAnyWander = !"IDLE".equals(moveType);
+        if (isAnyWander) {
+            page.addEventListener("walk-speed", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
+                ctx.getValue("walk-speed", Double.class).ifPresent(v -> {
+                    walkSpeed[0] = v.floatValue();
+                    citizen.setMovementBehavior(new MovementBehavior(moveType, walkSpeed[0], wanderRadius[0], wanderWidth[0], wanderDepth[0]));
+                    plugin.getCitizensManager().saveCitizen(citizen);
+                });
+            });
+        }
+
+        // Radius buttons
         if (isAnyWander) {
 //            page.addEventListener("radius-0", CustomUIEventBindingType.Activating, event -> {
 //                citizen.setMovementBehavior(new MovementBehavior(moveType, walkSpeed[0], 0, wanderWidth[0], wanderDepth[0]));
@@ -4684,6 +4722,9 @@ public class CitizensUI {
                 .setVariable("chanceEquipIdle", citizen.getChanceToEquipFromIdleHotbarSlot())
                 .setVariable("defaultOffHandSlot", citizen.getDefaultOffHandSlot())
                 .setVariable("nighttimeOffhandSlot", citizen.getNighttimeOffhandSlot())
+                .setVariable("knockbackScale", citizen.getKnockbackScale())
+                .setVariable("weapons", escapeHtml(String.join(", ", citizen.getWeapons())))
+                .setVariable("offHandItems", escapeHtml(String.join(", ", citizen.getOffHandItems())))
                 .setVariable("combatMessageTargetGroups", escapeHtml(String.join(", ", citizen.getCombatMessageTargetGroups())))
                 .setVariable("flockArray", escapeHtml(String.join(", ", citizen.getFlockArray())))
                 .setVariable("disableDamageGroups", escapeHtml(String.join(", ", citizen.getDisableDamageGroups())));
@@ -4723,6 +4764,12 @@ public class CitizensUI {
                                     <div class="spacer-h-sm"></div>
                                     <div style="flex-weight: 1;">
                                         {{@numberField:id=run-threshold,label=Run Threshold,value={{$runThreshold}},placeholder=0.3,min=0,max=1,step=0.05,decimals=2}}
+                                    </div>
+                                </div>
+                                <div class="spacer-xs"></div>
+                                <div class="form-row">
+                                    <div style="flex-weight: 1;">
+                                        {{@numberField:id=knockback-scale,label=Knockback Scale,value={{$knockbackScale}},placeholder=0.5,min=0,max=5,step=0.1,decimals=1}}
                                     </div>
                                 </div>
                                 <div class="spacer-xs"></div>
@@ -4785,6 +4832,10 @@ public class CitizensUI {
                                         {{@numberField:id=nighttime-offhand,label=Nighttime OffHand Slot,value={{$nighttimeOffhandSlot}},placeholder=0,min=-1,max=8,step=1,decimals=0}}
                                     </div>
                                 </div>
+                                <div class="spacer-xs"></div>
+                                {{@formField:id=weapons,label=Weapons (Hotbar Items),value={{$weapons}},placeholder=Weapon_Sword_Iron,hint=Comma-separated list of weapon/item identifiers}}
+                                <div class="spacer-xs"></div>
+                                {{@formField:id=offhand-items,label=OffHand Items,value={{$offHandItems}},placeholder=Furniture_Crude_Torch,hint=Comma-separated list of offhand item identifiers}}
                             </div>
 
                             <div class="spacer-md"></div>
@@ -4837,6 +4888,9 @@ public class CitizensUI {
         final int[] chanceEquipIdle = {citizen.getChanceToEquipFromIdleHotbarSlot()};
         final int[] defaultOffHand = {citizen.getDefaultOffHandSlot()};
         final int[] nighttimeOffhand = {citizen.getNighttimeOffhandSlot()};
+        final float[] knockbackScale = {citizen.getKnockbackScale()};
+        final String[] weaponsStr = {String.join(", ", citizen.getWeapons())};
+        final String[] offHandItemsStr = {String.join(", ", citizen.getOffHandItems())};
         final String[] combatMsgGroups = {String.join(", ", citizen.getCombatMessageTargetGroups())};
         final String[] flockArray = {String.join(", ", citizen.getFlockArray())};
         final String[] disableDmgGroups = {String.join(", ", citizen.getDisableDamageGroups())};
@@ -4862,6 +4916,12 @@ public class CitizensUI {
         });
         page.addEventListener("flock-array", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
             flockArray[0] = ctx.getValue("flock-array", String.class).orElse("");
+        });
+        page.addEventListener("weapons", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
+            weaponsStr[0] = ctx.getValue("weapons", String.class).orElse("Weapon_Sword_Iron");
+        });
+        page.addEventListener("offhand-items", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
+            offHandItemsStr[0] = ctx.getValue("offhand-items", String.class).orElse("Furniture_Crude_Torch");
         });
         page.addEventListener("disable-damage-groups", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
             disableDmgGroups[0] = ctx.getValue("disable-damage-groups", String.class).orElse("Self");
@@ -4893,6 +4953,10 @@ public class CitizensUI {
             ctx.getValue("nighttime-offhand", Double.class).ifPresent(v -> nighttimeOffhand[0] = v.intValue());
         });
 
+        page.addEventListener("knockback-scale", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
+            ctx.getValue("knockback-scale", Double.class).ifPresent(v -> knockbackScale[0] = v.floatValue());
+        });
+
         // Checkbox
         page.addEventListener("breathes-in-water", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
             ctx.getValue("breathes-in-water", Boolean.class).ifPresent(v -> breathesInWater[0] = v);
@@ -4915,7 +4979,11 @@ public class CitizensUI {
             citizen.setDefaultOffHandSlot(defaultOffHand[0]);
             citizen.setNighttimeOffhandSlot(nighttimeOffhand[0]);
 
+            citizen.setKnockbackScale(knockbackScale[0]);
+
             // Parse comma-separated lists
+            citizen.setWeapons(parseCommaSeparatedList(weaponsStr[0]));
+            citizen.setOffHandItems(parseCommaSeparatedList(offHandItemsStr[0]));
             citizen.setCombatMessageTargetGroups(parseCommaSeparatedList(combatMsgGroups[0]));
             citizen.setFlockArray(parseCommaSeparatedList(flockArray[0]));
             citizen.setDisableDamageGroups(parseCommaSeparatedList(disableDmgGroups[0]));

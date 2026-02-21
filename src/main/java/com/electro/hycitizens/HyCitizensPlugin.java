@@ -2,41 +2,36 @@ package com.electro.hycitizens;
 
 import com.electro.hycitizens.actions.BuilderActionInteract;
 import com.electro.hycitizens.commands.CitizensCommand;
-import com.electro.hycitizens.listeners.*;
+import com.electro.hycitizens.listeners.ChunkPreLoadListener;
+import com.electro.hycitizens.listeners.EntityDamageListener;
+import com.electro.hycitizens.listeners.PlayerConnectionListener;
 import com.electro.hycitizens.managers.CitizensManager;
-import com.electro.hycitizens.models.CitizenData;
 import com.electro.hycitizens.ui.CitizensUI;
+import com.electro.hycitizens.ui.SkinCustomizerUI;
 import com.electro.hycitizens.util.ConfigManager;
 import com.electro.hycitizens.util.RoleAssetPackManager;
 import com.electro.hycitizens.util.UpdateChecker;
 import com.hypixel.hytale.event.EventPriority;
-import com.hypixel.hytale.server.core.HytaleServer;
-import com.hypixel.hytale.server.core.event.events.ShutdownEvent;
-import com.hypixel.hytale.server.core.event.events.player.*;
+import com.hypixel.hytale.server.core.event.events.player.PlayerConnectEvent;
+import com.hypixel.hytale.server.core.event.events.player.PlayerDisconnectEvent;
 import com.hypixel.hytale.server.core.plugin.JavaPlugin;
 import com.hypixel.hytale.server.core.plugin.JavaPluginInit;
-import com.hypixel.hytale.server.core.universe.world.chunk.BlockChunk;
-import com.hypixel.hytale.server.core.universe.world.chunk.WorldChunk;
 import com.hypixel.hytale.server.core.universe.world.events.ChunkPreLoadProcessEvent;
-import com.hypixel.hytale.server.core.universe.world.events.ecs.ChunkUnloadEvent;
-import com.hypixel.hytale.server.core.universe.world.storage.ChunkStore;
 import com.hypixel.hytale.server.npc.NPCPlugin;
 
 import javax.annotation.Nonnull;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.util.ArrayList;
-import java.util.List;
 
 public class HyCitizensPlugin extends JavaPlugin {
     private static HyCitizensPlugin instance;
     private ConfigManager configManager;
     private CitizensManager citizensManager;
     private CitizensUI citizensUI;
+    private SkinCustomizerUI skinCustomizerUI;
     private Path generatedRolesPath;
 
     // Listeners
-    private PlayerAddToWorldListener addToWorldListener;
     private ChunkPreLoadListener chunkPreLoadListener;
     private PlayerConnectionListener connectionListener;
 
@@ -56,12 +51,12 @@ public class HyCitizensPlugin extends JavaPlugin {
 
         this.citizensManager = new CitizensManager(this);
         this.citizensUI = new CitizensUI(this);
+        this.skinCustomizerUI = new SkinCustomizerUI(this);
 
         // Register commands
         getCommandRegistry().registerCommand(new CitizensCommand(this));
 
         // Initialize listeners
-        this.addToWorldListener = new PlayerAddToWorldListener(this);
         this.chunkPreLoadListener = new ChunkPreLoadListener(this);
         this.connectionListener = new PlayerConnectionListener(this);
 
@@ -88,7 +83,6 @@ public class HyCitizensPlugin extends JavaPlugin {
         getEventRegistry().register(PlayerConnectEvent.class, connectionListener::onPlayerConnect);
 
         this.getEntityStoreRegistry().registerSystem(new EntityDamageListener(this));
-        //getEventRegistry().registerGlobal(AddPlayerToWorldEvent.class, addToWorldListener::onAddPlayerToWorld);
         getEventRegistry().registerGlobal(EventPriority.LAST, ChunkPreLoadProcessEvent.class, chunkPreLoadListener::onChunkPreload);
     }
 
@@ -106,6 +100,10 @@ public class HyCitizensPlugin extends JavaPlugin {
 
     public CitizensUI getCitizensUI() {
         return citizensUI;
+    }
+
+    public SkinCustomizerUI getSkinCustomizerUI() {
+        return skinCustomizerUI;
     }
 
     @Nonnull

@@ -19,7 +19,7 @@ public class MovementBehavior {
 
     public MovementBehavior() {
         this.type = "IDLE";
-        this.walkSpeed = 1.0f;
+        this.walkSpeed = 10.0f;
         this.wanderRadius = 10.0f;
         this.wanderWidth = 10.0f;
         this.wanderDepth = 10.0f;

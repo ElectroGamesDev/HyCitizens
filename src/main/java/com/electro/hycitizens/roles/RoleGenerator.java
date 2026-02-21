@@ -14,12 +14,15 @@ import java.io.IOException;
 import java.nio.file.Path;
 import java.util.Collection;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 import static com.hypixel.hytale.logger.HytaleLogger.getLogger;
 
 public class RoleGenerator {
     private final File generatedRolesDir;
     private final Gson gson;
+    private final Map<String, String> lastGeneratedContent = new ConcurrentHashMap<>();
 
     public static final String[] ATTACK_INTERACTIONS = {
             "Root_NPC_Attack_Melee",
@@ -99,6 +102,12 @@ public class RoleGenerator {
 
     @Nonnull
     public String generateRole(@Nonnull CitizenData citizen) {
+        generateRoleIfChanged(citizen);
+        return getRoleName(citizen);
+    }
+
+    // Returns true if the role file was actually written (content changed)
+    public boolean generateRoleIfChanged(@Nonnull CitizenData citizen) {
         String moveType = citizen.getMovementBehavior().getType();
         boolean isIdle = "IDLE".equals(moveType);
 
@@ -111,13 +120,16 @@ public class RoleGenerator {
             roleJson = generateVariantRole(citizen);
         }
 
-        writeRoleFile(roleName, roleJson);
-        return roleName;
-    }
+        String newContent = gson.toJson(roleJson);
+        String previousContent = lastGeneratedContent.get(roleName);
 
-    @Nonnull
-    public String regenerateRole(@Nonnull CitizenData citizen) {
-        return generateRole(citizen);
+        if (newContent.equals(previousContent)) {
+            return false;
+        }
+
+        writeRoleFile(roleName, newContent);
+        lastGeneratedContent.put(roleName, newContent);
+        return true;
     }
 
     @Nonnull
@@ -177,6 +189,9 @@ public class RoleGenerator {
         maxHealthParam.addProperty("Description", "Max health for the NPC");
         parameters.add("MaxHealth", maxHealthParam);
         role.add("Parameters", parameters);
+
+        // KnockbackScale
+        role.addProperty("KnockbackScale", citizen.getKnockbackScale());
 
         // Empty instructions for idle
         JsonArray instructions = new JsonArray();
@@ -276,6 +291,10 @@ public class RoleGenerator {
         // Separation
         modify.addProperty("ApplySeparation", citizen.isApplySeparation());
 
+        // Weapons and OffHand arrays
+        addStringArray(modify, "Weapons", citizen.getWeapons());
+        addStringArray(modify, "OffHand", citizen.getOffHandItems());
+
         // Extended parameters
         modify.addProperty("DropList", citizen.getDropList());
         modify.addProperty("WakingIdleBehaviorComponent", citizen.getWakingIdleBehaviorComponent());
@@ -301,9 +320,6 @@ public class RoleGenerator {
         addStringArrayIfNotEmpty(modify, "FlockArray", citizen.getFlockArray());
         addStringArray(modify, "DisableDamageGroups", citizen.getDisableDamageGroups());
 
-        // DefaultNPCAttitude inside Modify
-        modify.addProperty("DefaultNPCAttitude", citizen.getDefaultNpcAttitude());
-
         // InteractionInstruction inside Modify via Compute reference
         if (citizen.getFKeyInteractionEnabled()) {
             JsonObject interactionCompute = new JsonObject();
@@ -319,6 +335,16 @@ public class RoleGenerator {
         JsonObject maxHealthParam = new JsonObject();
         maxHealthParam.addProperty("Value", citizen.getMaxHealth());
         parameters.add("MaxHealth", maxHealthParam);
+
+        // DefaultNPCAttitude
+        JsonObject attitudeParam = new JsonObject();
+        attitudeParam.addProperty("Value", citizen.getDefaultNpcAttitude());
+        parameters.add("DefaultNPCAttitude", attitudeParam);
+
+        // KnockbackScale
+        JsonObject knockbackParam = new JsonObject();
+        knockbackParam.addProperty("Value", citizen.getKnockbackScale());
+        parameters.add("KnockbackScale", knockbackParam);
 
         // InteractionInstruction parameter value
         if (citizen.getFKeyInteractionEnabled()) {
@@ -407,10 +433,10 @@ public class RoleGenerator {
         obj.add(key, arr);
     }
 
-    public void writeRoleFile(@Nonnull String roleName, @Nonnull JsonObject roleJson) {
+    public void writeRoleFile(@Nonnull String roleName, @Nonnull String content) {
         File roleFile = new File(generatedRolesDir, roleName + ".json");
         try (FileWriter writer = new FileWriter(roleFile)) {
-            gson.toJson(roleJson, writer);
+            writer.write(content);
         } catch (IOException e) {
             getLogger().atSevere().log("Failed to write role file: " + roleName + " - " + e.getMessage());
         }
@@ -418,6 +444,7 @@ public class RoleGenerator {
 
     public void deleteRoleFile(@Nonnull String citizenId) {
         String roleName = "HyCitizens_" + citizenId + "_Role";
+        lastGeneratedContent.remove(roleName);
         File roleFile = new File(generatedRolesDir, roleName + ".json");
         if (roleFile.exists()) {
             roleFile.delete();

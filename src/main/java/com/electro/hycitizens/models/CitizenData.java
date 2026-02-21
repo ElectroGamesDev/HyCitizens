@@ -110,6 +110,13 @@ public class CitizenData {
     private int defaultOffHandSlot = -1;
     private int nighttimeOffhandSlot = 0;
 
+    // KnockbackScale
+    private float knockbackScale = 0.5f;
+
+    // Role weapon/offhand arrays (for NPC combat AI, separate from visual equipment)
+    private List<String> weapons = new ArrayList<>(List.of("Weapon_Sword_Iron"));
+    private List<String> offHandItems = new ArrayList<>(List.of("Furniture_Crude_Torch"));
+
     // Group arrays for combat/flocking
     private List<String> combatMessageTargetGroups = new ArrayList<>();
     private List<String> flockArray = new ArrayList<>();
@@ -635,6 +642,17 @@ public class CitizenData {
 
     public int getNighttimeOffhandSlot() { return nighttimeOffhandSlot; }
     public void setNighttimeOffhandSlot(int v) { this.nighttimeOffhandSlot = v; }
+
+    public float getKnockbackScale() { return knockbackScale; }
+    public void setKnockbackScale(float knockbackScale) { this.knockbackScale = knockbackScale; }
+
+    @Nonnull
+    public List<String> getWeapons() { return weapons; }
+    public void setWeapons(@Nonnull List<String> v) { this.weapons = new ArrayList<>(v); }
+
+    @Nonnull
+    public List<String> getOffHandItems() { return offHandItems; }
+    public void setOffHandItems(@Nonnull List<String> v) { this.offHandItems = new ArrayList<>(v); }
 
     @Nonnull
     public List<String> getCombatMessageTargetGroups() { return combatMessageTargetGroups; }
