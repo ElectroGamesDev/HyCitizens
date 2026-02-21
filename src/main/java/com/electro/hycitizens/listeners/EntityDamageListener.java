@@ -18,6 +18,7 @@ import com.hypixel.hytale.server.core.console.ConsoleSender;
 import com.hypixel.hytale.server.core.entity.UUIDComponent;
 import com.hypixel.hytale.server.core.entity.entities.Player;
 import com.hypixel.hytale.server.core.entity.knockback.KnockbackComponent;
+import com.hypixel.hytale.server.core.modules.entity.component.Invulnerable;
 import com.hypixel.hytale.server.core.modules.entity.component.ModelComponent;
 import com.hypixel.hytale.server.core.modules.entity.component.TransformComponent;
 import com.hypixel.hytale.server.core.modules.entity.damage.Damage;
@@ -68,7 +69,7 @@ public class EntityDamageListener extends DamageEventSystem {
         Damage.Source source = event.getSource();
         PlayerRef attackerPlayerRef;
 
-        if (source instanceof Damage.ProjectileSource) { // This doesn't work for arrows. Using a workaround
+        if (source instanceof Damage.ProjectileSource) {
             Damage.ProjectileSource projectileSource = (Damage.ProjectileSource) source;
             Ref<EntityStore> shooterRef = projectileSource.getRef();
             if (shooterRef != null) {
@@ -103,38 +104,43 @@ public class EntityDamageListener extends DamageEventSystem {
             // Trigger ON_ATTACK animations regardless of damage setting
             HyCitizensPlugin.get().getCitizensManager().triggerAnimations(citizen, "ON_ATTACK");
 
-            CitizenInteraction.handleInteraction(citizen, attackerPlayerRef);
+//            CitizenInteraction.handleInteraction(citizen, attackerPlayerRef); // Handled by new interaction system
 
             if (cancelDamage) {
-                event.setCancelled(true);
-                event.setAmount(0);
-                World world = Universe.get().getWorld(citizen.getWorldUUID());
-                // Todo: This does not work
+                // This is now handled by the Invulnerable component, but we are keeping it for backwards compatibility
+                Invulnerable invulnerable = store.getComponent(targetRef, Invulnerable.getComponentType());
+
+                if (invulnerable == null) {
+                    event.setCancelled(true);
+                    event.setAmount(0);
+                    World world = Universe.get().getWorld(citizen.getWorldUUID());
+                    // Todo: This does not work
 //                if (world != null) {
 //                    // Prevent knockback
 //                    world.execute(() -> {
 //                        store.removeComponentIfExists(targetRef, KnockbackComponent.getComponentType());
 //                    });
 //                }
-                // Temporary solution to knockback
-                TransformComponent transformComponent = store.getComponent(targetRef, TransformComponent.getComponentType());
-                if (transformComponent != null && world != null) {
-                    Vector3d lockedPosition = new Vector3d(transformComponent.getPosition());
+                    // Temporary solution to knockback
+                    TransformComponent transformComponent = store.getComponent(targetRef, TransformComponent.getComponentType());
+                    if (transformComponent != null && world != null) {
+                        Vector3d lockedPosition = new Vector3d(transformComponent.getPosition());
 
-                    ScheduledFuture<?> lockTask = HytaleServer.SCHEDULED_EXECUTOR.scheduleAtFixedRate(() -> {
-                        if (!targetRef.isValid()) {
-                            return;
-                        }
+                        ScheduledFuture<?> lockTask = HytaleServer.SCHEDULED_EXECUTOR.scheduleAtFixedRate(() -> {
+                            if (!targetRef.isValid()) {
+                                return;
+                            }
 
-                        Vector3d currentPosition = transformComponent.getPosition();
-                        if (!currentPosition.equals(lockedPosition)) {
-                            transformComponent.setPosition(lockedPosition);
-                        }
-                    }, 0, 20, TimeUnit.MILLISECONDS);
+                            Vector3d currentPosition = transformComponent.getPosition();
+                            if (!currentPosition.equals(lockedPosition)) {
+                                transformComponent.setPosition(lockedPosition);
+                            }
+                        }, 0, 20, TimeUnit.MILLISECONDS);
 
-                    HytaleServer.SCHEDULED_EXECUTOR.schedule(() -> {
-                        lockTask.cancel(false);
-                    }, 2000, TimeUnit.MILLISECONDS);
+                        HytaleServer.SCHEDULED_EXECUTOR.schedule(() -> {
+                            lockTask.cancel(false);
+                        }, 2000, TimeUnit.MILLISECONDS);
+                    }
                 }
             }
             else {

@@ -20,6 +20,7 @@ import com.hypixel.hytale.server.npc.sensorinfo.InfoProvider;
 import javax.annotation.Nonnull;
 import java.util.List;
 
+// NOTE: This code is obsolete and is only used for backwards compatibility
 public class CitizenInteractionActionbase extends ActionBase {
     public CitizenInteractionActionbase(@Nonnull BuilderActionBase builderActionBase) {
         super(builderActionBase);
@@ -28,7 +29,6 @@ public class CitizenInteractionActionbase extends ActionBase {
     public boolean canExecute(@Nonnull Ref<EntityStore> ref, @Nonnull Role role, InfoProvider sensorInfo, double dt, @Nonnull Store<EntityStore> store) {
         return (super.canExecute(ref, role, sensorInfo, dt, store) && role.getStateSupport().getInteractionIterationTarget() != null);
     }
-
 
     public boolean execute(@Nonnull Ref<EntityStore> ref, @Nonnull Role role, InfoProvider sensorInfo, double dt, @Nonnull Store<EntityStore> store) {
         super.execute(ref, role, sensorInfo, dt, store);

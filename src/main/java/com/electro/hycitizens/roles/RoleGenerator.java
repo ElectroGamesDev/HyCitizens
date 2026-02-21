@@ -199,9 +199,9 @@ public class RoleGenerator {
         role.add("Instructions", instructions);
 
         // InteractionInstruction if F-key interaction is enabled
-        if (citizen.getFKeyInteractionEnabled()) {
-            role.add("InteractionInstruction", buildInteractionInstruction());
-        }
+//        if (citizen.getFKeyInteractionEnabled()) {
+//            role.add("InteractionInstruction", buildInteractionInstruction());
+//        }
 
         role.addProperty("NameTranslationKey", citizen.getNameTranslationKey());
 
@@ -321,11 +321,11 @@ public class RoleGenerator {
         addStringArray(modify, "DisableDamageGroups", citizen.getDisableDamageGroups());
 
         // InteractionInstruction inside Modify via Compute reference
-        if (citizen.getFKeyInteractionEnabled()) {
-            JsonObject interactionCompute = new JsonObject();
-            interactionCompute.addProperty("Compute", "InteractionInstruction");
-            modify.add("InteractionInstruction", interactionCompute);
-        }
+//        if (citizen.getFKeyInteractionEnabled()) {
+//            JsonObject interactionCompute = new JsonObject();
+//            interactionCompute.addProperty("Compute", "InteractionInstruction");
+//            modify.add("InteractionInstruction", interactionCompute);
+//        }
 
         role.add("Modify", modify);
 
@@ -347,57 +347,57 @@ public class RoleGenerator {
         parameters.add("KnockbackScale", knockbackParam);
 
         // InteractionInstruction parameter value
-        if (citizen.getFKeyInteractionEnabled()) {
-            JsonObject interactionParam = new JsonObject();
-            interactionParam.add("Value", buildInteractionInstruction());
-            parameters.add("InteractionInstruction", interactionParam);
-        }
+//        if (citizen.getFKeyInteractionEnabled()) {
+//            JsonObject interactionParam = new JsonObject();
+//            interactionParam.add("Value", buildInteractionInstruction());
+//            parameters.add("InteractionInstruction", interactionParam);
+//        }
 
         role.add("Parameters", parameters);
 
         return role;
     }
 
-    @Nonnull
-    private JsonObject buildInteractionInstruction() {
-        JsonObject interactionInstruction = new JsonObject();
-        JsonArray instructions = new JsonArray();
-
-        // First instruction: SetInteractable
-        JsonObject setInteractable = new JsonObject();
-        setInteractable.addProperty("Continue", true);
-
-        JsonObject anySensor = new JsonObject();
-        anySensor.addProperty("Type", "Any");
-        setInteractable.add("Sensor", anySensor);
-
-        JsonArray setActions = new JsonArray();
-        JsonObject setAction = new JsonObject();
-        setAction.addProperty("Type", "SetInteractable");
-        setAction.addProperty("Interactable", true);
-        setActions.add(setAction);
-        setInteractable.add("Actions", setActions);
-
-        instructions.add(setInteractable);
-
-        // Second instruction: HasInteracted -> CitizenInteraction
-        JsonObject hasInteracted = new JsonObject();
-
-        JsonObject hasInteractedSensor = new JsonObject();
-        hasInteractedSensor.addProperty("Type", "HasInteracted");
-        hasInteracted.add("Sensor", hasInteractedSensor);
-
-        JsonArray interactActions = new JsonArray();
-        JsonObject interactAction = new JsonObject();
-        interactAction.addProperty("Type", "CitizenInteraction");
-        interactActions.add(interactAction);
-        hasInteracted.add("Actions", interactActions);
-
-        instructions.add(hasInteracted);
-
-        interactionInstruction.add("Instructions", instructions);
-        return interactionInstruction;
-    }
+//    @Nonnull
+//    private JsonObject buildInteractionInstruction() {
+//        JsonObject interactionInstruction = new JsonObject();
+//        JsonArray instructions = new JsonArray();
+//
+//        // First instruction: SetInteractable
+//        JsonObject setInteractable = new JsonObject();
+//        setInteractable.addProperty("Continue", true);
+//
+//        JsonObject anySensor = new JsonObject();
+//        anySensor.addProperty("Type", "Any");
+//        setInteractable.add("Sensor", anySensor);
+//
+//        JsonArray setActions = new JsonArray();
+//        JsonObject setAction = new JsonObject();
+//        setAction.addProperty("Type", "SetInteractable");
+//        setAction.addProperty("Interactable", true);
+//        setActions.add(setAction);
+//        setInteractable.add("Actions", setActions);
+//
+//        instructions.add(setInteractable);
+//
+//        // Second instruction: HasInteracted -> CitizenInteraction
+//        JsonObject hasInteracted = new JsonObject();
+//
+//        JsonObject hasInteractedSensor = new JsonObject();
+//        hasInteractedSensor.addProperty("Type", "HasInteracted");
+//        hasInteracted.add("Sensor", hasInteractedSensor);
+//
+//        JsonArray interactActions = new JsonArray();
+//        JsonObject interactAction = new JsonObject();
+//        interactAction.addProperty("Type", "CitizenInteraction");
+//        interactActions.add(interactAction);
+//        hasInteracted.add("Actions", interactActions);
+//
+//        instructions.add(hasInteracted);
+//
+//        interactionInstruction.add("Instructions", instructions);
+//        return interactionInstruction;
+//    }
 
     @Nonnull
     private String mapPlayerAttitude(@Nonnull String citizenAttitude) {

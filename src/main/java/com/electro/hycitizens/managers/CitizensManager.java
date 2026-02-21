@@ -30,15 +30,14 @@ import com.hypixel.hytale.server.core.entity.entities.Player;
 import com.hypixel.hytale.server.core.entity.entities.ProjectileComponent;
 import com.hypixel.hytale.server.core.entity.nameplate.Nameplate;
 import com.hypixel.hytale.server.core.inventory.ItemStack;
-import com.hypixel.hytale.server.core.modules.entity.component.ModelComponent;
-import com.hypixel.hytale.server.core.modules.entity.component.PersistentModel;
-import com.hypixel.hytale.server.core.modules.entity.component.TransformComponent;
+import com.hypixel.hytale.server.core.modules.entity.component.*;
 import com.hypixel.hytale.server.core.modules.entity.player.PlayerSkinComponent;
 import com.hypixel.hytale.server.core.modules.entity.tracker.NetworkId;
 import com.hypixel.hytale.server.core.modules.entitystats.EntityStatMap;
 import com.hypixel.hytale.server.core.modules.entitystats.EntityStatValue;
 import com.hypixel.hytale.server.core.modules.entitystats.EntityStatsModule;
 import com.hypixel.hytale.server.core.modules.entitystats.asset.DefaultEntityStatTypes;
+import com.hypixel.hytale.server.core.modules.interaction.Interactions;
 import com.hypixel.hytale.server.core.modules.interaction.interaction.config.RootInteraction;
 import com.hypixel.hytale.server.core.universe.PlayerRef;
 import com.hypixel.hytale.server.core.universe.Universe;
@@ -457,7 +456,7 @@ public class CitizensManager {
         citizenData.setHideNametag(config.getBoolean(basePath + ".hide-nametag", false));
         citizenData.setHideNpc(config.getBoolean(basePath + ".hide-npc", false));
         citizenData.setNametagOffset(config.getFloat(basePath + ".nametag-offset", 0));
-        citizenData.setFKeyInteractionEnabled(config.getBoolean(basePath + ".f-key-interaction", false));
+        citizenData.setFKeyInteractionEnabled(config.getBoolean(basePath + ".f-key-interaction", true));
 
         // Load animation behaviors
         List<AnimationBehavior> animBehaviors = new ArrayList<>();
@@ -1088,12 +1087,12 @@ public class CitizensManager {
 
         npc.second().setInventorySize(9, 30, 5);
 
-        Ref<EntityStore> ref = npc.second().getReference();
-        Store<EntityStore> store = npc.first().getStore();
+        Ref<EntityStore> ref = npc.first();
+        Store<EntityStore> store = ref.getStore();
 
         // This is required since the "Player" entity's scale resets to 0
         if (citizen.getModelId().equals("Player")) {
-            PersistentModel persistentModel = npc.first().getStore().getComponent(npc.second().getReference(), PersistentModel.getComponentType());
+            PersistentModel persistentModel = store.getComponent(ref, PersistentModel.getComponentType());
             if (persistentModel != null) {
                 persistentModel.setModelReference(new Model.ModelReference(
                         citizenModel.getModelAssetId(),
@@ -1115,6 +1114,11 @@ public class CitizensManager {
                 saveCitizen(citizen);
         }
 
+        if (!citizen.isTakesDamage() || "PASSIVE".equals(citizen.getAttitude())) {
+            store.addComponent(ref, Invulnerable.getComponentType());
+        }
+
+        setInteractionComponent(store, ref, citizen);
         updateCitizenNPCItems(citizen);
         triggerAnimations(citizen, "DEFAULT");
     }
@@ -1169,12 +1173,15 @@ public class CitizensManager {
 
         npc.second().setInventorySize(9, 30, 5);
 
+        Ref<EntityStore> ref = npc.first();
+        Store<EntityStore> store = ref.getStore();
+
         if (skinToUse != null) {
             PlayerSkinComponent skinComponent = new PlayerSkinComponent(skinToUse);
-            npc.first().getStore().putComponent(npc.second().getReference(), PlayerSkinComponent.getComponentType(), skinComponent);
+            store.putComponent(ref, PlayerSkinComponent.getComponentType(), skinComponent);
         }
 
-        PersistentModel persistentModel = npc.first().getStore().getComponent(npc.second().getReference(), PersistentModel.getComponentType());
+        PersistentModel persistentModel = store.getComponent(ref, PersistentModel.getComponentType());
         if (persistentModel != null) {
             persistentModel.setModelReference(new Model.ModelReference(
                     playerModel.getModelAssetId(),
@@ -1184,12 +1191,9 @@ public class CitizensManager {
                     ));
         }
 
-        UUIDComponent uuidComponent = npc.first().getStore().getComponent(
-                npc.second().getReference(),
-                UUIDComponent.getComponentType()
-        );
+        UUIDComponent uuidComponent = store.getComponent(ref, UUIDComponent.getComponentType());
 
-        citizen.setNpcRef(npc.first());
+        citizen.setNpcRef(ref);
 
         if (uuidComponent != null) {
             citizen.setSpawnedUUID(uuidComponent.getUuid());
@@ -1198,8 +1202,31 @@ public class CitizensManager {
                 saveCitizen(citizen);
         }
 
+        if (!citizen.isTakesDamage() || "PASSIVE".equals(citizen.getAttitude())) {
+            store.addComponent(ref, Invulnerable.getComponentType());
+        }
+
+        setInteractionComponent(store, ref, citizen);
         updateCitizenNPCItems(citizen);
         triggerAnimations(citizen, "DEFAULT");
+    }
+
+    public void setInteractionComponent(Store<EntityStore> store, Ref<EntityStore> ref, CitizenData citizenData) {
+
+        if (ref == null || !ref.isValid()) {
+            HyCitizensPlugin.get().getLogger().atSevere().log("Unable to executes setInteractionComponent");
+            return;
+        }
+
+        if (citizenData.getFKeyInteractionEnabled()) {
+            store.putComponent(ref, Interactable.getComponentType(), Interactable.INSTANCE);
+        }
+
+        Interactions interactions = new Interactions();
+        interactions.setInteractionId(InteractionType.Use, "UseNPC");
+        //interactions.setInteractionId(InteractionType.Secondary, "UseNPC");
+        interactions.setInteractionId(InteractionType.Primary, "UseNPC");
+        store.putComponent(ref, Interactions.getComponentType(), interactions);
     }
 
     public PlayerSkin determineSkin(CitizenData citizen) {

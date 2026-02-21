@@ -7,6 +7,7 @@ import com.hypixel.hytale.server.npc.instructions.Action;
 
 import javax.annotation.Nullable;
 
+// NOTE: This code is obsolete and is only used for backwards compatibility
 public class BuilderActionInteract extends BuilderActionBase {
     @Nullable
     @Override

@@ -2,6 +2,7 @@ package com.electro.hycitizens;
 
 import com.electro.hycitizens.actions.BuilderActionInteract;
 import com.electro.hycitizens.commands.CitizensCommand;
+import com.electro.hycitizens.actions.NPCInteractAction;
 import com.electro.hycitizens.listeners.ChunkPreLoadListener;
 import com.electro.hycitizens.listeners.EntityDamageListener;
 import com.electro.hycitizens.listeners.PlayerConnectionListener;
@@ -14,6 +15,7 @@ import com.electro.hycitizens.util.UpdateChecker;
 import com.hypixel.hytale.event.EventPriority;
 import com.hypixel.hytale.server.core.event.events.player.PlayerConnectEvent;
 import com.hypixel.hytale.server.core.event.events.player.PlayerDisconnectEvent;
+import com.hypixel.hytale.server.core.modules.interaction.interaction.config.Interaction;
 import com.hypixel.hytale.server.core.plugin.JavaPlugin;
 import com.hypixel.hytale.server.core.plugin.JavaPluginInit;
 import com.hypixel.hytale.server.core.universe.world.events.ChunkPreLoadProcessEvent;
@@ -60,7 +62,8 @@ public class HyCitizensPlugin extends JavaPlugin {
         this.chunkPreLoadListener = new ChunkPreLoadListener(this);
         this.connectionListener = new PlayerConnectionListener(this);
 
-        NPCPlugin.get().registerCoreComponentType("CitizenInteraction", BuilderActionInteract::new);
+        NPCPlugin.get().registerCoreComponentType("CitizenInteraction", BuilderActionInteract::new); // We still need this for backwards compatibility
+        this.getCodecRegistry(Interaction.CODEC).register("NPCInteraction", NPCInteractAction.class, NPCInteractAction.CODEC);
 
         // Register event listeners
         registerEventListeners();
