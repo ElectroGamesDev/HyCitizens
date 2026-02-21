@@ -1,4 +1,5 @@
 # You can download the mod/plugin from [CurseForge](https://www.curseforge.com/hytale/mods/hycitizens)!
+Note: It's not recommended to build the plugin from source for production use. Changes between updates may not be completely tested or finished.
 
 [![Join us on Discord](https://img.shields.io/badge/Discord-Join%20Community-7289DA?logo=discord&logoColor=white&style=for-the-badge)](https://discord.gg/Snqz9E58Dr)
 [![Star on GitHub](https://img.shields.io/badge/GitHub-Source-181717?logo=github&logoColor=white&style=for-the-badge)](https://github.com/ElectroGamesDev/HyCitizens)
