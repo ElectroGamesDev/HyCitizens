@@ -1221,12 +1221,6 @@ public class CitizensManager {
         if (citizenData.getFKeyInteractionEnabled()) {
             store.putComponent(ref, Interactable.getComponentType(), Interactable.INSTANCE);
         }
-
-        Interactions interactions = new Interactions();
-        interactions.setInteractionId(InteractionType.Use, "UseNPC");
-        //interactions.setInteractionId(InteractionType.Secondary, "UseNPC");
-        interactions.setInteractionId(InteractionType.Primary, "UseNPC");
-        store.putComponent(ref, Interactions.getComponentType(), interactions);
     }
 
     public PlayerSkin determineSkin(CitizenData citizen) {

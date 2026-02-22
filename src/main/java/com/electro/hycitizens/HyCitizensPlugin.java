@@ -2,7 +2,7 @@ package com.electro.hycitizens;
 
 import com.electro.hycitizens.actions.BuilderActionInteract;
 import com.electro.hycitizens.commands.CitizensCommand;
-import com.electro.hycitizens.actions.NPCInteractAction;
+import com.electro.hycitizens.interactions.PlayerInteractionHandler;
 import com.electro.hycitizens.listeners.ChunkPreLoadListener;
 import com.electro.hycitizens.listeners.EntityDamageListener;
 import com.electro.hycitizens.listeners.PlayerConnectionListener;
@@ -37,6 +37,8 @@ public class HyCitizensPlugin extends JavaPlugin {
     private ChunkPreLoadListener chunkPreLoadListener;
     private PlayerConnectionListener connectionListener;
 
+    private PlayerInteractionHandler interactionHandler;
+
     public HyCitizensPlugin(@Nonnull JavaPluginInit init) {
         super(init);
         instance = this;
@@ -62,11 +64,11 @@ public class HyCitizensPlugin extends JavaPlugin {
         this.chunkPreLoadListener = new ChunkPreLoadListener(this);
         this.connectionListener = new PlayerConnectionListener(this);
 
-        NPCPlugin.get().registerCoreComponentType("CitizenInteraction", BuilderActionInteract::new); // We still need this for backwards compatibility
-        this.getCodecRegistry(Interaction.CODEC).register("NPCInteraction", NPCInteractAction.class, NPCInteractAction.CODEC);
-
         // Register event listeners
         registerEventListeners();
+
+        this.interactionHandler = new PlayerInteractionHandler();
+        this.interactionHandler.register();
     }
 
     @Override
