@@ -74,6 +74,8 @@ public class CitizensManager {
     private final Set<String> registeredNoLoopAnimations = ConcurrentHashMap.newKeySet();
     private final RoleGenerator roleGenerator;
     private ScheduledFuture<?> positionSaveTask;
+    private final Set<String> citizensCurrentlySpawning = ConcurrentHashMap.newKeySet();
+    private final Set<String> hologramsCurrentlySpawning = ConcurrentHashMap.newKeySet();
 
     public CitizensManager(@Nonnull HyCitizensPlugin plugin) {
         this.plugin = plugin;
@@ -1041,9 +1043,18 @@ public class CitizensManager {
         }, 0, 250, TimeUnit.MILLISECONDS);
     }
 
+    public boolean isCitizenSpawning(@Nonnull String citizenId) {
+        return citizensCurrentlySpawning.contains(citizenId);
+    }
+
     public void spawnCitizenNPC(CitizenData citizen, boolean save) {
+        if (!citizensCurrentlySpawning.add(citizen.getId())) {
+            return;
+        }
+
         World world = Universe.get().getWorld(citizen.getWorldUUID());
         if (world == null) {
+            citizensCurrentlySpawning.remove(citizen.getId());
             getLogger().atWarning().log("Failed to spawn citizen NPC: " + citizen.getName() + ". Failed to find world. Try updating the citizen's position.");
             return;
         }
@@ -1064,6 +1075,7 @@ public class CitizensManager {
         Model citizenModel = new Model.ModelReference(citizen.getModelId(), scale, randomAttachmentIds).toModel();
 
         if (citizenModel == null) {
+            citizensCurrentlySpawning.remove(citizen.getId());
             getLogger().atWarning().log("Failed to spawn citizen NPC: " + citizen.getName() + ". The model ID is invalid. Try updating the model ID.");
             return;
         }
@@ -1080,8 +1092,10 @@ public class CitizensManager {
                 null
         );
 
-        if (npc == null)
+        if (npc == null) {
+            citizensCurrentlySpawning.remove(citizen.getId());
             return;
+        }
 
         npc.second().setLeashPoint(citizen.getPosition());
 
@@ -1121,6 +1135,7 @@ public class CitizensManager {
         setInteractionComponent(store, ref, citizen);
         updateCitizenNPCItems(citizen);
         triggerAnimations(citizen, "DEFAULT");
+        citizensCurrentlySpawning.remove(citizen.getId());
     }
 
     public void spawnPlayerModelNPC(CitizenData citizen, World world, boolean save) {
@@ -1143,6 +1158,7 @@ public class CitizensManager {
         //Model playerModel = new Model.ModelReference("PlayerTestModel_V", scale, randomAttachmentIds).toModel();
 
         if (playerModel == null) {
+            citizensCurrentlySpawning.remove(citizen.getId());
             getLogger().atWarning().log("Failed to create player model for citizen: " + citizen.getName());
             return;
         }
@@ -1150,6 +1166,7 @@ public class CitizensManager {
         long chunkIndex = ChunkUtil.indexChunkFromBlock(citizen.getPosition().x, citizen.getPosition().z);
         WorldChunk chunk = world.getChunkIfLoaded(chunkIndex);
         if (chunk == null) {
+            citizensCurrentlySpawning.remove(citizen.getId());
             getLogger().atInfo().log("Failed to spawn player model for citizen NPC: " + citizen.getName() + ". The world chunk is unloaded.");
             return;
         }
@@ -1166,8 +1183,10 @@ public class CitizensManager {
                 null
         );
 
-        if (npc == null)
+        if (npc == null) {
+            citizensCurrentlySpawning.remove(citizen.getId());
             return;
+        }
 
         npc.second().setLeashPoint(citizen.getPosition());
 
@@ -1209,6 +1228,7 @@ public class CitizensManager {
         setInteractionComponent(store, ref, citizen);
         updateCitizenNPCItems(citizen);
         triggerAnimations(citizen, "DEFAULT");
+        citizensCurrentlySpawning.remove(citizen.getId());
     }
 
     public void setInteractionComponent(Store<EntityStore> store, Ref<EntityStore> ref, CitizenData citizenData) {
@@ -1375,16 +1395,22 @@ public class CitizensManager {
     }
 
     public void spawnCitizenHologram(CitizenData citizen, boolean save) {
+        if (!hologramsCurrentlySpawning.add(citizen.getId())) {
+            return;
+        }
+
         if (!citizen.getHologramLineUuids().isEmpty()) {
             despawnCitizenHologram(citizen);
         }
 
         if (citizen.isHideNametag()) {
+            hologramsCurrentlySpawning.remove(citizen.getId());
             return;
         }
 
         World world = Universe.get().getWorld(citizen.getWorldUUID());
         if (world == null) {
+            hologramsCurrentlySpawning.remove(citizen.getId());
             getLogger().atWarning().log("Failed to spawn citizen hologram: " + citizen.getName() + ". Failed to find world. Try updating the citizen's position.");
             return;
         }
@@ -1402,6 +1428,7 @@ public class CitizensManager {
 
             long elapsedMs = System.currentTimeMillis() - start;
             if (elapsedMs >= 15000L) {
+                hologramsCurrentlySpawning.remove(citizen.getId());
                 futureRef[0].cancel(false);
                 return;
             }
@@ -1491,6 +1518,8 @@ public class CitizensManager {
                     if (save) {
                         saveCitizen(citizen);
                     }
+
+                    hologramsCurrentlySpawning.remove(citizen.getId());
                 });
             }
         }, 0L, 250L, TimeUnit.MILLISECONDS);
@@ -1502,7 +1531,7 @@ public class CitizensManager {
     }
 
     public void despawnCitizenNPC(CitizenData citizen) {
-        // Prevent respawn scheduler from re-spawning this NPC
+        citizensCurrentlySpawning.remove(citizen.getId());
         citizen.setAwaitingRespawn(false);
 
         World world = Universe.get().getWorld(citizen.getWorldUUID());
@@ -1543,6 +1572,7 @@ public class CitizensManager {
     }
 
     public void despawnCitizenHologram(CitizenData citizen) {
+        hologramsCurrentlySpawning.remove(citizen.getId());
         World world = Universe.get().getWorld(citizen.getWorldUUID());
         if (world == null) {
             return;

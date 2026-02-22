@@ -43,9 +43,14 @@ public class ChunkPreLoadListener {
                 continue;
             }
 
-            // Check if the citizens is in the chunk
+            // Check if the citizen is in the chunk
             long citizenChunkIndex = ChunkUtil.indexChunkFromBlock((int)citizen.getPosition().x, (int)citizen.getPosition().z);
             if (eventChunkIndex != citizenChunkIndex) {
+                continue;
+            }
+
+            // Skip citizens that are already being spawned by another code path
+            if (plugin.getCitizensManager().isCitizenSpawning(citizen.getId())) {
                 continue;
             }
 
