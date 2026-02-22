@@ -2797,12 +2797,6 @@ public class CitizensUI {
                 .setVariable("isAggressive", "AGGRESSIVE".equals(attitude))
                 .setVariable("takesDamage", takesDamage)
                 .setVariable("isAnyWander", !"IDLE".equals(mb.getType()))
-                .setVariable("isR0", mb.getWanderRadius() < 1)
-                .setVariable("isR1", mb.getWanderRadius() >= 1 && mb.getWanderRadius() < 2)
-                .setVariable("isR2", mb.getWanderRadius() >= 2 && mb.getWanderRadius() < 3)
-                .setVariable("isR5", mb.getWanderRadius() >= 3 && mb.getWanderRadius() <= 7)
-                .setVariable("isR10", mb.getWanderRadius() > 7 && mb.getWanderRadius() <= 12)
-                .setVariable("isR15", mb.getWanderRadius() > 12)
                 .setVariable("respawnOnDeath", citizen.isRespawnOnDeath())
                 .setVariable("respawnDelay", citizen.getRespawnDelaySeconds());
 
@@ -2924,22 +2918,8 @@ public class CitizensUI {
                                     {{@numberField:id=walk-speed,label=Walk Speed,value={{$walkSpeed}},placeholder=10,min=1,max=100,step=1,decimals=0}}
                                 </div>
                                 <div class="spacer-sm"></div>
-                                <p style="color: #c9d1d9; font-size: 12; font-weight: bold; text-align: center;">Wander Radius</p>
-                                <div class="card-body">
-                                    <p style="color: #8b949e; font-size: 12; text-align: center;">Note: The wander system uses Hytale's built in wander system. While Citizens usually stay close to the selected radius, they sometimes go a bit further.</p>
-                                </div>
-                                <div class="spacer-xs"></div>
                                 <div class="form-row">
-                                    <!-- <button id="radius-0" class="{{#if isR0}}btn-primary{{else}}btn-secondary{{/if}}" style="anchor-width: 162; anchor-height: 46;">0 Blocks</button> -->
-                                    <button id="radius-1" class="{{#if isR1}}btn-primary{{else}}btn-secondary{{/if}}" style="anchor-width: 130; anchor-height: 46;">1 Block</button>
-                                    <div class="spacer-h-sm"></div>
-                                    <button id="radius-2" class="{{#if isR2}}btn-primary{{else}}btn-secondary{{/if}}" style="anchor-width: 150; anchor-height: 46;">2 Blocks</button>
-                                    <div class="spacer-h-sm"></div>
-                                    <button id="radius-5" class="{{#if isR5}}btn-primary{{else}}btn-secondary{{/if}}" style="anchor-width: 150; anchor-height: 46;">5 Blocks</button>
-                                    <div class="spacer-h-sm"></div>
-                                    <button id="radius-10" class="{{#if isR10}}btn-primary{{else}}btn-secondary{{/if}}" style="anchor-width: 160; anchor-height: 46;">10 Blocks</button>
-                                    <div class="spacer-h-sm"></div>
-                                    <button id="radius-15" class="{{#if isR15}}btn-primary{{else}}btn-secondary{{/if}}" style="anchor-width: 160; anchor-height: 46;">15 Blocks</button>
+                                    {{@numberField:id=wander-radius,label=Wander Radius,value={{$wanderRadius}},placeholder=5,min=1,max=100,step=1,decimals=0}}
                                 </div>
                                 {{/if}}
                             </div>
@@ -3115,42 +3095,14 @@ public class CitizensUI {
             });
         }
 
-        // Radius buttons
+        // Wander radius input
         if (isAnyWander) {
-//            page.addEventListener("radius-0", CustomUIEventBindingType.Activating, event -> {
-//                citizen.setMovementBehavior(new MovementBehavior(moveType, walkSpeed[0], 0, wanderWidth[0], wanderDepth[0]));
-//                plugin.getCitizensManager().saveCitizen(citizen);
-//                openBehaviorsGUI(playerRef, store, citizen);
-//            });
-
-            page.addEventListener("radius-1", CustomUIEventBindingType.Activating, event -> {
-                citizen.setMovementBehavior(new MovementBehavior(moveType, walkSpeed[0], 1, wanderWidth[0], wanderDepth[0]));
-                plugin.getCitizensManager().saveCitizen(citizen);
-                openBehaviorsGUI(playerRef, store, citizen);
-            });
-
-            page.addEventListener("radius-2", CustomUIEventBindingType.Activating, event -> {
-                citizen.setMovementBehavior(new MovementBehavior(moveType, walkSpeed[0], 2, wanderWidth[0], wanderDepth[0]));
-                plugin.getCitizensManager().saveCitizen(citizen);
-                openBehaviorsGUI(playerRef, store, citizen);
-            });
-
-            page.addEventListener("radius-5", CustomUIEventBindingType.Activating, event -> {
-                citizen.setMovementBehavior(new MovementBehavior(moveType, walkSpeed[0], 5, wanderWidth[0], wanderDepth[0]));
-                plugin.getCitizensManager().saveCitizen(citizen);
-                openBehaviorsGUI(playerRef, store, citizen);
-            });
-
-            page.addEventListener("radius-10", CustomUIEventBindingType.Activating, event -> {
-                citizen.setMovementBehavior(new MovementBehavior(moveType, walkSpeed[0], 10, wanderWidth[0], wanderDepth[0]));
-                plugin.getCitizensManager().saveCitizen(citizen);
-                openBehaviorsGUI(playerRef, store, citizen);
-            });
-
-            page.addEventListener("radius-15", CustomUIEventBindingType.Activating, event -> {
-                citizen.setMovementBehavior(new MovementBehavior(moveType, walkSpeed[0], 15, wanderWidth[0], wanderDepth[0]));
-                plugin.getCitizensManager().saveCitizen(citizen);
-                openBehaviorsGUI(playerRef, store, citizen);
+            page.addEventListener("wander-radius", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
+                ctx.getValue("wander-radius", Double.class).ifPresent(v -> {
+                    wanderRadius[0] = Math.max(1, v.floatValue());
+                    citizen.setMovementBehavior(new MovementBehavior(moveType, walkSpeed[0], wanderRadius[0], wanderWidth[0], wanderDepth[0]));
+                    plugin.getCitizensManager().saveCitizen(citizen);
+                });
             });
         }
 
