@@ -7,7 +7,6 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 
 import javax.annotation.Nonnull;
-import javax.annotation.Nullable;
 import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
@@ -167,6 +166,7 @@ public class RoleGenerator {
     private JsonObject generateIdleRole(@Nonnull CitizenData citizen) {
         JsonObject role = new JsonObject();
         role.addProperty("Type", "Generic");
+        role.addProperty("Appearance", "Player");
 
         // MotionControllerList
         JsonArray motionControllers = new JsonArray();
@@ -174,8 +174,6 @@ public class RoleGenerator {
         walkController.addProperty("Type", "Walk");
         motionControllers.add(walkController);
         role.add("MotionControllerList", motionControllers);
-
-        role.addProperty("Appearance", "Player");
 
         // MaxHealth via Compute
         JsonObject maxHealthCompute = new JsonObject();
@@ -195,10 +193,8 @@ public class RoleGenerator {
 
         // Empty instructions for idle
         JsonArray instructions = new JsonArray();
-        instructions.add(new JsonObject());
         role.add("Instructions", instructions);
 
-        // InteractionInstruction if F-key interaction is enabled
 //        if (citizen.getFKeyInteractionEnabled()) {
 //            role.add("InteractionInstruction", buildInteractionInstruction());
 //        }
@@ -214,144 +210,114 @@ public class RoleGenerator {
         role.addProperty("Type", "Variant");
         role.addProperty("Reference", "Template_Citizen");
 
-        // Build Modify block with all per-citizen overrides
-        JsonObject modify = new JsonObject();
-
-        // Appearance goes inside Modify
-        modify.addProperty("Appearance", "Player");
-
-        // Player attitude from citizen attitude setting
-        String playerAttitude = mapPlayerAttitude(citizen.getAttitude());
-        modify.addProperty("DefaultPlayerAttitude", playerAttitude);
-
-        // Movement
-        modify.addProperty("WanderRadius", citizen.getMovementBehavior().getWanderRadius());
-        modify.addProperty("MaxSpeed", citizen.getMovementBehavior().getWalkSpeed());
-        modify.addProperty("RunThreshold", citizen.getRunThreshold());
-
-        // Detection config
-        DetectionConfig detection = citizen.getDetectionConfig();
-        modify.addProperty("ViewRange", detection.getViewRange());
-        modify.addProperty("ViewSector", detection.getViewSector());
-        modify.addProperty("HearingRange", detection.getHearingRange());
-        modify.addProperty("AbsoluteDetectionRange", detection.getAbsoluteDetectionRange());
-        modify.addProperty("AlertedRange", detection.getAlertedRange());
-        modify.addProperty("ChanceToBeAlertedWhenReceivingCallForHelp", detection.getChanceToBeAlertedWhenReceivingCallForHelp());
-        modify.addProperty("InvestigateRange", detection.getInvestigateRange());
-
-        // Detection range arrays
-        modify.add("AlertedTime", rangeArray(detection.getAlertedTimeMin(), detection.getAlertedTimeMax()));
-        modify.add("ConfusedTimeRange", rangeArray(detection.getConfusedTimeMin(), detection.getConfusedTimeMax()));
-        modify.add("SearchTimeRange", rangeArray(detection.getSearchTimeMin(), detection.getSearchTimeMax()));
-
-        // Health and leash
-        modify.addProperty("MaxHealth", citizen.getMaxHealth());
-        modify.addProperty("LeashDistance", citizen.getLeashDistance());
-        modify.addProperty("LeashMinPlayerDistance", citizen.getLeashMinPlayerDistance());
-        modify.addProperty("HardLeashDistance", citizen.getHardLeashDistance());
-        modify.add("LeashTimer", rangeArray(citizen.getLeashTimerMin(), citizen.getLeashTimerMax()));
-
-        // Combat config
-        CombatConfig combat = citizen.getCombatConfig();
-        modify.addProperty("Attack", combat.getAttackType());
-        modify.addProperty("AttackDistance", combat.getAttackDistance());
-        modify.addProperty("ChaseRelativeSpeed", combat.getChaseSpeed());
-        modify.addProperty("CombatBehaviorDistance", combat.getCombatBehaviorDistance());
-        modify.addProperty("CombatRelativeTurnSpeed", combat.getCombatRelativeTurnSpeed());
-        modify.addProperty("CombatDirectWeight", combat.getCombatDirectWeight());
-        modify.addProperty("CombatStrafeWeight", combat.getCombatStrafeWeight());
-        modify.addProperty("CombatAlwaysMovingWeight", combat.getCombatAlwaysMovingWeight());
-        modify.addProperty("CombatBackOffAfterAttack", combat.isBackOffAfterAttack());
-        modify.addProperty("CombatMovingRelativeSpeed", combat.getCombatMovingRelativeSpeed());
-        modify.addProperty("CombatBackwardsRelativeSpeed", combat.getCombatBackwardsRelativeSpeed());
-        modify.addProperty("UseCombatActionEvaluator", combat.isUseCombatActionEvaluator());
-        modify.addProperty("BlockAbility", combat.getBlockAbility());
-        modify.addProperty("BlockProbability", combat.getBlockProbability());
-        modify.addProperty("CombatFleeIfTooCloseDistance", combat.getCombatFleeIfTooCloseDistance());
-        modify.addProperty("TargetRange", combat.getTargetRange());
-
-        // Combat range arrays
-        modify.add("DesiredAttackDistanceRange", rangeArray(combat.getDesiredAttackDistanceMin(), combat.getDesiredAttackDistanceMax()));
-        modify.add("AttackPauseRange", rangeArray(combat.getAttackPauseMin(), combat.getAttackPauseMax()));
-        modify.add("CombatStrafingDurationRange", rangeArray(combat.getCombatStrafingDurationMin(), combat.getCombatStrafingDurationMax()));
-        modify.add("CombatStrafingFrequencyRange", rangeArray(combat.getCombatStrafingFrequencyMin(), combat.getCombatStrafingFrequencyMax()));
-        modify.add("CombatAttackPreDelay", rangeArray(combat.getCombatAttackPreDelayMin(), combat.getCombatAttackPreDelayMax()));
-        modify.add("CombatAttackPostDelay", rangeArray(combat.getCombatAttackPostDelayMin(), combat.getCombatAttackPostDelayMax()));
-        modify.add("CombatBackOffDistanceRange", rangeArray(combat.getBackOffDistance(), combat.getBackOffDistance()));
-        modify.add("CombatBackOffDurationRange", rangeArray(combat.getBackOffDurationMin(), combat.getBackOffDurationMax()));
-        modify.add("TargetSwitchTimer", rangeArray(combat.getTargetSwitchTimerMin(), combat.getTargetSwitchTimerMax()));
-
-        // Path config
-        PathConfig pathConfig = citizen.getPathConfig();
-        modify.addProperty("FollowPatrolPath", pathConfig.isFollowPath());
-        modify.addProperty("PatrolPathName", pathConfig.getPathName());
-        modify.addProperty("Patrol", pathConfig.isPatrol());
-        modify.addProperty("PatrolWanderDistance", pathConfig.getPatrolWanderDistance());
-
-        // Separation
-        modify.addProperty("ApplySeparation", citizen.isApplySeparation());
-
-        // Weapons and OffHand arrays
-        addStringArray(modify, "Weapons", citizen.getWeapons());
-        addStringArray(modify, "OffHand", citizen.getOffHandItems());
-
-        // Extended parameters
-        modify.addProperty("DropList", citizen.getDropList());
-        modify.addProperty("WakingIdleBehaviorComponent", citizen.getWakingIdleBehaviorComponent());
-        modify.addProperty("AttitudeGroup", citizen.getAttitudeGroup());
-        modify.addProperty("NameTranslationKey", citizen.getNameTranslationKey());
-        modify.addProperty("BreathesInWater", citizen.isBreathesInWater());
-
-        // Day flavor animation (only set if non-empty)
-        if (!citizen.getDayFlavorAnimation().isEmpty()) {
-            modify.addProperty("DayFlavorAnimation", citizen.getDayFlavorAnimation());
-            modify.add("DayFlavorAnimationLength", rangeArray(citizen.getDayFlavorAnimationLengthMin(), citizen.getDayFlavorAnimationLengthMax()));
-        }
-
-        // Hotbar/weapon slots
-        modify.addProperty("DefaultHotbarSlot", citizen.getDefaultHotbarSlot());
-        modify.addProperty("RandomIdleHotbarSlot", citizen.getRandomIdleHotbarSlot());
-        modify.addProperty("ChanceToEquipFromIdleHotbarSlot", citizen.getChanceToEquipFromIdleHotbarSlot());
-        modify.addProperty("DefaultOffHandSlot", citizen.getDefaultOffHandSlot());
-        modify.addProperty("NighttimeOffhandSlot", citizen.getNighttimeOffhandSlot());
-
-        // String array parameters
-        addStringArrayIfNotEmpty(modify, "CombatMessageTargetGroups", citizen.getCombatMessageTargetGroups());
-        addStringArrayIfNotEmpty(modify, "FlockArray", citizen.getFlockArray());
-        addStringArray(modify, "DisableDamageGroups", citizen.getDisableDamageGroups());
-
-        // InteractionInstruction inside Modify via Compute reference
 //        if (citizen.getFKeyInteractionEnabled()) {
-//            JsonObject interactionCompute = new JsonObject();
-//            interactionCompute.addProperty("Compute", "InteractionInstruction");
-//            modify.add("InteractionInstruction", interactionCompute);
+//            role.add("InteractionInstruction", buildInteractionInstruction());
 //        }
 
+        // Modifies
+        JsonObject modify = new JsonObject();
+        modify.addProperty("DefaultPlayerAttitude", mapPlayerAttitude(citizen.getAttitude()));
+        modify.addProperty("WanderRadius", citizen.getMovementBehavior().getWanderRadius());
         role.add("Modify", modify);
 
-        // Parameters block
+        // Parameters
         JsonObject parameters = new JsonObject();
 
-        JsonObject maxHealthParam = new JsonObject();
-        maxHealthParam.addProperty("Value", citizen.getMaxHealth());
-        parameters.add("MaxHealth", maxHealthParam);
+        DetectionConfig detection = citizen.getDetectionConfig();
+        addParam(parameters, "ViewRange", detection.getViewRange());
+        addParam(parameters, "ViewSector", detection.getViewSector());
+        addParam(parameters, "HearingRange", detection.getHearingRange());
+        addParam(parameters, "AbsoluteDetectionRange", detection.getAbsoluteDetectionRange());
+        addParam(parameters, "AlertedRange", detection.getAlertedRange());
+        addParam(parameters, "ChanceToBeAlertedWhenReceivingCallForHelp", detection.getChanceToBeAlertedWhenReceivingCallForHelp());
+        addParam(parameters, "InvestigateRange", detection.getInvestigateRange());
+        addParamArray(parameters, "AlertedTime", detection.getAlertedTimeMin(), detection.getAlertedTimeMax());
+        addParamArray(parameters, "ConfusedTimeRange", detection.getConfusedTimeMin(), detection.getConfusedTimeMax());
+        addParamArray(parameters, "SearchTimeRange", detection.getSearchTimeMin(), detection.getSearchTimeMax());
 
-        // DefaultNPCAttitude
-        JsonObject attitudeParam = new JsonObject();
-        attitudeParam.addProperty("Value", citizen.getDefaultNpcAttitude());
-        parameters.add("DefaultNPCAttitude", attitudeParam);
+        addParam(parameters, "KnockbackScale", citizen.getKnockbackScale());
 
-        // KnockbackScale
-        JsonObject knockbackParam = new JsonObject();
-        knockbackParam.addProperty("Value", citizen.getKnockbackScale());
-        parameters.add("KnockbackScale", knockbackParam);
+        JsonObject appearanceParam = new JsonObject();
+        appearanceParam.addProperty("Value", "Player");
+        appearanceParam.addProperty("Description", "Model to be used");
+        parameters.add("Appearance", appearanceParam);
 
-        // InteractionInstruction parameter value
-//        if (citizen.getFKeyInteractionEnabled()) {
-//            JsonObject interactionParam = new JsonObject();
-//            interactionParam.add("Value", buildInteractionInstruction());
-//            parameters.add("InteractionInstruction", interactionParam);
-//        }
+        JsonObject translationParam = new JsonObject();
+        translationParam.addProperty("Value", citizen.getNameTranslationKey());
+        translationParam.addProperty("Description", "Translation key for NPC name display");
+        parameters.add("NameTranslationKey", translationParam);
+
+        addParam(parameters, "DefaultNPCAttitude", citizen.getDefaultNpcAttitude());
+
+        addParam(parameters, "MaxHealth", citizen.getMaxHealth());
+        addParam(parameters, "MaxSpeed", citizen.getMovementBehavior().getWalkSpeed());
+        addParam(parameters, "RunThreshold", citizen.getRunThreshold());
+
+        addParam(parameters, "LeashDistance", citizen.getLeashDistance());
+        addParam(parameters, "LeashMinPlayerDistance", citizen.getLeashMinPlayerDistance());
+        addParam(parameters, "HardLeashDistance", citizen.getHardLeashDistance());
+        addParamArray(parameters, "LeashTimer", citizen.getLeashTimerMin(), citizen.getLeashTimerMax());
+
+        CombatConfig combat = citizen.getCombatConfig();
+        addParamString(parameters, "Attack", combat.getAttackType());
+        addParam(parameters, "AttackDistance", combat.getAttackDistance());
+        addParam(parameters, "ChaseRelativeSpeed", combat.getChaseSpeed());
+        addParam(parameters, "CombatBehaviorDistance", combat.getCombatBehaviorDistance());
+        addParam(parameters, "CombatRelativeTurnSpeed", combat.getCombatRelativeTurnSpeed());
+        addParam(parameters, "CombatDirectWeight", combat.getCombatDirectWeight());
+        addParam(parameters, "CombatStrafeWeight", combat.getCombatStrafeWeight());
+        addParam(parameters, "CombatAlwaysMovingWeight", combat.getCombatAlwaysMovingWeight());
+        addParam(parameters, "CombatBackOffAfterAttack", combat.isBackOffAfterAttack());
+        addParam(parameters, "CombatMovingRelativeSpeed", combat.getCombatMovingRelativeSpeed());
+        addParam(parameters, "CombatBackwardsRelativeSpeed", combat.getCombatBackwardsRelativeSpeed());
+        addParam(parameters, "UseCombatActionEvaluator", combat.isUseCombatActionEvaluator());
+        addParamString(parameters, "BlockAbility", combat.getBlockAbility());
+        addParam(parameters, "BlockProbability", combat.getBlockProbability());
+        addParam(parameters, "CombatFleeIfTooCloseDistance", combat.getCombatFleeIfTooCloseDistance());
+        addParam(parameters, "TargetRange", combat.getTargetRange());
+        addParamArray(parameters, "DesiredAttackDistanceRange", combat.getDesiredAttackDistanceMin(), combat.getDesiredAttackDistanceMax());
+        addParamArray(parameters, "AttackPauseRange", combat.getAttackPauseMin(), combat.getAttackPauseMax());
+        addParamArray(parameters, "CombatStrafingDurationRange", combat.getCombatStrafingDurationMin(), combat.getCombatStrafingDurationMax());
+        addParamArray(parameters, "CombatStrafingFrequencyRange", combat.getCombatStrafingFrequencyMin(), combat.getCombatStrafingFrequencyMax());
+        addParamArray(parameters, "CombatAttackPreDelay", combat.getCombatAttackPreDelayMin(), combat.getCombatAttackPreDelayMax());
+        addParamArray(parameters, "CombatAttackPostDelay", combat.getCombatAttackPostDelayMin(), combat.getCombatAttackPostDelayMax());
+        addParamArray(parameters, "CombatBackOffDistanceRange", combat.getBackOffDistance(), combat.getBackOffDistance());
+        addParamArray(parameters, "CombatBackOffDurationRange", combat.getBackOffDurationMin(), combat.getBackOffDurationMax());
+        addParamArray(parameters, "TargetSwitchTimer", combat.getTargetSwitchTimerMin(), combat.getTargetSwitchTimerMax());
+
+        PathConfig pathConfig = citizen.getPathConfig();
+        addParam(parameters, "FollowPatrolPath", pathConfig.isFollowPath());
+        addParamString(parameters, "PatrolPathName", pathConfig.getPathName());
+        addParam(parameters, "Patrol", pathConfig.isPatrol());
+        addParam(parameters, "PatrolWanderDistance", pathConfig.getPatrolWanderDistance());
+
+        addParam(parameters, "ApplySeparation", citizen.isApplySeparation());
+        addParamStringArray(parameters, "Weapons", citizen.getWeapons());
+        addParamStringArray(parameters, "OffHand", citizen.getOffHandItems());
+
+        addParamString(parameters, "DropList", citizen.getDropList());
+        addParamString(parameters, "WakingIdleBehaviorComponent", citizen.getWakingIdleBehaviorComponent());
+        addParamString(parameters, "AttitudeGroup", citizen.getAttitudeGroup());
+        addParam(parameters, "BreathesInWater", citizen.isBreathesInWater());
+
+        if (!citizen.getDayFlavorAnimation().isEmpty()) {
+            addParamString(parameters, "DayFlavorAnimation", citizen.getDayFlavorAnimation());
+            addParamArray(parameters, "DayFlavorAnimationLength", citizen.getDayFlavorAnimationLengthMin(), citizen.getDayFlavorAnimationLengthMax());
+        }
+
+        addParam(parameters, "DefaultHotbarSlot", citizen.getDefaultHotbarSlot());
+        addParam(parameters, "RandomIdleHotbarSlot", citizen.getRandomIdleHotbarSlot());
+        addParam(parameters, "ChanceToEquipFromIdleHotbarSlot", citizen.getChanceToEquipFromIdleHotbarSlot());
+        addParam(parameters, "DefaultOffHandSlot", citizen.getDefaultOffHandSlot());
+        addParam(parameters, "NighttimeOffhandSlot", citizen.getNighttimeOffhandSlot());
+
+        if (!citizen.getCombatMessageTargetGroups().isEmpty()) {
+            addParamStringArray(parameters, "CombatMessageTargetGroups", citizen.getCombatMessageTargetGroups());
+        }
+        if (!citizen.getFlockArray().isEmpty()) {
+            addParamStringArray(parameters, "FlockArray", citizen.getFlockArray());
+        }
+        addParamStringArray(parameters, "DisableDamageGroups", citizen.getDisableDamageGroups());
 
         role.add("Parameters", parameters);
 
@@ -363,36 +329,28 @@ public class RoleGenerator {
 //        JsonObject interactionInstruction = new JsonObject();
 //        JsonArray instructions = new JsonArray();
 //
-//        // First instruction: SetInteractable
 //        JsonObject setInteractable = new JsonObject();
 //        setInteractable.addProperty("Continue", true);
-//
 //        JsonObject anySensor = new JsonObject();
 //        anySensor.addProperty("Type", "Any");
 //        setInteractable.add("Sensor", anySensor);
-//
 //        JsonArray setActions = new JsonArray();
 //        JsonObject setAction = new JsonObject();
 //        setAction.addProperty("Type", "SetInteractable");
 //        setAction.addProperty("Interactable", true);
 //        setActions.add(setAction);
 //        setInteractable.add("Actions", setActions);
-//
 //        instructions.add(setInteractable);
 //
-//        // Second instruction: HasInteracted -> CitizenInteraction
 //        JsonObject hasInteracted = new JsonObject();
-//
 //        JsonObject hasInteractedSensor = new JsonObject();
 //        hasInteractedSensor.addProperty("Type", "HasInteracted");
 //        hasInteracted.add("Sensor", hasInteractedSensor);
-//
 //        JsonArray interactActions = new JsonArray();
 //        JsonObject interactAction = new JsonObject();
 //        interactAction.addProperty("Type", "CitizenInteraction");
 //        interactActions.add(interactAction);
 //        hasInteracted.add("Actions", interactActions);
-//
 //        instructions.add(hasInteracted);
 //
 //        interactionInstruction.add("Instructions", instructions);
@@ -408,7 +366,52 @@ public class RoleGenerator {
         };
     }
 
-    // Helper: create a [min, max] JsonArray
+    private void addParam(@Nonnull JsonObject params, @Nonnull String key, float value) {
+        JsonObject param = new JsonObject();
+        param.addProperty("Value", value);
+        params.add(key, param);
+    }
+
+    private void addParam(@Nonnull JsonObject params, @Nonnull String key, String value) {
+        JsonObject param = new JsonObject();
+        param.addProperty("Value", value);
+        params.add(key, param);
+    }
+
+    private void addParam(@Nonnull JsonObject params, @Nonnull String key, int value) {
+        JsonObject param = new JsonObject();
+        param.addProperty("Value", value);
+        params.add(key, param);
+    }
+
+    private void addParam(@Nonnull JsonObject params, @Nonnull String key, boolean value) {
+        JsonObject param = new JsonObject();
+        param.addProperty("Value", value);
+        params.add(key, param);
+    }
+
+    private void addParamString(@Nonnull JsonObject params, @Nonnull String key, @Nonnull String value) {
+        JsonObject param = new JsonObject();
+        param.addProperty("Value", value);
+        params.add(key, param);
+    }
+
+    private void addParamArray(@Nonnull JsonObject params, @Nonnull String key, float min, float max) {
+        JsonObject param = new JsonObject();
+        param.add("Value", rangeArray(min, max));
+        params.add(key, param);
+    }
+
+    private void addParamStringArray(@Nonnull JsonObject params, @Nonnull String key, @Nonnull List<String> values) {
+        JsonObject param = new JsonObject();
+        JsonArray arr = new JsonArray();
+        for (String v : values) {
+            arr.add(v);
+        }
+        param.add("Value", arr);
+        params.add(key, param);
+    }
+
     @Nonnull
     private JsonArray rangeArray(float min, float max) {
         JsonArray arr = new JsonArray();
