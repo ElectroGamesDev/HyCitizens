@@ -24,6 +24,7 @@ public class CitizenData {
     private String modelId;
     private Vector3d position;
     private Vector3f rotation;
+    private Vector3d currentPosition;
     private float scale;
     private String requiredPermission;
     private String noPermissionMessage;
@@ -59,6 +60,7 @@ public class CitizenData {
     private List<AnimationBehavior> animationBehaviors = new ArrayList<>();
     private MovementBehavior movementBehavior = new MovementBehavior();
     private MessagesConfig messagesConfig = new MessagesConfig();
+    private DeathConfig deathConfig = new DeathConfig();
     private transient Map<UUID, Integer> sequentialMessageIndex = new ConcurrentHashMap<>();
     private transient Map<UUID, Boolean> playersInProximity = new ConcurrentHashMap<>();
     private transient Map<String, Long> lastTimedAnimationPlay = new ConcurrentHashMap<>();
@@ -67,6 +69,10 @@ public class CitizenData {
     // Attitude and damage fields
     private String attitude = "PASSIVE";
     private boolean takesDamage = false;
+    private boolean overrideHealth = false;
+    private float healthAmount = 100;
+    private boolean overrideDamage = false;
+    private float damageAmount = 10;
 
     // Respawn fields
     private boolean respawnOnDeath = true;
@@ -113,7 +119,7 @@ public class CitizenData {
     // KnockbackScale
     private float knockbackScale = 0.5f;
 
-    // Role weapon/offhand arrays (for NPC combat AI, separate from visual equipment)
+    // Role weapon/offhand arrays
     private List<String> weapons = new ArrayList<>(List.of("Weapon_Sword_Iron"));
     private List<String> offHandItems = new ArrayList<>(List.of("Furniture_Crude_Torch"));
 
@@ -134,6 +140,7 @@ public class CitizenData {
         this.worldUUID = worldUUID;
         this.position = position;
         this.rotation = rotation;
+        this.currentPosition = position;
         this.scale = scale;
         this.requiredPermission = requiredPermission;
         this.noPermissionMessage = noPermissionMessage;
@@ -210,6 +217,15 @@ public class CitizenData {
 
     public void setRotation(@Nonnull Vector3f rotation) {
         this.rotation = rotation;
+    }
+
+    public void setCurrentPosition (@Nonnull Vector3d currentPosition) {
+        this.currentPosition = currentPosition;
+    }
+
+    @Nonnull
+    public Vector3d getCurrentPosition() {
+        return currentPosition;
     }
 
     public float getScale() {
@@ -445,6 +461,10 @@ public class CitizenData {
     }
 
     @Nonnull
+    public DeathConfig getDeathConfig() { return deathConfig; }
+    public void setDeathConfig(@Nonnull DeathConfig deathConfig) { this.deathConfig = deathConfig; }
+
+    @Nonnull
     public Map<UUID, Integer> getSequentialMessageIndex() {
         return sequentialMessageIndex;
     }
@@ -480,6 +500,18 @@ public class CitizenData {
     public void setTakesDamage(boolean takesDamage) {
         this.takesDamage = takesDamage;
     }
+
+    public boolean isOverrideHealth() { return overrideHealth; }
+    public void setOverrideHealth(boolean overrideHealth) { this.overrideHealth = overrideHealth; }
+
+    public float getHealthAmount() { return healthAmount; }
+    public void setHealthAmount(float healthAmount) { this.healthAmount = healthAmount; }
+
+    public boolean isOverrideDamage() { return overrideDamage; }
+    public void setOverrideDamage(boolean overrideDamage) { this.overrideDamage = overrideDamage; }
+
+    public float getDamageAmount() { return damageAmount; }
+    public void setDamageAmount(float damageAmount) { this.damageAmount = damageAmount; }
 
     public boolean isRespawnOnDeath() {
         return respawnOnDeath;

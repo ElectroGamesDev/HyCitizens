@@ -23,6 +23,7 @@ public class RoleAssetPackManager {
                         "  \"Group\": \"electro\",\n" +
                         "  \"Name\": \"HyCitizensRoles\",\n" +
                         "  \"Version\": \"1.0.0\",\n" +
+                        "  \"ServerVersion\": \"2026.02.19-1a311a592\",\n" +
                         "  \"Description\": \"Generated asset pack for HyCitizens.\",\n" +
                         "  \"Authors\": [\n" +
                         "    {\n" +

@@ -7,12 +7,14 @@ import com.electro.hycitizens.listeners.ChunkPreLoadListener;
 import com.electro.hycitizens.listeners.EntityDamageListener;
 import com.electro.hycitizens.listeners.PlayerConnectionListener;
 import com.electro.hycitizens.managers.CitizensManager;
+import com.electro.hycitizens.models.CitizenData;
 import com.electro.hycitizens.ui.CitizensUI;
 import com.electro.hycitizens.ui.SkinCustomizerUI;
 import com.electro.hycitizens.util.ConfigManager;
 import com.electro.hycitizens.util.RoleAssetPackManager;
 import com.electro.hycitizens.util.UpdateChecker;
 import com.hypixel.hytale.event.EventPriority;
+import com.hypixel.hytale.server.core.HytaleServer;
 import com.hypixel.hytale.server.core.event.events.player.PlayerConnectEvent;
 import com.hypixel.hytale.server.core.event.events.player.PlayerDisconnectEvent;
 import com.hypixel.hytale.server.core.modules.interaction.interaction.config.Interaction;
@@ -24,6 +26,7 @@ import com.hypixel.hytale.server.npc.NPCPlugin;
 import javax.annotation.Nonnull;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.concurrent.TimeUnit;
 
 public class HyCitizensPlugin extends JavaPlugin {
     private static HyCitizensPlugin instance;
@@ -74,6 +77,11 @@ public class HyCitizensPlugin extends JavaPlugin {
     @Override
     protected void start() {
         UpdateChecker.checkAsync();
+
+        // Regenerate all roles
+        HytaleServer.SCHEDULED_EXECUTOR.schedule(() -> {
+            citizensManager.getRoleGenerator().regenerateAllRoles(citizensManager.getAllCitizens());
+        }, 250, TimeUnit.MILLISECONDS);
     }
 
     @Override

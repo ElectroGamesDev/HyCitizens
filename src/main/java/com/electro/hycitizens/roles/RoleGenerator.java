@@ -1,10 +1,8 @@
 package com.electro.hycitizens.roles;
 
+import com.electro.hycitizens.HyCitizensPlugin;
 import com.electro.hycitizens.models.*;
-import com.google.gson.Gson;
-import com.google.gson.GsonBuilder;
-import com.google.gson.JsonArray;
-import com.google.gson.JsonObject;
+import com.google.gson.*;
 
 import javax.annotation.Nonnull;
 import java.io.File;
@@ -105,16 +103,42 @@ public class RoleGenerator {
         return getRoleName(citizen);
     }
 
-    // Returns true if the role file was actually written (content changed)
-    public boolean generateRoleIfChanged(@Nonnull CitizenData citizen) {
+    public boolean forceRoleGeneration(@Nonnull CitizenData citizen) {
         String moveType = citizen.getMovementBehavior().getType();
         boolean isIdle = "IDLE".equals(moveType);
+        boolean isPatrol = "PATROL".equals(moveType);
 
         String roleName = getRoleName(citizen);
 
         JsonObject roleJson;
         if (isIdle) {
             roleJson = generateIdleRole(citizen);
+        } else if (isPatrol) {
+            roleJson = generatePatrolRole(citizen);
+        } else {
+            roleJson = generateVariantRole(citizen);
+        }
+
+        String content = gson.toJson(roleJson);
+
+        writeRoleFile(roleName, content);
+        lastGeneratedContent.put(roleName, content);
+        return true;
+    }
+
+    // Returns true if the role file was actually written
+    public boolean generateRoleIfChanged(@Nonnull CitizenData citizen) {
+        String moveType = citizen.getMovementBehavior().getType();
+        boolean isIdle = "IDLE".equals(moveType);
+        boolean isPatrol = "PATROL".equals(moveType);
+
+        String roleName = getRoleName(citizen);
+
+        JsonObject roleJson;
+        if (isIdle) {
+            roleJson = generateIdleRole(citizen);
+        } else if (isPatrol) {
+            roleJson = generatePatrolRole(citizen);
         } else {
             roleJson = generateVariantRole(citizen);
         }
@@ -134,7 +158,8 @@ public class RoleGenerator {
     @Nonnull
     public String getFallbackRoleName(@Nonnull CitizenData citizen) {
         String moveType = citizen.getMovementBehavior().getType();
-        boolean interactable = citizen.getFKeyInteractionEnabled();
+        // Use hasFKeyActions so the role reflects whether the F key popup should be shown.
+        boolean interactable = HyCitizensPlugin.get().getCitizensManager().hasFKeyActions(citizen);
         String attitude = citizen.getAttitude();
         boolean isWander = "WANDER".equals(moveType) || "WANDER_CIRCLE".equals(moveType) || "WANDER_RECT".equals(moveType);
 
@@ -166,7 +191,7 @@ public class RoleGenerator {
     private JsonObject generateIdleRole(@Nonnull CitizenData citizen) {
         JsonObject role = new JsonObject();
         role.addProperty("Type", "Generic");
-        role.addProperty("Appearance", "Player");
+        role.addProperty("Appearance", citizen.getModelId());
 
         // MotionControllerList
         JsonArray motionControllers = new JsonArray();
@@ -183,7 +208,7 @@ public class RoleGenerator {
         // Parameters
         JsonObject parameters = new JsonObject();
         JsonObject maxHealthParam = new JsonObject();
-        maxHealthParam.addProperty("Value", citizen.getMaxHealth());
+        maxHealthParam.addProperty("Value", 100);
         maxHealthParam.addProperty("Description", "Max health for the NPC");
         parameters.add("MaxHealth", maxHealthParam);
         role.add("Parameters", parameters);
@@ -191,13 +216,39 @@ public class RoleGenerator {
         // KnockbackScale
         role.addProperty("KnockbackScale", citizen.getKnockbackScale());
 
-        // Empty instructions for idle
-        JsonArray instructions = new JsonArray();
-        role.add("Instructions", instructions);
+        role.addProperty("NameTranslationKey", citizen.getNameTranslationKey());
 
-//        if (citizen.getFKeyInteractionEnabled()) {
-//            role.add("InteractionInstruction", buildInteractionInstruction());
-//        }
+        return role;
+    }
+
+    @Nonnull
+    private JsonObject generatePatrolRole(@Nonnull CitizenData citizen) {
+        JsonObject role = new JsonObject();
+        role.addProperty("Type", "Generic");
+        role.addProperty("Appearance", citizen.getModelId());
+
+        JsonArray motionControllers = new JsonArray();
+        JsonObject walkController = new JsonObject();
+        walkController.addProperty("Type", "Walk");
+        motionControllers.add(walkController);
+        role.add("MotionControllerList", motionControllers);
+
+        JsonObject maxHealthCompute = new JsonObject();
+        maxHealthCompute.addProperty("Compute", "MaxHealth");
+        role.add("MaxHealth", maxHealthCompute);
+
+        JsonObject parameters = new JsonObject();
+        JsonObject maxHealthParam = new JsonObject();
+        maxHealthParam.addProperty("Value", 100);
+        maxHealthParam.addProperty("Description", "Max health for the NPC");
+        parameters.add("MaxHealth", maxHealthParam);
+        role.add("Parameters", parameters);
+
+        role.addProperty("KnockbackScale", citizen.getKnockbackScale());
+
+        JsonArray instructions = new JsonArray();
+        instructions.add(buildFollowInstruction());
+        role.add("Instructions", instructions);
 
         role.addProperty("NameTranslationKey", citizen.getNameTranslationKey());
 
@@ -238,7 +289,7 @@ public class RoleGenerator {
         addParam(parameters, "KnockbackScale", citizen.getKnockbackScale());
 
         JsonObject appearanceParam = new JsonObject();
-        appearanceParam.addProperty("Value", "Player");
+        appearanceParam.addProperty("Value", citizen.getModelId());
         appearanceParam.addProperty("Description", "Model to be used");
         parameters.add("Appearance", appearanceParam);
 
@@ -249,7 +300,7 @@ public class RoleGenerator {
 
         addParam(parameters, "DefaultNPCAttitude", citizen.getDefaultNpcAttitude());
 
-        addParam(parameters, "MaxHealth", citizen.getMaxHealth());
+        addParam(parameters, "MaxHealth", 100);
         addParam(parameters, "MaxSpeed", citizen.getMovementBehavior().getWalkSpeed());
         addParam(parameters, "RunThreshold", citizen.getRunThreshold());
 
@@ -358,6 +409,33 @@ public class RoleGenerator {
 //    }
 
     @Nonnull
+    private JsonObject buildFollowInstruction() {
+        JsonObject instruction = new JsonObject();
+
+        JsonObject sensor = new JsonObject();
+        sensor.addProperty("Type", "Target");
+        instruction.add("Sensor", sensor);
+
+        JsonObject headMotion = new JsonObject();
+        //headMotion.addProperty("Type", "Watch");
+        headMotion.addProperty("Type", "Observe");
+        headMotion.add("AngleRange", JsonParser.parseString("[-5.0, 5.0]"));
+        headMotion.addProperty("PickRandomAngle", true);
+        instruction.add("HeadMotion", headMotion);
+
+        JsonObject bodyMotion = new JsonObject();
+        bodyMotion.addProperty("Type", "Seek");
+        bodyMotion.addProperty("StopDistance", 0.1);
+        bodyMotion.addProperty("SlowDownDistance", 0.1);
+        bodyMotion.addProperty("AbortDistance", 500.0);
+        bodyMotion.addProperty("RelativeSpeed", 0.55);
+        bodyMotion.addProperty("UsePathfinder", true);
+        instruction.add("BodyMotion", bodyMotion);
+
+        return instruction;
+    }
+
+    @Nonnull
     private String mapPlayerAttitude(@Nonnull String citizenAttitude) {
         return switch (citizenAttitude) {
             case "AGGRESSIVE" -> "Hostile";
@@ -456,8 +534,7 @@ public class RoleGenerator {
 
     public void regenerateAllRoles(@Nonnull Collection<CitizenData> citizens) {
         for (CitizenData citizen : citizens) {
-            generateRole(citizen);
+            forceRoleGeneration(citizen);
         }
-        getLogger().atInfo().log("Regenerated " + citizens.size() + " citizen role files.");
     }
 }

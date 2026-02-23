@@ -86,6 +86,13 @@ public class PlayerInteractionHandler implements PacketWatcher {
             return;
         }
 
+        // Map the raw interaction type to a semantic source constant.
+        // InteractionType.Use  = F key ("Use" / interact key)
+        // InteractionType.Primary = left click (primary attack/interact)
+        String interactionSource = (type == InteractionType.Use)
+                ? CitizenInteraction.SOURCE_F_KEY
+                : CitizenInteraction.SOURCE_LEFT_CLICK;
+
         Store<EntityStore> store = playerRef.getReference().getStore();
         Ref<EntityStore> entity = store.getExternalData().getRefFromNetworkId(chain.data.entityId);
         if (entity == null) {
@@ -101,11 +108,8 @@ public class PlayerInteractionHandler implements PacketWatcher {
                 continue;
             }
 
-            if (type == InteractionType.Use && !citizen.getFKeyInteractionEnabled()) {
-                break;
-            }
-
-            CitizenInteraction.handleInteraction(citizen, playerRef);
+            // CitizenInteraction will do its own early-exit if no actions match the source.
+            CitizenInteraction.handleInteraction(citizen, playerRef, interactionSource);
             break;
         }
     }
