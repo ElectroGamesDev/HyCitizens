@@ -18,6 +18,7 @@ import com.hypixel.hytale.server.core.universe.world.storage.EntityStore;
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
 import java.awt.*;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
@@ -26,8 +27,12 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 public class CitizenInteraction {
+
+    public static final String SOURCE_LEFT_CLICK = "LEFT_CLICK";
+    public static final String SOURCE_F_KEY = "F_KEY";
 
     private static final Map<String, Color> NAMED_COLORS = Map.ofEntries(
             Map.entry("BLACK", Color.decode("#000000")),
@@ -131,7 +136,29 @@ public class CitizenInteraction {
         return msg;
     }
 
-    static public void handleInteraction(CitizenData citizen, PlayerRef playerRef) {
+    static public void handleInteraction(@Nonnull CitizenData citizen, @Nonnull PlayerRef playerRef) {
+        handleInteraction(citizen, playerRef, SOURCE_F_KEY);
+    }
+
+    static public void handleInteraction(@Nonnull CitizenData citizen, @Nonnull PlayerRef playerRef,
+                                         @Nonnull String interactionSource) {
+        // Gather matching messages and commands up front so we can do an early-exit
+        // if this citizen has no actions for the given interaction type.
+        MessagesConfig msgConfig = citizen.getMessagesConfig();
+        List<CitizenMessage> allMessages = msgConfig.isEnabled() ? msgConfig.getMessages() : List.of();
+        List<CitizenMessage> matchingMessages = allMessages.stream()
+                .filter(m -> m.isTriggeredBy(interactionSource))
+                .collect(Collectors.toList());
+
+        List<CommandAction> matchingCommands = citizen.getCommandActions().stream()
+                .filter(cmd -> cmd.isTriggeredBy(interactionSource))
+                .collect(Collectors.toList());
+
+        // Nothing to do for this interaction type — exit silently.
+        if (matchingMessages.isEmpty() && matchingCommands.isEmpty()) {
+            return;
+        }
+
         Ref<EntityStore> ref = playerRef.getReference();
 
         Player player = ref.getStore().getComponent(ref, Player.getComponentType());
@@ -140,6 +167,7 @@ public class CitizenInteraction {
             return;
         }
 
+        // Permission check
         if (!citizen.getRequiredPermission().isEmpty()) {
             if (!player.hasPermission(citizen.getRequiredPermission())) {
                 String permissionMessage = citizen.getNoPermissionMessage();
@@ -162,45 +190,21 @@ public class CitizenInteraction {
         // Trigger ON_INTERACT animations
         HyCitizensPlugin.get().getCitizensManager().triggerAnimations(citizen, "ON_INTERACT");
 
-        // Handle messages system
-        MessagesConfig msgConfig = citizen.getMessagesConfig();
-        if (msgConfig.isEnabled() && !msgConfig.getMessages().isEmpty()) {
-            List<CitizenMessage> messages = msgConfig.getMessages();
+        // Handle messages
+        if (!matchingMessages.isEmpty()) {
             String mode = msgConfig.getSelectionMode();
-
             switch (mode) {
-                case "SEQUENTIAL" -> {
-                    UUID playerUUID = playerRef.getUuid();
-                    int index = citizen.getSequentialMessageIndex().getOrDefault(playerUUID, 0);
-                    if (index >= messages.size()) index = 0;
-                    String msgText = replacePlaceholders(messages.get(index).getMessage(), playerRef, citizen);
-                    Message parsed = parseColoredMessage(msgText);
-                    if (parsed != null) playerRef.sendMessage(parsed);
-                    citizen.getSequentialMessageIndex().put(playerUUID, index + 1);
-                }
-                case "ALL" -> {
-                    for (CitizenMessage cm : messages) {
-                        String msgText = replacePlaceholders(cm.getMessage(), playerRef, citizen);
-                        Message parsed = parseColoredMessage(msgText);
-                        if (parsed != null) playerRef.sendMessage(parsed);
-                    }
-                }
-                default -> { // RANDOM
-                    int index = RANDOM.nextInt(messages.size());
-                    String msgText = replacePlaceholders(messages.get(index).getMessage(), playerRef, citizen);
-                    Message parsed = parseColoredMessage(msgText);
-                    if (parsed != null) playerRef.sendMessage(parsed);
-                }
+                case "SEQUENTIAL" -> sendSequentialMessage(citizen, playerRef, matchingMessages);
+                case "ALL" -> sendAllMessages(playerRef, citizen, matchingMessages);
+                default -> sendRandomMessage(playerRef, citizen, matchingMessages); // RANDOM
             }
         }
 
-        // Run commands
-        // Using CompletableFuture to ensure the commands run in the correct order
+        // Run matching commands (with per-command delays chained sequentially)
         CompletableFuture<Void> chain = CompletableFuture.completedFuture(null);
 
-        for (CommandAction commandAction : citizen.getCommandActions()) {
+        for (CommandAction commandAction : matchingCommands) {
             chain = chain.thenCompose(v -> {
-                // If there's a delay, schedule the next step
                 if (commandAction.getDelaySeconds() > 0) {
                     CompletableFuture<Void> delayedFuture = new CompletableFuture<>();
                     HytaleServer.SCHEDULED_EXECUTOR.schedule(() -> {
@@ -212,25 +216,20 @@ public class CitizenInteraction {
             }).thenCompose(v -> {
                 String command = commandAction.getCommand();
 
-                // Replace {PlayerName} placeholders
                 command = Pattern.compile("\\{PlayerName}", Pattern.CASE_INSENSITIVE)
                         .matcher(command)
                         .replaceAll(playerRef.getUsername());
 
-                // Replace {CitizenName} placeholders
                 command = Pattern.compile("\\{CitizenName}", Pattern.CASE_INSENSITIVE)
                         .matcher(command)
                         .replaceAll(citizen.getName());
 
-                // Check if this is a "send message" command
                 if (command.startsWith("{SendMessage}")) {
                     String messageContent = command.substring("{SendMessage}".length()).trim();
-
                     Message msg = parseColoredMessage(messageContent);
                     if (msg != null) {
                         playerRef.sendMessage(msg);
                     }
-
                     return CompletableFuture.completedFuture(null);
                 } else {
                     if (commandAction.isRunAsServer()) {
@@ -243,7 +242,68 @@ public class CitizenInteraction {
         }
     }
 
-    private static String replacePlaceholders(@Nonnull String text, @Nonnull PlayerRef playerRef, @Nonnull CitizenData citizen) {
+    private static void sendRandomMessage(@Nonnull PlayerRef playerRef, @Nonnull CitizenData citizen,
+                                          @Nonnull List<CitizenMessage> messages) {
+        CitizenMessage selected = messages.get(RANDOM.nextInt(messages.size()));
+        dispatchMessage(playerRef, citizen, selected);
+    }
+
+    private static void sendSequentialMessage(@Nonnull CitizenData citizen, @Nonnull PlayerRef playerRef,
+                                              @Nonnull List<CitizenMessage> messages) {
+        UUID playerUUID = playerRef.getUuid();
+        int startIndex = citizen.getSequentialMessageIndex().getOrDefault(playerUUID, 0);
+
+        int subsetIndex = startIndex % messages.size();
+        CitizenMessage selected = messages.get(subsetIndex);
+        citizen.getSequentialMessageIndex().put(playerUUID, subsetIndex + 1);
+
+        dispatchMessage(playerRef, citizen, selected);
+    }
+
+    private static void sendAllMessages(@Nonnull PlayerRef playerRef, @Nonnull CitizenData citizen,
+                                        @Nonnull List<CitizenMessage> messages) {
+        CompletableFuture<Void> chain = CompletableFuture.completedFuture(null);
+
+        for (CitizenMessage cm : messages) {
+            final CitizenMessage msg = cm;
+            if (cm.getDelaySeconds() > 0) {
+                chain = chain.thenCompose(v -> {
+                    CompletableFuture<Void> delayed = new CompletableFuture<>();
+                    HytaleServer.SCHEDULED_EXECUTOR.schedule(
+                            () -> delayed.complete(null),
+                            (long) (msg.getDelaySeconds() * 1000),
+                            TimeUnit.MILLISECONDS);
+                    return delayed;
+                });
+            }
+            chain = chain.thenCompose(v -> {
+                String text = replacePlaceholders(msg.getMessage(), playerRef, citizen);
+                Message parsed = parseColoredMessage(text);
+                if (parsed != null) playerRef.sendMessage(parsed);
+                return CompletableFuture.completedFuture(null);
+            });
+        }
+    }
+
+    private static void dispatchMessage(@Nonnull PlayerRef playerRef, @Nonnull CitizenData citizen,
+                                        @Nonnull CitizenMessage cm) {
+        String text = replacePlaceholders(cm.getMessage(), playerRef, citizen);
+        Message parsed = parseColoredMessage(text);
+        if (parsed == null) return;
+
+        if (cm.getDelaySeconds() > 0) {
+            final Message finalMsg = parsed;
+            HytaleServer.SCHEDULED_EXECUTOR.schedule(
+                    () -> playerRef.sendMessage(finalMsg),
+                    (long) (cm.getDelaySeconds() * 1000),
+                    TimeUnit.MILLISECONDS);
+        } else {
+            playerRef.sendMessage(parsed);
+        }
+    }
+
+    private static String replacePlaceholders(@Nonnull String text, @Nonnull PlayerRef playerRef,
+                                              @Nonnull CitizenData citizen) {
         text = Pattern.compile("\\{PlayerName}", Pattern.CASE_INSENSITIVE)
                 .matcher(text)
                 .replaceAll(playerRef.getUsername());

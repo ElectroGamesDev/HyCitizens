@@ -1,6 +1,8 @@
 package com.electro.hycitizens.managers;
 
 import com.electro.hycitizens.HyCitizensPlugin;
+import com.electro.hycitizens.events.CitizenDeathEvent;
+import com.electro.hycitizens.events.CitizenDeathListener;
 import com.electro.hycitizens.events.CitizenInteractEvent;
 import com.electro.hycitizens.events.CitizenInteractListener;
 import com.electro.hycitizens.models.*;
@@ -37,6 +39,8 @@ import com.hypixel.hytale.server.core.modules.entitystats.EntityStatMap;
 import com.hypixel.hytale.server.core.modules.entitystats.EntityStatValue;
 import com.hypixel.hytale.server.core.modules.entitystats.EntityStatsModule;
 import com.hypixel.hytale.server.core.modules.entitystats.asset.DefaultEntityStatTypes;
+import com.hypixel.hytale.server.core.modules.entitystats.modifier.Modifier;
+import com.hypixel.hytale.server.core.modules.entitystats.modifier.StaticModifier;
 import com.hypixel.hytale.server.core.modules.interaction.Interactions;
 import com.hypixel.hytale.server.core.modules.interaction.interaction.config.RootInteraction;
 import com.hypixel.hytale.server.core.universe.PlayerRef;
@@ -65,6 +69,7 @@ public class CitizensManager {
     private final ConfigManager config;
     private final Map<String, CitizenData> citizens;
     private final List<CitizenInteractListener> interactListeners = new ArrayList<>();
+    private final List<CitizenDeathListener> deathListeners = new ArrayList<>();
     private ScheduledFuture<?> skinUpdateTask;
     private ScheduledFuture<?> rotateTask;
     private ScheduledFuture<?> nametagMoveTask;
@@ -76,6 +81,7 @@ public class CitizensManager {
     private ScheduledFuture<?> positionSaveTask;
     private final Set<String> citizensCurrentlySpawning = ConcurrentHashMap.newKeySet();
     private final Set<String> hologramsCurrentlySpawning = ConcurrentHashMap.newKeySet();
+    private PatrolManager patrolManager;
 
     public CitizensManager(@Nonnull HyCitizensPlugin plugin) {
         this.plugin = plugin;
@@ -90,6 +96,7 @@ public class CitizensManager {
         startAnimationScheduler();
         startNametagMoveScheduler();
         startPositionSaveScheduler();
+        this.patrolManager = new PatrolManager(plugin.getConfigManager(), this);
     }
 
     private void startSkinUpdateScheduler() {
@@ -224,8 +231,8 @@ public class CitizensManager {
                         if (chunk == null)
                             continue;
 
-                        // Track the NPC's actual position for wandering citizens
-                        citizen.setPosition(new Vector3d(npcPosition));
+                        // Track the NPC's actual position
+                        citizen.setCurrentPosition(new Vector3d(npcPosition));
 
                         // Todo: It would be better to store the nametags as a ref
 
@@ -305,7 +312,7 @@ public class CitizensManager {
                         continue;
 
                     String basePath = "citizens." + citizen.getId();
-                    config.setVector3d(basePath + ".position", citizen.getPosition());
+                    config.setVector3d(basePath + ".current-position", citizen.getCurrentPosition());
                 }
             } finally {
                 config.endBatch();
@@ -332,6 +339,14 @@ public class CitizensManager {
 
         if (positionSaveTask != null && !positionSaveTask.isCancelled()) {
             positionSaveTask.cancel(false);
+        }
+
+        if (patrolManager != null) {
+            patrolManager.shutdown();
+        }
+
+        for (CitizenData citizen : citizens.values()) {
+            saveCitizen(citizen);
         }
     }
 
@@ -361,9 +376,6 @@ public class CitizensManager {
 
         // Save groups list in case new groups were discovered from citizens
         saveGroups();
-
-        // Regenerate all role files from saved config
-        roleGenerator.regenerateAllRoles(citizens.values());
     }
 
     @Nullable
@@ -410,9 +422,11 @@ public class CitizensManager {
             String command = config.getString(commandPath + ".command");
             boolean runAsServer = config.getBoolean(commandPath + ".run-as-server", false);
             float delay = config.getFloat(commandPath + ".delay", 0.0f);
+            // null = not yet set, will be migrated below
+            String trigger = config.getString(commandPath + ".interaction-trigger", null);
 
             if (command != null) {
-                actions.add(new CommandAction(command, runAsServer, delay));
+                actions.add(new CommandAction(command, runAsServer, delay, trigger));
             }
         }
 
@@ -446,6 +460,12 @@ public class CitizensManager {
                 permission, permMessage, actions, isPlayerModel, useLiveSkin, skinUsername, cachedSkin, lastSkinUpdate, rotateTowardsPlayer);
         citizenData.setCreatedAt(0); // Mark as loaded from config, not newly created
 
+        Vector3d currentPosition = config.getVector3d(basePath + ".current-position");
+        if (currentPosition == null) {
+            currentPosition = position;
+        }
+        citizenData.setCurrentPosition(currentPosition);
+
         // Load item data
         citizenData.setNpcHelmet(config.getString(basePath + ".npc-helmet", null));
         citizenData.setNpcChest(config.getString(basePath + ".npc-chest", null));
@@ -458,6 +478,8 @@ public class CitizensManager {
         citizenData.setHideNametag(config.getBoolean(basePath + ".hide-nametag", false));
         citizenData.setHideNpc(config.getBoolean(basePath + ".hide-npc", false));
         citizenData.setNametagOffset(config.getFloat(basePath + ".nametag-offset", 0));
+        // Load legacy field for migration purposes only (no longer shown in UI).
+        // Defaults to true so citizens without this key migrate to "BOTH".
         citizenData.setFKeyInteractionEnabled(config.getBoolean(basePath + ".f-key-interaction", true));
 
         // Load animation behaviors
@@ -491,14 +513,45 @@ public class CitizensManager {
         boolean msgEnabled = config.getBoolean(basePath + ".messages.enabled", true);
         List<CitizenMessage> messages = new ArrayList<>();
         for (int i = 0; i < msgCount; i++) {
-            String msg = config.getString(basePath + ".messages." + i + ".message", "");
-            messages.add(new CitizenMessage(msg));
+            String msgPath = basePath + ".messages." + i;
+            String msg = config.getString(msgPath + ".message", "");
+            // null = not yet set, will be migrated below
+            String msgTrigger = config.getString(msgPath + ".interaction-trigger", null);
+            float msgDelay = config.getFloat(msgPath + ".delay", 0.0f);
+            messages.add(new CitizenMessage(msg, msgTrigger, msgDelay));
         }
         citizenData.setMessagesConfig(new MessagesConfig(messages, msgMode, msgEnabled));
+
+        // Backwards compatibility
+        boolean hasUnmigratedActions =
+                actions.stream().anyMatch(a -> a.getInteractionTrigger() == null)
+                || messages.stream().anyMatch(m -> m.getInteractionTrigger() == null);
+
+        if (hasUnmigratedActions) {
+            String migratedTrigger = citizenData.getFKeyInteractionEnabled() ? "BOTH" : "LEFT_CLICK";
+            for (CommandAction action : actions) {
+                if (action.getInteractionTrigger() == null) {
+                    action.setInteractionTrigger(migratedTrigger);
+                }
+            }
+            for (CitizenMessage message : messages) {
+                if (message.getInteractionTrigger() == null) {
+                    message.setInteractionTrigger(migratedTrigger);
+                }
+            }
+            // Re-apply the lists so the citizenData reflects the migration.
+            citizenData.setCommandActions(actions);
+            MessagesConfig migratedMc = new MessagesConfig(messages, msgMode, msgEnabled);
+            citizenData.setMessagesConfig(migratedMc);
+        }
 
         // Load attitude and damage settings
         citizenData.setAttitude(config.getString(basePath + ".attitude", "PASSIVE"));
         citizenData.setTakesDamage(config.getBoolean(basePath + ".takes-damage", false));
+        citizenData.setOverrideHealth(config.getBoolean(basePath + ".override-health", false));
+        citizenData.setHealthAmount(config.getFloat(basePath + ".health-amount", 100));
+        citizenData.setOverrideDamage(config.getBoolean(basePath + ".override-damage", false));
+        citizenData.setDamageAmount(config.getFloat(basePath + ".damage-amount", 10));
 
         // Load respawn settings
         citizenData.setRespawnOnDeath(config.getBoolean(basePath + ".respawn-on-death", true));
@@ -506,6 +559,68 @@ public class CitizensManager {
 
         // Load group (backwards compatible - defaults to empty string)
         citizenData.setGroup(config.getString(basePath + ".group", ""));
+
+        // Load death config
+        DeathConfig deathConfig = new DeathConfig();
+        deathConfig.setEnabled(config.getBoolean(basePath + ".death.enabled", false));
+        deathConfig.setCommandSelectionMode(config.getString(basePath + ".death.command-mode", "ALL"));
+        deathConfig.setMessageSelectionMode(config.getString(basePath + ".death.message-mode", "ALL"));
+
+        List<DeathDropItem> drops = new ArrayList<>();
+
+        for (String key : config.getKeys(basePath + ".death.drops")) {
+            String dropPath = basePath + ".death.drops." + key;
+
+            String itemId = config.getString(dropPath + ".item-id", "");
+            int quantity = config.getInt(dropPath + ".quantity", 1);
+
+            if (!itemId.isEmpty()) {
+                drops.add(new DeathDropItem(itemId, quantity));
+            }
+        }
+
+        if (!drops.isEmpty()) {
+            deathConfig.setDropItems(drops);
+        }
+
+
+        List<CommandAction> deathCommands = new ArrayList<>();
+
+        for (String key : config.getKeys(basePath + ".death.commands")) {
+            String cmdPath = basePath + ".death.commands." + key;
+
+            String cmd = config.getString(cmdPath + ".command", "");
+            boolean runAsServer = config.getBoolean(cmdPath + ".run-as-server", true);
+            float delay = config.getFloat(cmdPath + ".delay", 0);
+
+            if (!cmd.isEmpty()) {
+                deathCommands.add(new CommandAction(cmd, runAsServer, delay));
+            }
+        }
+
+        if (!deathCommands.isEmpty()) {
+            deathConfig.setDeathCommands(deathCommands);
+        }
+
+
+        List<CitizenMessage> deathMessages = new ArrayList<>();
+
+        for (String key : config.getKeys(basePath + ".death.messages")) {
+            String msgPath = basePath + ".death.messages." + key;
+
+            String msg = config.getString(msgPath + ".message", "");
+            float delay = config.getFloat(msgPath + ".delay", 0);
+
+            if (!msg.isEmpty()) {
+                deathMessages.add(new CitizenMessage(msg, null, delay));
+            }
+        }
+
+        if (!deathMessages.isEmpty()) {
+            deathConfig.setDeathMessages(deathMessages);
+        }
+
+        citizenData.setDeathConfig(deathConfig);
 
         // Load new config fields
         citizenData.setMaxHealth(config.getFloat(basePath + ".max-health", 100));
@@ -573,6 +688,8 @@ public class CitizensManager {
         pathConfig.setPathName(config.getString(basePath + ".path.path-name", ""));
         pathConfig.setPatrol(config.getBoolean(basePath + ".path.patrol", false));
         pathConfig.setPatrolWanderDistance(config.getFloat(basePath + ".path.patrol-wander-distance", 25));
+        pathConfig.setLoopMode(config.getString(basePath + ".path.loop-mode", "LOOP"));
+        pathConfig.setPluginPatrolPath(config.getString(basePath + ".path.plugin-patrol-path", ""));
         citizenData.setPathConfig(pathConfig);
 
         // Load extended Template_Citizen parameters
@@ -609,7 +726,12 @@ public class CitizensManager {
         return citizenData;
     }
 
+
     public void saveCitizen(@Nonnull CitizenData citizen) {
+        saveCitizen(citizen, false); // False since in some cases, this could cause issues if set to true
+    }
+
+    public void saveCitizen(@Nonnull CitizenData citizen, boolean respawnIfRoleChanged) {
         config.beginBatch();
 
         try {
@@ -620,11 +742,11 @@ public class CitizensManager {
             config.set(basePath + ".model-world-uuid", citizen.getWorldUUID().toString());
             config.setVector3d(basePath + ".position", citizen.getPosition());
             config.setVector3f(basePath + ".rotation", citizen.getRotation());
+            config.setVector3d(basePath + ".current-position", citizen.getCurrentPosition());
             config.set(basePath + ".scale", citizen.getScale());
             config.set(basePath + ".permission", citizen.getRequiredPermission());
             config.set(basePath + ".permission-message", citizen.getNoPermissionMessage());
             config.set(basePath + ".rotate-towards-player", citizen.getRotateTowardsPlayer());
-            config.set(basePath + ".f-key-interaction", citizen.getFKeyInteractionEnabled());
             config.setUUID(basePath + ".npc-uuid", citizen.getSpawnedUUID());
             config.setUUIDList(basePath + ".hologram-uuids", citizen.getHologramLineUuids());
 
@@ -654,6 +776,8 @@ public class CitizensManager {
                 config.set(commandPath + ".command", action.getCommand());
                 config.set(commandPath + ".run-as-server", action.isRunAsServer());
                 config.set(commandPath + ".delay", action.getDelaySeconds());
+                config.set(commandPath + ".interaction-trigger",
+                        action.getInteractionTrigger() != null ? action.getInteractionTrigger() : "BOTH");
             }
 
             // Misc
@@ -692,12 +816,21 @@ public class CitizensManager {
             config.set(basePath + ".messages.mode", mc.getSelectionMode());
             config.set(basePath + ".messages.enabled", mc.isEnabled());
             for (int i = 0; i < msgs.size(); i++) {
-                config.set(basePath + ".messages." + i + ".message", msgs.get(i).getMessage());
+                String msgPath = basePath + ".messages." + i;
+                CitizenMessage cm = msgs.get(i);
+                config.set(msgPath + ".message", cm.getMessage());
+                config.set(msgPath + ".interaction-trigger",
+                        cm.getInteractionTrigger() != null ? cm.getInteractionTrigger() : "BOTH");
+                config.set(msgPath + ".delay", cm.getDelaySeconds());
             }
 
             // Save attitude and damage settings
             config.set(basePath + ".attitude", citizen.getAttitude());
             config.set(basePath + ".takes-damage", citizen.isTakesDamage());
+            config.set(basePath + ".override-health", citizen.isOverrideHealth());
+            config.set(basePath + ".health-amount", citizen.getHealthAmount());
+            config.set(basePath + ".override-damage", citizen.isOverrideDamage());
+            config.set(basePath + ".damage-amount", citizen.getDamageAmount());
 
             // Save respawn settings
             config.set(basePath + ".respawn-on-death", citizen.isRespawnOnDeath());
@@ -706,7 +839,39 @@ public class CitizensManager {
             // Save group
             config.set(basePath + ".group", citizen.getGroup());
 
-            // Save new config fields
+            // Save death config
+            DeathConfig dc = citizen.getDeathConfig();
+            config.set(basePath + ".death.enabled", dc.isEnabled());
+            config.set(basePath + ".death.command-mode", dc.getCommandSelectionMode());
+            config.set(basePath + ".death.message-mode", dc.getMessageSelectionMode());
+
+            List<DeathDropItem> drops = dc.getDropItems();
+            config.set(basePath + ".death.drops", new ArrayList<>());
+            for (int i = 0; i < drops.size(); i++) {
+                String dropPath = basePath + ".death.drops." + i;
+                config.set(dropPath + ".item-id", drops.get(i).getItemId());
+                config.set(dropPath + ".quantity", drops.get(i).getQuantity());
+            }
+
+            List<CommandAction> deathCmds = dc.getDeathCommands();
+            config.set(basePath + ".death.commands", new ArrayList<>());
+            for (int i = 0; i < deathCmds.size(); i++) {
+                String cmdPath = basePath + ".death.commands." + i;
+                CommandAction cmd = deathCmds.get(i);
+                config.set(cmdPath + ".command", cmd.getCommand());
+                config.set(cmdPath + ".run-as-server", cmd.isRunAsServer());
+                config.set(cmdPath + ".delay", cmd.getDelaySeconds());
+            }
+
+            List<CitizenMessage> deathMsgs = dc.getDeathMessages();
+            config.set(basePath + ".death.messages", new ArrayList<>());
+            for (int i = 0; i < deathMsgs.size(); i++) {
+                String msgPath = basePath + ".death.messages." + i;
+                CitizenMessage msg = deathMsgs.get(i);
+                config.set(msgPath + ".message", msg.getMessage());
+                config.set(msgPath + ".delay", msg.getDelaySeconds());
+            }
+
             config.set(basePath + ".max-health", citizen.getMaxHealth());
             config.set(basePath + ".leash-distance", citizen.getLeashDistance());
             config.set(basePath + ".default-npc-attitude", citizen.getDefaultNpcAttitude());
@@ -770,6 +935,8 @@ public class CitizensManager {
             config.set(basePath + ".path.path-name", pathCfg.getPathName());
             config.set(basePath + ".path.patrol", pathCfg.isPatrol());
             config.set(basePath + ".path.patrol-wander-distance", pathCfg.getPatrolWanderDistance());
+            config.set(basePath + ".path.loop-mode", pathCfg.getLoopMode());
+            config.set(basePath + ".path.plugin-patrol-path", pathCfg.getPluginPatrolPath());
 
             // Save extended Template_Citizen parameters
             config.set(basePath + ".drop-list", citizen.getDropList());
@@ -808,44 +975,19 @@ public class CitizensManager {
                 saveGroups();
             }
 
-            // When the role file updates, Hytale respawns the NPC so we need to re-acquire the npcRef
-            if (npcSpawned && roleChanged) {
-                long start = System.currentTimeMillis();
-                final ScheduledFuture<?>[] futureRef = new ScheduledFuture<?>[1];
+            // This is needed due to a Hytale bug
+            // Also, we only respawn sometimes due to a bug that can occur causing double spawning
+            if (npcSpawned && roleChanged && respawnIfRoleChanged) {
+                HytaleServer.SCHEDULED_EXECUTOR.schedule(() -> {
+                    // This is causing issues
+//                    if (citizen.getNpcRef() == null || !citizen.getNpcRef().isValid()) {
+//                        return;
+//                    }
 
-                futureRef[0] = HytaleServer.SCHEDULED_EXECUTOR.scheduleAtFixedRate(() -> {
-                    long elapsedMs = System.currentTimeMillis() - start;
-                    if (elapsedMs >= 10_000) {
-                        futureRef[0].cancel(false);
-                        return;
-                    }
-
-                    if (citizen.getNpcRef() != null && citizen.getNpcRef().isValid()) {
-                        return;
-                    }
-
-                    futureRef[0].cancel(false);
-
-                    HytaleServer.SCHEDULED_EXECUTOR.schedule(() -> {
-                        if (citizen.getSpawnedUUID() == null) {
-                            return;
-                        }
-
-                        World world = Universe.get().getWorld(citizen.getWorldUUID());
-                        if (world == null) {
-                            return;
-                        }
-
-                        world.execute(() -> {
-                            citizen.setNpcRef(world.getEntityRef(citizen.getSpawnedUUID()));
-                        });
-
-                    }, 250, TimeUnit.MILLISECONDS);
-
-                }, 100, 250, TimeUnit.MILLISECONDS);
+                    updateSpawnedCitizen(citizen, false);
+                }, 5, TimeUnit.SECONDS);
             }
         } finally {
-            // Always end batch, even if an exception occurs
             config.endBatch();
         }
     }
@@ -967,6 +1109,8 @@ public class CitizensManager {
             EntityStatValue healthValue = statMap.get(DefaultEntityStatTypes.getHealth());
             if (healthValue != null) {
                 float healthDifference = healthValue.getMax() - maxHealth;
+                statMap.setStatValue(DefaultEntityStatTypes.getHealth(), healthValue.get() + healthDifference);
+
                 statMap.setStatValue(DefaultEntityStatTypes.getHealth(), healthValue.get() + healthDifference);
             }
         }
@@ -1132,9 +1276,15 @@ public class CitizensManager {
             store.addComponent(ref, Invulnerable.getComponentType());
         }
 
+        applyHealthOverride(ref, citizen);
+
         setInteractionComponent(store, ref, citizen);
         updateCitizenNPCItems(citizen);
         triggerAnimations(citizen, "DEFAULT");
+        String pluginPatrolPath = citizen.getPathConfig().getPluginPatrolPath();
+        if (!pluginPatrolPath.isEmpty() && patrolManager != null) {
+            patrolManager.startPatrol(citizen.getId(), pluginPatrolPath);
+        }
         citizensCurrentlySpawning.remove(citizen.getId());
     }
 
@@ -1225,10 +1375,47 @@ public class CitizensManager {
             store.addComponent(ref, Invulnerable.getComponentType());
         }
 
+        applyHealthOverride(ref, citizen);
+
         setInteractionComponent(store, ref, citizen);
         updateCitizenNPCItems(citizen);
         triggerAnimations(citizen, "DEFAULT");
+        String pluginPatrolPath = citizen.getPathConfig().getPluginPatrolPath();
+        if (!pluginPatrolPath.isEmpty() && patrolManager != null) {
+            patrolManager.startPatrol(citizen.getId(), pluginPatrolPath);
+        }
         citizensCurrentlySpawning.remove(citizen.getId());
+    }
+
+    public void applyHealthOverride(@Nonnull Ref<EntityStore> entityRef, @Nonnull CitizenData citizen) {
+        Store<EntityStore> entityStore = entityRef.getStore();
+        EntityStatMap statMap = entityStore.getComponent(entityRef, EntityStatsModule.get().getEntityStatMapComponentType());
+        if (statMap == null) {
+            return;
+        }
+
+        int healthIndex = DefaultEntityStatTypes.getHealth();
+        EntityStatValue healthStat = statMap.get(healthIndex);
+
+        if (!citizen.isOverrideHealth()) {
+            if (healthStat != null) {
+                statMap.removeModifier(healthIndex, "hycitizens_max_health");
+            }
+            return;
+        }
+
+        if (healthStat == null) {
+            return;
+        }
+
+        float defaultMaxHealth = healthStat.getMax();
+        float targetHealth = citizen.getHealthAmount();
+        float difference = targetHealth - defaultMaxHealth;
+
+        StaticModifier modifier = new StaticModifier(Modifier.ModifierTarget.MAX, StaticModifier.CalculationType.ADDITIVE, difference);
+
+        statMap.putModifier(healthIndex, "hycitizens_max_health", modifier);
+        statMap.setStatValue(DefaultEntityStatTypes.getHealth(), targetHealth);
     }
 
     public void setInteractionComponent(Store<EntityStore> store, Ref<EntityStore> ref, CitizenData citizenData) {
@@ -1238,9 +1425,22 @@ public class CitizensManager {
             return;
         }
 
-        if (citizenData.getFKeyInteractionEnabled()) {
+        // Show the "Press F to interact" popup only when at least one action uses F key.
+        if (hasFKeyActions(citizenData)) {
             store.putComponent(ref, Interactable.getComponentType(), Interactable.INSTANCE);
         }
+    }
+
+    public boolean hasFKeyActions(@Nonnull CitizenData citizen) {
+        for (CommandAction cmd : citizen.getCommandActions()) {
+            String trigger = cmd.getInteractionTrigger();
+            if (trigger == null || "BOTH".equals(trigger) || "F_KEY".equals(trigger)) return true;
+        }
+        for (CitizenMessage msg : citizen.getMessagesConfig().getMessages()) {
+            String trigger = msg.getInteractionTrigger();
+            if (trigger == null || "BOTH".equals(trigger) || "F_KEY".equals(trigger)) return true;
+        }
+        return false;
     }
 
     public PlayerSkin determineSkin(CitizenData citizen) {
@@ -1531,6 +1731,9 @@ public class CitizensManager {
     }
 
     public void despawnCitizenNPC(CitizenData citizen) {
+        if (patrolManager != null) {
+            patrolManager.onCitizenDespawned(citizen.getId());
+        }
         citizensCurrentlySpawning.remove(citizen.getId());
         citizen.setAwaitingRespawn(false);
 
@@ -2229,6 +2432,23 @@ public class CitizensManager {
         }
     }
 
+    public void addCitizenDeathListener(CitizenDeathListener listener) {
+        deathListeners.add(listener);
+    }
+
+    public void removeCitizenDeathListener(CitizenDeathListener listener) {
+        deathListeners.remove(listener);
+    }
+
+    public void fireCitizenDeathEvent(CitizenDeathEvent event) {
+        for (CitizenDeathListener listener : deathListeners) {
+            listener.onCitizenDeath(event);
+            if (event.isCancelled()) {
+                break;
+            }
+        }
+    }
+
     public void reload() {
         config.reload();
         loadAllCitizens();
@@ -2278,5 +2498,35 @@ public class CitizensManager {
         return citizens.values().stream()
                 .filter(c -> targetGroup.equals(c.getGroup()))
                 .collect(Collectors.toList());
+    }
+
+    @Nonnull
+    public PatrolManager getPatrolManager() {
+        return patrolManager;
+    }
+
+    public void startCitizenPatrol(@Nonnull String citizenId, @Nonnull String pathName) {
+        patrolManager.startPatrol(citizenId, pathName);
+    }
+
+    public void stopCitizenPatrol(@Nonnull String citizenId) {
+        patrolManager.stopPatrol(citizenId);
+    }
+
+    public void moveCitizenToPosition(@Nonnull String citizenId, @Nonnull Vector3d position) {
+        patrolManager.moveCitizenToPosition(citizenId, position);
+    }
+
+    public void stopCitizenMovement(@Nonnull String citizenId) {
+        patrolManager.stopMoving(citizenId);
+    }
+
+    public boolean isCitizenPatrolling(@Nonnull String citizenId) {
+        return patrolManager.isPatrolling(citizenId);
+    }
+
+    @Nullable
+    public String getCitizenActivePatrolPath(@Nonnull String citizenId) {
+        return patrolManager.getActivePatrolPath(citizenId);
     }
 }

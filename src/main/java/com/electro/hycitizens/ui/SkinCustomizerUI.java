@@ -75,8 +75,6 @@ public class SkinCustomizerUI {
         sessionStates.remove(playerRef.getUuid());
     }
 
-    // --- Build & Open ---
-
     private void buildAndOpen(PlayerRef playerRef, Store<EntityStore> store, CustomizerState state) {
         String html = buildHTML(state);
 
@@ -173,8 +171,6 @@ public class SkinCustomizerUI {
         ));
     }
 
-    // --- Build Sidebar ---
-
     private String buildCategorySidebar(CustomizerState state) {
         StringBuilder sb = new StringBuilder();
         for (int i = 0; i < SkinUtilities.SLOT_CATEGORIES.length; i++) {
@@ -186,8 +182,6 @@ public class SkinCustomizerUI {
         }
         return sb.toString();
     }
-
-    // --- Build Slot Tabs ---
 
     private String buildSlotTabs(CustomizerState state) {
         StringBuilder sb = new StringBuilder();
@@ -204,8 +198,6 @@ public class SkinCustomizerUI {
         }
         return sb.toString();
     }
-
-    // --- Build Options Grid ---
 
     private String buildOptionsGrid(CustomizerState state) {
         String currentSlot = state.selectedSlot;
@@ -262,8 +254,6 @@ public class SkinCustomizerUI {
         sb.append("</div>\n");
         return sb.toString();
     }
-
-    // --- Setup Listeners ---
 
     private void setupListeners(PageBuilder page, PlayerRef playerRef, Store<EntityStore> store, CustomizerState state) {
         // Category sidebar buttons
@@ -380,8 +370,6 @@ public class SkinCustomizerUI {
         });
     }
 
-    // --- Utility ---
-
     private static String formatCosmeticName(String value) {
         if (value == null || value.isEmpty()) return "None";
         String[] words = value.split("_");
@@ -409,8 +397,6 @@ public class SkinCustomizerUI {
                 .replace("\"", "&quot;");
     }
 
-    // --- Styles ---
-
     private String getStyles() {
         return """
                 <style>
@@ -429,7 +415,6 @@ public class SkinCustomizerUI {
                         border-radius: 12;
                     }
 
-                    /* --- Header --- */
                     .panel-header {
                         layout: top;
                         flex-weight: 0;
@@ -452,7 +437,6 @@ public class SkinCustomizerUI {
                         padding-top: 2;
                     }
 
-                    /* --- Action Bar --- */
                     .action-bar {
                         layout: left;
                         flex-weight: 0;
@@ -460,13 +444,11 @@ public class SkinCustomizerUI {
                         background-color: #161b22;
                     }
 
-                    /* --- Content Row (sidebar + main) --- */
                     .content-row {
                         layout: left;
                         flex-weight: 1;
                     }
 
-                    /* --- Category Sidebar --- */
                     .cat-sidebar {
                         layout: top;
                         flex-weight: 0;
@@ -488,14 +470,12 @@ public class SkinCustomizerUI {
                         background-color: #1f6feb;
                     }
 
-                    /* --- Main Area --- */
                     .main-area {
                         layout: top;
                         flex-weight: 1;
                         padding: 8;
                     }
 
-                    /* --- Slot Tabs --- */
                     .slot-tabs-row {
                         layout: left;
                         flex-weight: 0;
@@ -516,7 +496,6 @@ public class SkinCustomizerUI {
                         background-color: #30363d;
                     }
 
-                    /* --- Info Bar --- */
                     .info-bar {
                         layout: left;
                         flex-weight: 0;
@@ -538,7 +517,6 @@ public class SkinCustomizerUI {
                         flex-weight: 0;
                     }
 
-                    /* --- Options Grid --- */
                     .grid-scroll {
                         layout-mode: TopScrolling;
                         flex-weight: 1;
@@ -573,7 +551,6 @@ public class SkinCustomizerUI {
                         anchor-height: 38;
                     }
 
-                    /* --- Custom Input Bar --- */
                     .custom-bar {
                         layout: left;
                         flex-weight: 0;
@@ -588,7 +565,6 @@ public class SkinCustomizerUI {
                         font-size: 10;
                     }
 
-                    /* --- Buttons --- */
                     .btn-accent {
                         flex-weight: 0;
                         anchor-height: 36;
@@ -621,7 +597,6 @@ public class SkinCustomizerUI {
                         font-size: 10;
                     }
 
-                    /* --- Spacers --- */
                     .sp-xs {
                         flex-weight: 0;
                         anchor-height: 4;

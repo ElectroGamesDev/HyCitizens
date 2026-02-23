@@ -56,7 +56,8 @@ public class CitizenInteractionActionbase extends ActionBase {
             if (!citizen.getSpawnedUUID().equals(uuidComponent.getUuid()))
                 continue;
 
-            CitizenInteraction.handleInteraction(citizen, playerRef);
+            // This legacy action represents a "Use" (F key) interaction.
+            CitizenInteraction.handleInteraction(citizen, playerRef, CitizenInteraction.SOURCE_F_KEY);
 
             break;
         }

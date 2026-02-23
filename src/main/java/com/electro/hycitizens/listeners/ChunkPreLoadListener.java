@@ -44,7 +44,7 @@ public class ChunkPreLoadListener {
             }
 
             // Check if the citizen is in the chunk
-            long citizenChunkIndex = ChunkUtil.indexChunkFromBlock((int)citizen.getPosition().x, (int)citizen.getPosition().z);
+            long citizenChunkIndex = ChunkUtil.indexChunkFromBlock((int)citizen.getCurrentPosition().x, (int)citizen.getCurrentPosition().z);
             if (eventChunkIndex != citizenChunkIndex) {
                 continue;
             }
@@ -55,7 +55,7 @@ public class ChunkPreLoadListener {
             }
 
             // Hand off the heavy work to run outside the event
-            long chunkIndex = ChunkUtil.indexChunkFromBlock(citizen.getPosition().x, citizen.getPosition().z);
+            long chunkIndex = ChunkUtil.indexChunkFromBlock(citizen.getCurrentPosition().x, citizen.getCurrentPosition().z);
             HytaleServer.SCHEDULED_EXECUTOR.schedule(() -> {
                 processCitizenAsync(world, citizen, chunkIndex);
             }, 0, TimeUnit.MILLISECONDS);
@@ -83,6 +83,13 @@ public class ChunkPreLoadListener {
                     // Update NPC ref
                     citizen.setNpcRef(entityRef);
                     HyCitizensPlugin.get().getCitizensManager().setInteractionComponent(entityRef.getStore(), entityRef, citizen);
+
+                    // Start patrolling if it's set to patrol
+                    // Todo: Change this to make it so it starts at the closest waypoint
+                    String pluginPatrolPath = citizen.getPathConfig().getPluginPatrolPath();
+                    if (!pluginPatrolPath.isEmpty()) {
+                        plugin.getCitizensManager().getPatrolManager().startPatrol(citizen.getId(), pluginPatrolPath);
+                    }
                 }
             });
 
@@ -141,6 +148,13 @@ public class ChunkPreLoadListener {
                             // Update NPC ref
                             citizen.setNpcRef(entityRef);
                             HyCitizensPlugin.get().getCitizensManager().setInteractionComponent(entityRef.getStore(), entityRef, citizen);
+
+                            // Start patrolling if it's set to patrol
+                            // Todo: Change this to make it so it starts at the closest waypoint
+                            String pluginPatrolPath = citizen.getPathConfig().getPluginPatrolPath();
+                            if (!pluginPatrolPath.isEmpty()) {
+                                plugin.getCitizensManager().getPatrolManager().startPatrol(citizen.getId(), pluginPatrolPath);
+                            }
                         }
                     });
 
@@ -187,6 +201,13 @@ public class ChunkPreLoadListener {
                     // Update NPC ref
                     citizen.setNpcRef(entityRef);
                     HyCitizensPlugin.get().getCitizensManager().setInteractionComponent(entityRef.getStore(), entityRef, citizen);
+
+                    // Start patrolling if it's set to patrol
+                    // Todo: Change this to make it so it starts at the closest waypoint
+                    String pluginPatrolPath = citizen.getPathConfig().getPluginPatrolPath();
+                    if (!pluginPatrolPath.isEmpty()) {
+                        plugin.getCitizensManager().getPatrolManager().startPatrol(citizen.getId(), pluginPatrolPath);
+                    }
                 }
 
                 // Schedule delayed hologram check after periodic spawn

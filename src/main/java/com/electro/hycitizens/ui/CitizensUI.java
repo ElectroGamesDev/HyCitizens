@@ -13,6 +13,7 @@ import com.hypixel.hytale.protocol.PlayerSkin;
 import com.hypixel.hytale.protocol.packets.interface_.CustomPageLifetime;
 import com.hypixel.hytale.protocol.packets.interface_.CustomUIEventBindingType;
 import com.hypixel.hytale.server.core.Message;
+import com.hypixel.hytale.server.core.asset.type.item.config.Item;
 import com.hypixel.hytale.server.core.asset.type.model.config.ModelAsset;
 import com.hypixel.hytale.server.core.cosmetics.CosmeticsModule;
 import com.hypixel.hytale.server.core.entity.entities.Player;
@@ -93,6 +94,25 @@ public class CitizensUI {
             sb.append(">").append(escapeHtml(groupName)).append("</option>\n");
         }
 
+        return sb.toString();
+    }
+
+    private String generatePatrolPathOptions(String selectedPath) {
+        List<String> pathNames = plugin.getCitizensManager().getPatrolManager().getAllPathNames();
+        StringBuilder sb = new StringBuilder();
+        boolean noneSelected = selectedPath == null || selectedPath.isEmpty();
+        sb.append("<option value=\"\"");
+        if (noneSelected) {
+            sb.append(" selected");
+        }
+        sb.append(">None</option>\n");
+        for (String name : pathNames) {
+            sb.append("<option value=\"").append(escapeHtml(name)).append("\"");
+            if (name.equals(selectedPath)) {
+                sb.append(" selected");
+            }
+            sb.append(">").append(escapeHtml(name)).append("</option>\n");
+        }
         return sb.toString();
     }
 
@@ -814,12 +834,17 @@ public class CitizensUI {
         List<String> sortedGroups = new ArrayList<>(citizensByGroup.keySet());
         Collections.sort(sortedGroups);
 
+        // Sort citizens within each group alphabetically
+        citizensByGroup.values().forEach(list -> list.sort(Comparator.comparing(c -> c.getName().toLowerCase())));
+        // Sort ungrouped citizens alphabetically
+        ungroupedCitizens.sort(Comparator.comparing(c -> c.getName().toLowerCase()));
+
         // Create unified list
         List<ListItem> unifiedList = new ArrayList<>();
         boolean isViewingSpecificGroup = viewingGroup != null && !viewingGroup.isEmpty();
 
         if (isViewingSpecificGroup) {
-            // Viewing a specific group - show only citizens from that group
+            // Viewing a specific group, show only citizens from that group
             List<CitizenData> groupCitizens = citizensByGroup.get(viewingGroup);
             if (groupCitizens != null) {
                 for (CitizenData citizen : groupCitizens) {
@@ -827,7 +852,7 @@ public class CitizensUI {
                 }
             }
         } else {
-            // Viewing all - show groups first, then ungrouped citizens
+            // Viewing all, show groups first, then ungrouped citizens
             for (String groupName : sortedGroups) {
                 unifiedList.add(ListItem.forGroup(groupName, sanitizeGroupId(groupName)));
             }
@@ -993,14 +1018,14 @@ public class CitizensUI {
 
     public void openCreateCitizenGUI(@Nonnull PlayerRef playerRef, @Nonnull Store<EntityStore> store) {
         openCreateCitizenGUI(playerRef, store, true, "", 0, false, false, "",
-                1.0f, "", "", false, false, "", true, true, "");
+                1.0f, "", "", false, false, "", true, "");
     }
 
     public void openCreateCitizenGUI(@Nonnull PlayerRef playerRef, @Nonnull Store<EntityStore> store,
                                      boolean isPlayerModel, String name, float nametagOffset, boolean hideNametag, boolean hideNpc,
                                      String modelId, float scale, String permission, String permMessage, boolean useLiveSkin,
                                      boolean preserveState, String skinUsername, boolean rotateTowardsPlayer,
-                                     boolean fKeyInteraction, String group) {
+                                     String group) {
 
         List<String> allGroups = plugin.getCitizensManager().getAllGroups();
         String groupOptionsHTML = generateGroupDropdownOptions(group, allGroups);
@@ -1020,7 +1045,6 @@ public class CitizensUI {
                 .setVariable("useLiveSkin", useLiveSkin)
                 .setVariable("skinUsername", escapeHtml(skinUsername))
                 .setVariable("rotateTowardsPlayer", rotateTowardsPlayer)
-                .setVariable("fKeyInteraction", fKeyInteraction)
                 .setVariable("entityOptions", generateEntityDropdownOptions(modelId.isEmpty() ? "PlayerTestModel_V" : modelId));
 
         String html = template.process(getSharedStyles() + """
@@ -1226,26 +1250,11 @@ public class CitizensUI {
                             </div>
                 
                             <div class="spacer-md"></div>
-                
-                            <!-- Interaction Section -->
-                            <div class="section">
-                                {{@sectionHeader:title=Interaction,description=Configure how players interact with this citizen}}
-                
-                                <div class="checkbox-row">
-                                    <input type="checkbox" id="f-key-interaction" {{#if fKeyInteraction}}checked{{/if}} />
-                                    <div style="layout: top; flex-weight: 0; text-align: center;">
-                                        <p class="checkbox-label">Enable 'F' Key to Interact</p>
-                                        <p class="checkbox-description">Allow players to use the 'F' key to interact instead of just left clicking</p>
-                                    </div>
-                                </div>
-                            </div>
-                
-                            <div class="spacer-md"></div>
-                
+
                             <!-- Permissions Section -->
                             <div class="section">
                                 {{@sectionHeader:title=Permissions,description=Control who can interact with this citizen}}
-                
+
                                 <div class="form-row">
                                     <div class="form-col">
                                         <div class="form-group">
@@ -1253,13 +1262,13 @@ public class CitizensUI {
                                                 <p class="form-label">Required Permission</p>
                                                 <p class="form-label-optional">(Optional)</p>
                                             </div>
-                                            <input type="text" id="citizen-permission" class="form-input" value="{{$permission}}" 
+                                            <input type="text" id="citizen-permission" class="form-input" value="{{$permission}}"
                                                    placeholder="e.g., citizens.interact.vip" style="anchor-width: 215;" />
                                             <p class="form-hint" style="text-align: center;">Leave empty to allow everyone</p>
                                         </div>
                                     </div>
                                 </div>
-                
+
                                 <div class="spacer-sm"></div>
                 
                                 <div class="form-row">
@@ -1297,7 +1306,7 @@ public class CitizensUI {
                 .fromHtml(html);
 
         setupCreateCitizenListeners(page, playerRef, store, isPlayerModel, name, nametagOffset, hideNametag, hideNpc,
-                modelId, scale, permission, permMessage, useLiveSkin, skinUsername, rotateTowardsPlayer, fKeyInteraction, group);
+                modelId, scale, permission, permMessage, useLiveSkin, skinUsername, rotateTowardsPlayer, group);
 
         page.open(store);
     }
@@ -1311,7 +1320,6 @@ public class CitizensUI {
                 .setVariable("isPlayerModel", citizen.isPlayerModel())
                 .setVariable("useLiveSkin", citizen.isUseLiveSkin())
                 .setVariable("rotateTowardsPlayer", citizen.getRotateTowardsPlayer())
-                .setVariable("fKeyInteraction", citizen.getFKeyInteractionEnabled())
                 .setVariable("hideNametag", citizen.isHideNametag())
                 .setVariable("hideNpc", citizen.isHideNpc())
                 .setVariable("groupOptions", groupOptionsHTML)
@@ -1521,26 +1529,11 @@ public class CitizensUI {
                             </div>
                 
                             <div class="spacer-md"></div>
-                
-                            <!-- Interaction Section -->
-                            <div class="section">
-                                {{@sectionHeader:title=Interaction,description=Configure how players interact with this citizen}}
-                
-                                <div class="checkbox-row">
-                                    <input type="checkbox" id="f-key-interaction" {{#if fKeyInteraction}}checked{{/if}} />
-                                    <div style="layout: top; flex-weight: 0; text-align: center;">
-                                        <p class="checkbox-label">Enable 'F' Key to Interact</p>
-                                        <p class="checkbox-description">Allow players to use the 'F' key to interact instead of just left clicking</p>
-                                    </div>
-                                </div>
-                            </div>
-                
-                            <div class="spacer-md"></div>
-                
+
                             <!-- Permissions Section -->
                             <div class="section">
                                 {{@sectionHeader:title=Permissions,description=Control who can interact with this citizen}}
-                
+
                                 <div class="form-row">
                                     <div class="form-col">
                                         <div class="form-group">
@@ -1548,13 +1541,13 @@ public class CitizensUI {
                                                 <p class="form-label">Required Permission</p>
                                                 <p class="form-label-optional">(Optional)</p>
                                             </div>
-                                            <input type="text" id="citizen-permission" class="form-input" value="{{$citizen.requiredPermission}}" 
+                                            <input type="text" id="citizen-permission" class="form-input" value="{{$citizen.requiredPermission}}"
                                                    placeholder="e.g., citizens.interact.vip" style="anchor-width: 215;" />
                                             <p class="form-hint" style="text-align: center;">Leave empty to allow everyone</p>
                                         </div>
                                     </div>
                                 </div>
-                
+
                                 <div class="spacer-sm"></div>
                 
                                 <div class="form-row">
@@ -1651,13 +1644,36 @@ public class CitizensUI {
         private final int index;
         private final String message;
         private final String truncated;
+        private final String interactionTrigger;
+        private final String triggerLabel;
+        private final float delaySeconds;
+        private final boolean hasDelay;
 
         public IndexedMessage(int index, CitizenMessage msg) {
             this.index = index;
             this.message = msg.getMessage();
-            String truncatedRaw = msg.getMessage().length() > 60 ? msg.getMessage().substring(0, 57) + "..." : msg.getMessage();
+            String truncatedRaw = msg.getMessage().length() > 55
+                    ? msg.getMessage().substring(0, 52) + "..."
+                    : msg.getMessage();
             this.truncated = escapeHtml(truncatedRaw);
+            String trig = msg.getInteractionTrigger() != null ? msg.getInteractionTrigger() : "BOTH";
+            this.interactionTrigger = trig;
+            this.triggerLabel = switch (trig) {
+                case "LEFT_CLICK" -> "Left Click";
+                case "F_KEY" -> "F Key";
+                default -> "Both";
+            };
+            this.delaySeconds = msg.getDelaySeconds();
+            this.hasDelay = msg.getDelaySeconds() > 0;
         }
+
+        public int getIndex() { return index; }
+        public String getMessage() { return message; }
+        public String getTruncated() { return truncated; }
+        public String getInteractionTrigger() { return interactionTrigger; }
+        public String getTriggerLabel() { return triggerLabel; }
+        public float getDelaySeconds() { return delaySeconds; }
+        public boolean isHasDelay() { return hasDelay; }
     }
 
     public static class IndexedCommandAction {
@@ -1665,29 +1681,54 @@ public class CitizensUI {
         private final String command;
         private final boolean runAsServer;
         private final float delaySeconds;
+        private final boolean hasDelay;
+        private final String interactionTrigger;
+        private final String triggerLabel;
 
         public IndexedCommandAction(int index, CommandAction action) {
             this.index = index;
             this.command = escapeHtml(action.getCommand());
             this.runAsServer = action.isRunAsServer();
             this.delaySeconds = action.getDelaySeconds();
+            this.hasDelay = action.getDelaySeconds() > 0;
+            String trig = action.getInteractionTrigger() != null ? action.getInteractionTrigger() : "BOTH";
+            this.interactionTrigger = trig;
+            this.triggerLabel = switch (trig) {
+                case "LEFT_CLICK" -> "Left Click";
+                case "F_KEY" -> "F Key";
+                default -> "Both";
+            };
         }
 
-        public int getIndex() {
-            return index;
+        public int getIndex() { return index; }
+        public String getCommand() { return command; }
+        public boolean isRunAsServer() { return runAsServer; }
+        public float getDelaySeconds() { return delaySeconds; }
+        public boolean isHasDelay() { return hasDelay; }
+        public String getInteractionTrigger() { return interactionTrigger; }
+        public String getTriggerLabel() { return triggerLabel; }
+    }
+
+    public static final class IndexedWaypoint {
+        private final int index;
+        private final String displayX;
+        private final String displayY;
+        private final String displayZ;
+        private final float pauseSeconds;
+
+        public IndexedWaypoint(int index, PatrolWaypoint wp) {
+            this.index = index;
+            this.displayX = String.format("%.1f", wp.getX());
+            this.displayY = String.format("%.1f", wp.getY());
+            this.displayZ = String.format("%.1f", wp.getZ());
+            this.pauseSeconds = wp.getPauseSeconds();
         }
 
-        public String getCommand() {
-            return command;
-        }
-
-        public boolean isRunAsServer() {
-            return runAsServer;
-        }
-
-        public float getDelaySeconds() {
-            return delaySeconds;
-        }
+        public int getIndex() { return index; }
+        public String getDisplayX() { return displayX; }
+        public String getDisplayY() { return displayY; }
+        public String getDisplayZ() { return displayZ; }
+        public float getPauseSeconds() { return pauseSeconds; }
     }
 
     public void openCommandActionsGUI(@Nonnull PlayerRef playerRef, @Nonnull Store<EntityStore> store,
@@ -1706,8 +1747,8 @@ public class CitizensUI {
 
         String html = template.process(getSharedStyles() + """
                 <div class="page-overlay">
-                    <div class="main-container" style="anchor-width: 850; anchor-height: 700;">
-                
+                    <div class="main-container" style="anchor-width: 900; anchor-height: 720;">
+
                         <!-- Header -->
                         <div class="header">
                             <div class="header-content">
@@ -1715,39 +1756,34 @@ public class CitizensUI {
                                 <p class="header-subtitle">Configure commands that execute when players interact ({{$actionCount}} commands)</p>
                             </div>
                         </div>
-                
+
                         <!-- Body -->
                         <div class="body">
-                
-                            <!-- Add Command Section -->
+
+                            <!-- Info + Add Section -->
                             <div class="section">
-                                {{@sectionHeader:title=Add New Command}}
-                
-                                <div class="form-row">
-                                    <input type="text" id="new-command" class="form-input" value="" 
-                                           placeholder="give {PlayerName} Rock_Gem_Diamond"
-                                           style="flex-weight: 1;" />
-                                    <div class="spacer-h-sm"></div>
-                                    <button id="add-command-btn" class="btn-primary" style="anchor-width: 120;">Add</button>
+                                {{@sectionHeader:title=Commands}}
+
+                                <div style="layout: center;">
+                                    <button id="add-command-btn" class="btn-primary" style="anchor-width: 200; anchor-height: 38;">Add Command</button>
                                 </div>
-                
-                                <div class="spacer-md"></div>
-                
-                                <!-- Help Info -->
+                                
+                                <div class="spacer-sm"></div>
+
                                 <div class="card">
                                     <div class="card-body">
-                                        <p style="color: #8b949e; font-size: 12;"><span style="color: #58a6ff;">Variables:</span> Use {PlayerName} for player's name, {CitizenName} for citizen's name</p>
+                                        <p style="color: #8b949e; font-size: 12;"><span style="color: #58a6ff;">Variables:</span> {PlayerName}, {CitizenName}</p>
                                         <div class="spacer-xs"></div>
-                                        <p style="color: #8b949e; font-size: 12;">Commands run as <span style="color: #58a6ff;">PLAYER</span> by default. Click toggle to run as <span style="color: #a371f7;">SERVER</span>.</p>
+                                        <p style="color: #8b949e; font-size: 12;">Each command can be triggered by <span style="color: #58a6ff;">Left Click</span>, <span style="color: #a371f7;">F Key</span>, or <span style="color: #3fb950;">Both</span>.</p>
                                     </div>
                                 </div>
                             </div>
-                
+
                             <div class="spacer-md"></div>
-                
+
                             <!-- Commands List -->
                             {{#if hasActions}}
-                            <div class="list-container" style="anchor-height: 320;">
+                            <div class="list-container" style="anchor-height: 360;">
                                 {{#each actions}}
                                 <div class="command-item">
                                     <div class="command-icon {{#if runAsServer}}command-icon-server{{else}}command-icon-player{{/if}}">
@@ -1755,12 +1791,10 @@ public class CitizensUI {
                                     </div>
                                     <div class="command-content">
                                         <p class="command-text">/{{$command}}</p>
-                                        <p class="command-type">Runs as {{#if runAsServer}}SERVER{{else}}PLAYER{{/if}}{{#if $delaySeconds}} | Delay: {{$delaySeconds}}s{{/if}}</p>
+                                        <p class="command-type">{{$triggerLabel}}{{#if hasDelay}} | Delay: {{$delaySeconds}}s{{/if}}</p>
                                     </div>
                                     <div class="command-actions">
                                         <button id="edit-cmd-{{$index}}" class="btn-info btn-small">Edit</button>
-                                        <div class="spacer-h-sm"></div>
-                                        <button id="toggle-{{$index}}" class="btn-secondary btn-small">Toggle</button>
                                         <div class="spacer-h-sm"></div>
                                         <button id="delete-{{$index}}" class="btn-danger btn-small">Delete</button>
                                     </div>
@@ -1772,20 +1806,20 @@ public class CitizensUI {
                             <div class="empty-state">
                                 <div class="empty-state-content">
                                     <p class="empty-state-title">No Commands Added</p>
-                                    <p class="empty-state-description">Add commands above to execute when players interact with this citizen.</p>
+                                    <p class="empty-state-description">Click "Add Command" above to create a new command action.</p>
                                 </div>
                             </div>
                             {{/if}}
-                
+
                         </div>
-                
+
                         <!-- Footer -->
                         <div class="footer">
                             <button id="cancel-btn" class="btn-ghost">Cancel</button>
                             <div class="spacer-h-md"></div>
                             <button id="done-btn" class="btn-primary">Done</button>
                         </div>
-                
+
                     </div>
                 </div>
                 """);
@@ -1911,7 +1945,6 @@ public class CitizensUI {
                         clonedCitizen.setNametagOffset(citizen.getNametagOffset());
                         clonedCitizen.setHideNametag(citizen.isHideNametag());
                         clonedCitizen.setHideNpc(citizen.isHideNpc());
-                        clonedCitizen.setFKeyInteractionEnabled(citizen.getFKeyInteractionEnabled());
                         clonedCitizen.setNpcHelmet(citizen.getNpcHelmet());
                         clonedCitizen.setNpcChest(citizen.getNpcChest());
                         clonedCitizen.setNpcGloves(citizen.getNpcGloves());
@@ -1938,10 +1971,24 @@ public class CitizensUI {
                         // Copy attitude and damage settings
                         clonedCitizen.setAttitude(citizen.getAttitude());
                         clonedCitizen.setTakesDamage(citizen.isTakesDamage());
+                        clonedCitizen.setOverrideHealth(citizen.isOverrideHealth());
+                        clonedCitizen.setHealthAmount(citizen.getHealthAmount());
+                        clonedCitizen.setOverrideDamage(citizen.isOverrideDamage());
+                        clonedCitizen.setDamageAmount(citizen.getDamageAmount());
 
                         // Copy respawn settings
                         clonedCitizen.setRespawnOnDeath(citizen.isRespawnOnDeath());
                         clonedCitizen.setRespawnDelaySeconds(citizen.getRespawnDelaySeconds());
+
+                        // Copy death config
+                        DeathConfig srcDc = citizen.getDeathConfig();
+                        DeathConfig clonedDc = new DeathConfig();
+                        clonedDc.setCommandSelectionMode(srcDc.getCommandSelectionMode());
+                        clonedDc.setMessageSelectionMode(srcDc.getMessageSelectionMode());
+                        clonedDc.setDropItems(srcDc.getDropItems());
+                        clonedDc.setDeathCommands(srcDc.getDeathCommands());
+                        clonedDc.setDeathMessages(srcDc.getDeathMessages());
+                        clonedCitizen.setDeathConfig(clonedDc);
 
                         // Copy config objects
                         CombatConfig clonedCombat = new CombatConfig();
@@ -2007,7 +2054,7 @@ public class CitizensUI {
                                              boolean initialHideNametag, boolean initialHideNpc, String initialModelId, float initialScale,
                                              String initialPermission, String initialPermMessage, boolean initialUseLiveSkin,
                                              String initialSkinUsername, boolean initialRotateTowardsPlayer,
-                                             boolean initialFKeyInteraction, String initialGroup) {
+                                             String initialGroup) {
         final List<CommandAction> tempActions = new ArrayList<>();
         final String[] currentName = {initialName};
         final float[] nametagOffset = {initialNametagOffset};
@@ -2022,7 +2069,6 @@ public class CitizensUI {
         final String[] skinUsername = {initialSkinUsername};
         final PlayerSkin[] cachedSkin = {null};
         final boolean[] rotateTowardsPlayer = {initialRotateTowardsPlayer};
-        final boolean[] FKeyInteraction = {initialFKeyInteraction};
         final String[] currentGroup = {initialGroup};
 
         page.addEventListener("citizen-name", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
@@ -2095,10 +2141,6 @@ public class CitizensUI {
             hideNpc[0] = ctx.getValue("hide-npc-check", Boolean.class).orElse(false);
         });
 
-        page.addEventListener("f-key-interaction", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
-            FKeyInteraction[0] = ctx.getValue("f-key-interaction", Boolean.class).orElse(true);
-        });
-
         page.addEventListener("citizen-scale", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
             ctx.getValue("citizen-scale", Double.class)
                     .ifPresent(val -> currentScale[0] = val.floatValue());
@@ -2138,13 +2180,13 @@ public class CitizensUI {
         page.addEventListener("type-player", CustomUIEventBindingType.Activating, (event, ctx) -> {
             openCreateCitizenGUI(playerRef, store, true, currentName[0], nametagOffset[0], hideNametag[0], hideNpc[0], currentModelId[0],
                     currentScale[0], currentPermission[0], currentPermMessage[0], useLiveSkin[0], true,
-                    skinUsername[0], rotateTowardsPlayer[0], FKeyInteraction[0], currentGroup[0]);
+                    skinUsername[0], rotateTowardsPlayer[0], currentGroup[0]);
         });
 
         page.addEventListener("type-entity", CustomUIEventBindingType.Activating, (event, ctx) -> {
             openCreateCitizenGUI(playerRef, store, false, currentName[0], nametagOffset[0], hideNametag[0], hideNpc[0], currentModelId[0],
                     currentScale[0], currentPermission[0], currentPermMessage[0], useLiveSkin[0], true,
-                    skinUsername[0], rotateTowardsPlayer[0], FKeyInteraction[0], currentGroup[0]);
+                    skinUsername[0], rotateTowardsPlayer[0], currentGroup[0]);
         });
 
         page.addEventListener("create-btn", CustomUIEventBindingType.Activating, event -> {
@@ -2203,8 +2245,8 @@ public class CitizensUI {
             citizen.setNametagOffset(nametagOffset[0]);
             citizen.setHideNametag(hideNametag[0]);
             citizen.setHideNpc(hideNpc[0]);
-            citizen.setFKeyInteractionEnabled(FKeyInteraction[0]);
             citizen.setGroup(currentGroup[0]);
+            plugin.getCitizensManager().autoResolveAttackType(citizen);
 
             if (isPlayerModel[0]) {
                 if (cachedSkin[0] != null) {
@@ -2255,7 +2297,6 @@ public class CitizensUI {
         final boolean[] isPlayerModel = {citizen.isPlayerModel()};
         final boolean[] useLiveSkin = {citizen.isUseLiveSkin()};
         final boolean[] rotateTowardsPlayer = {citizen.getRotateTowardsPlayer()};
-        final boolean[] FKeyInteraction = {citizen.getFKeyInteractionEnabled()};
         final String[] skinUsername = {citizen.getSkinUsername()};
         final PlayerSkin[] cachedSkin = {citizen.getCachedSkin()};
         final String[] currentGroup = {citizen.getGroup()};
@@ -2348,10 +2389,6 @@ public class CitizensUI {
 
         page.addEventListener("hide-npc-check", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
             hideNpc[0] = ctx.getValue("hide-npc-check", Boolean.class).orElse(false);
-        });
-
-        page.addEventListener("f-key-interaction", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
-            FKeyInteraction[0] = ctx.getValue("f-key-interaction", Boolean.class).orElse(true);
         });
 
         page.addEventListener("citizen-scale", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
@@ -2500,6 +2537,10 @@ public class CitizensUI {
                 }
             }
 
+            if (!citizen.getModelId().equals(modelId)) {
+                plugin.getCitizensManager().autoResolveAttackType(citizen);
+            }
+
             if (skinUsername[0].isEmpty()) {
                 skinUsername[0] = playerRef.getUsername();
             }
@@ -2514,7 +2555,6 @@ public class CitizensUI {
             citizen.setPlayerModel(isPlayerModel[0]);
             citizen.setUseLiveSkin(useLiveSkin[0]);
             citizen.setRotateTowardsPlayer(rotateTowardsPlayer[0]);
-            citizen.setFKeyInteractionEnabled(FKeyInteraction[0]);
             citizen.setSkinUsername(skinUsername[0].trim());
             citizen.setNametagOffset(nametagOffset[0]);
             citizen.setHideNametag(hideNametag[0]);
@@ -2576,28 +2616,10 @@ public class CitizensUI {
 
     private void setupCommandActionsListeners(PageBuilder page, PlayerRef playerRef, Store<EntityStore> store,
                                               String citizenId, List<CommandAction> actions, boolean isCreating) {
-        final String[] currentCommand = {""};
-
-        page.addEventListener("new-command", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
-            currentCommand[0] = ctx.getValue("new-command", String.class).orElse("");
-        });
-
+        // "Add Command" button opens the edit GUI in add-new mode (editIndex = -1)
         page.addEventListener("add-command-btn", CustomUIEventBindingType.Activating, event -> {
-            String command = currentCommand[0].trim();
-
-            if (command.isEmpty()) {
-                playerRef.sendMessage(Message.raw("Please enter a command!").color(Color.RED));
-                return;
-            }
-
-            if (command.startsWith("/")) {
-                command = command.substring(1);
-            }
-
-            actions.add(new CommandAction(command, false, 0.0f));
-            playerRef.sendMessage(Message.raw("Command added!").color(Color.GREEN));
-
-            openCommandActionsGUI(playerRef, store, citizenId, actions, isCreating);
+            openEditCommandGUI(playerRef, store, citizenId, actions, isCreating,
+                    new CommandAction("", false, 0.0f, "BOTH"), -1);
         });
 
         for (int i = 0; i < actions.size(); i++) {
@@ -2608,19 +2630,9 @@ public class CitizensUI {
                 openEditCommandGUI(playerRef, store, citizenId, actions, isCreating, action, index);
             });
 
-            page.addEventListener("toggle-" + i, CustomUIEventBindingType.Activating, event -> {
-                CommandAction action = actions.get(index);
-                action.setRunAsServer(!action.isRunAsServer());
-                playerRef.sendMessage(Message.raw("Command will now run as " +
-                        (action.isRunAsServer() ? "SERVER" : "PLAYER")).color(Color.GREEN));
-
-                openCommandActionsGUI(playerRef, store, citizenId, actions, isCreating);
-            });
-
             page.addEventListener("delete-" + i, CustomUIEventBindingType.Activating, event -> {
                 actions.remove(index);
                 playerRef.sendMessage(Message.raw("Command removed!").color(Color.GREEN));
-
                 openCommandActionsGUI(playerRef, store, citizenId, actions, isCreating);
             });
         }
@@ -2654,20 +2666,27 @@ public class CitizensUI {
     public void openEditCommandGUI(@Nonnull PlayerRef playerRef, @Nonnull Store<EntityStore> store,
                                    @Nonnull String citizenId, @Nonnull List<CommandAction> actions,
                                    boolean isCreating, @Nonnull CommandAction command, int editIndex) {
+        boolean isNew = (editIndex == -1);
+        String currentTrigger = command.getInteractionTrigger() != null ? command.getInteractionTrigger() : "BOTH";
+
         TemplateProcessor template = createBaseTemplate()
                 .setVariable("command", escapeHtml(command.getCommand()))
                 .setVariable("runAsServer", command.isRunAsServer())
-                .setVariable("delaySeconds", command.getDelaySeconds());
+                .setVariable("delaySeconds", command.getDelaySeconds())
+                .setVariable("isNew", isNew)
+                .setVariable("isLeftClick", "LEFT_CLICK".equals(currentTrigger))
+                .setVariable("isFKey", "F_KEY".equals(currentTrigger))
+                .setVariable("isBoth", "BOTH".equals(currentTrigger));
 
         String html = template.process(getSharedStyles() + """
                 <div class="page-overlay">
-                    <div class="main-container" style="anchor-width: 650; anchor-height: 500;">
+                    <div class="main-container" style="anchor-width: 680; anchor-height: 580;">
 
                         <!-- Header -->
                         <div class="header">
                             <div class="header-content">
-                                <p class="header-title">Edit Command</p>
-                                <p class="header-subtitle">Modify the command that executes on interaction</p>
+                                <p class="header-title">{{#if isNew}}Add Command{{else}}Edit Command{{/if}}</p>
+                                <p class="header-subtitle">{{#if isNew}}Configure a new command to execute on interaction{{else}}Modify the command that executes on interaction{{/if}}</p>
                             </div>
                         </div>
 
@@ -2678,18 +2697,42 @@ public class CitizensUI {
                             <div class="section">
                                 {{@sectionHeader:title=Command}}
                                 <input type="text" id="command-input" class="form-input" value="{{$command}}"
-                                       placeholder="Enter command (without leading /)" />
-                                <p class="form-hint">The command to execute. Do not include the leading /</p>
+                                       placeholder="give {PlayerName} Rock_Gem_Diamond" />
+                                <p class="form-hint">The command to execute. Do not include the leading /. Use {PlayerName} or {CitizenName} as variables.</p>
                             </div>
 
                             <div class="spacer-md"></div>
-                            
+
+                            <!-- Interaction Trigger -->
+                            <div class="section">
+                                {{@sectionHeader:title=Interaction Trigger,description=Which player action triggers this command}}
+                                <div class="form-row">
+                                    <button id="trigger-left-click" class="{{#if isLeftClick}}btn-primary{{else}}btn-secondary{{/if}}" style="flex-weight: 1; anchor-height: 38;">Left Click</button>
+                                    <div class="spacer-h-sm"></div>
+                                    <button id="trigger-f-key" class="{{#if isFKey}}btn-primary{{else}}btn-secondary{{/if}}" style="flex-weight: 1; anchor-height: 38;">F Key</button>
+                                    <div class="spacer-h-sm"></div>
+                                    <button id="trigger-both" class="{{#if isBoth}}btn-primary{{else}}btn-secondary{{/if}}" style="flex-weight: 1; anchor-height: 38;">Both</button>
+                                </div>
+                                <div class="spacer-xs"></div>
+                                {{#if isLeftClick}}
+                                <p style="color: #8b949e; font-size: 12; text-align: center;">Runs when the player left-clicks the NPC.</p>
+                                {{/if}}
+                                {{#if isFKey}}
+                                <p style="color: #8b949e; font-size: 12; text-align: center;">Runs when the player presses F to interact with the NPC.</p>
+                                {{/if}}
+                                {{#if isBoth}}
+                                <p style="color: #8b949e; font-size: 12; text-align: center;">Runs on any interaction (left click or F key).</p>
+                                {{/if}}
+                            </div>
+
+                            <div class="spacer-md"></div>
+
                             <!-- Delay Input -->
                             <div class="section">
                                 {{@sectionHeader:title=Delay}}
                                 {{@numberField:id=delay-seconds,label=Delay Before Command (seconds),value={{$delaySeconds}},placeholder=0,min=0,max=300,step=0.5,decimals=1,hint=Wait time before executing this command}}
                             </div>
-    
+
                             <div class="spacer-md"></div>
 
                             <!-- Run As Server Toggle -->
@@ -2697,7 +2740,7 @@ public class CitizensUI {
                                 {{@sectionHeader:title=Execution Mode}}
                                 <div class="checkbox-row">
                                     <input type="checkbox" id="run-as-server" {{#if runAsServer}}checked{{/if}} />
-                                    <div style="layout: top; flex-weight: 0; text-align: center;">
+                                    <div style="layout: top; flex-weight: 0;">
                                         <p class="checkbox-label">Run as Server</p>
                                         <p class="checkbox-description">Execute as console command instead of player</p>
                                     </div>
@@ -2710,7 +2753,7 @@ public class CitizensUI {
                         <div class="footer">
                             <button id="cancel-btn" class="btn-ghost">Cancel</button>
                             <div class="spacer-h-md"></div>
-                            <button id="save-cmd-btn" class="btn-primary" style="anchor-width: 200;">Save Changes</button>
+                            <button id="save-cmd-btn" class="btn-primary" style="anchor-width: 200;">{{#if isNew}}Add Command{{else}}Save Changes{{/if}}</button>
                         </div>
 
                     </div>
@@ -2724,9 +2767,28 @@ public class CitizensUI {
         final String[] commandText = {command.getCommand()};
         final boolean[] runAsServer = {command.isRunAsServer()};
         final float[] delaySeconds = {command.getDelaySeconds()};
+        final String[] interactionTrigger = {currentTrigger};
 
         page.addEventListener("command-input", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
             commandText[0] = ctx.getValue("command-input", String.class).orElse("");
+        });
+
+        page.addEventListener("trigger-left-click", CustomUIEventBindingType.Activating, event -> {
+            interactionTrigger[0] = "LEFT_CLICK";
+            openEditCommandGUI(playerRef, store, citizenId, actions, isCreating,
+                    new CommandAction(commandText[0], runAsServer[0], delaySeconds[0], "LEFT_CLICK"), editIndex);
+        });
+
+        page.addEventListener("trigger-f-key", CustomUIEventBindingType.Activating, event -> {
+            interactionTrigger[0] = "F_KEY";
+            openEditCommandGUI(playerRef, store, citizenId, actions, isCreating,
+                    new CommandAction(commandText[0], runAsServer[0], delaySeconds[0], "F_KEY"), editIndex);
+        });
+
+        page.addEventListener("trigger-both", CustomUIEventBindingType.Activating, event -> {
+            interactionTrigger[0] = "BOTH";
+            openEditCommandGUI(playerRef, store, citizenId, actions, isCreating,
+                    new CommandAction(commandText[0], runAsServer[0], delaySeconds[0], "BOTH"), editIndex);
         });
 
         page.addEventListener("delay-seconds", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
@@ -2749,13 +2811,23 @@ public class CitizensUI {
         });
 
         page.addEventListener("save-cmd-btn", CustomUIEventBindingType.Activating, event -> {
-            if (commandText[0].trim().isEmpty()) {
+            String cmd = commandText[0].trim();
+            if (cmd.isEmpty()) {
                 playerRef.sendMessage(Message.raw("Command cannot be empty!").color(Color.RED));
                 return;
             }
+            if (cmd.startsWith("/")) {
+                cmd = cmd.substring(1);
+            }
 
-            actions.set(editIndex, new CommandAction(commandText[0].trim(), runAsServer[0], delaySeconds[0]));
-            playerRef.sendMessage(Message.raw("Command updated!").color(Color.GREEN));
+            CommandAction saved = new CommandAction(cmd, runAsServer[0], delaySeconds[0], interactionTrigger[0]);
+            if (isNew) {
+                actions.add(saved);
+                playerRef.sendMessage(Message.raw("Command added!").color(Color.GREEN));
+            } else {
+                actions.set(editIndex, saved);
+                playerRef.sendMessage(Message.raw("Command updated!").color(Color.GREEN));
+            }
             openCommandActionsGUI(playerRef, store, citizenId, actions, isCreating);
         });
 
@@ -2796,7 +2868,14 @@ public class CitizensUI {
                 .setVariable("isNeutral", "NEUTRAL".equals(attitude))
                 .setVariable("isAggressive", "AGGRESSIVE".equals(attitude))
                 .setVariable("takesDamage", takesDamage)
-                .setVariable("isAnyWander", !"IDLE".equals(mb.getType()))
+                .setVariable("overrideHealth", citizen.isOverrideHealth())
+                .setVariable("healthAmount", citizen.getHealthAmount())
+                .setVariable("overrideDamage", citizen.isOverrideDamage())
+                .setVariable("damageAmount", citizen.getDamageAmount())
+                .setVariable("isPatrol", "PATROL".equals(mb.getType()))
+                .setVariable("isAnyWander", "WANDER".equals(mb.getType()) || "WANDER_CIRCLE".equals(mb.getType()) || "WANDER_RECT".equals(mb.getType()))
+                .setVariable("patrolPathOptions", generatePatrolPathOptions(citizen.getPathConfig().getPluginPatrolPath()))
+                .setVariable("hasPatrolPaths", !plugin.getCitizensManager().getPatrolManager().getAllPathNames().isEmpty())
                 .setVariable("respawnOnDeath", citizen.isRespawnOnDeath())
                 .setVariable("respawnDelay", citizen.getRespawnDelaySeconds());
 
@@ -2867,6 +2946,42 @@ public class CitizensUI {
                                 <div class="spacer-xs"></div>
                                 <p style="color: #8b949e; font-size: 12; text-align: center;">When enabled, the citizen can take damage and be killed by players.</p>
                             </div>
+
+                            <div class="spacer-sm"></div>
+
+                            <!-- Override Health Section -->
+                            <div class="section">
+                                <p style="color: #c9d1d9; font-size: 12; font-weight: bold; text-align: center;">Override Health</p>
+                                <div class="spacer-xs"></div>
+                                <div style="layout: center;">
+                                    <button id="toggle-override-health" class="{{#if overrideHealth}}btn-primary{{else}}btn-secondary{{/if}}" style="anchor-width: 140; anchor-height: 40;">{{#if overrideHealth}}Enabled{{else}}Disabled{{/if}}</button>
+                                </div>
+                                <div class="spacer-xs"></div>
+                                {{#if overrideHealth}}
+                                <div class="form-row">
+                                    {{@numberField:id=health-amount,label=Max Health,value={{$healthAmount}},placeholder=100,min=1,max=10000,step=1,decimals=0}}
+                                </div>
+                                {{/if}}
+                                <p style="color: #8b949e; font-size: 12; text-align: center;">Override the citizen's max health.</p>
+                            </div>
+
+                            <div class="spacer-sm"></div>
+
+                            <!-- Override Damage Section -->
+                            <div class="section">
+                                <p style="color: #c9d1d9; font-size: 12; font-weight: bold; text-align: center;">Override Damage</p>
+                                <div class="spacer-xs"></div>
+                                <div style="layout: center;">
+                                    <button id="toggle-override-damage" class="{{#if overrideDamage}}btn-primary{{else}}btn-secondary{{/if}}" style="anchor-width: 140; anchor-height: 40;">{{#if overrideDamage}}Enabled{{else}}Disabled{{/if}}</button>
+                                </div>
+                                <div class="spacer-xs"></div>
+                                {{#if overrideDamage}}
+                                <div class="form-row">
+                                    {{@numberField:id=damage-amount,label=Damage Amount,value={{$damageAmount}},placeholder=10,min=0,max=10000,step=1,decimals=1}}
+                                </div>
+                                {{/if}}
+                                <p style="color: #8b949e; font-size: 12; text-align: center;">Override how much damage the citizen deals.</p>
+                            </div>
                 
                             <div class="spacer-sm"></div>
                 
@@ -2893,17 +3008,15 @@ public class CitizensUI {
                                 {{@sectionHeader:title=Movement Type}}
                 
                                 <div class="form-row">
-                                    <button id="move-idle" class="{{#if isIdle}}btn-primary{{else}}btn-secondary{{/if}}" style="anchor-width: 150; anchor-height: 38;">Idle</button>
+                                    <button id="move-idle" class="{{#if isIdle}}btn-primary{{else}}btn-secondary{{/if}}" style="anchor-width: 130; anchor-height: 38;">Idle</button>
                                     <div class="spacer-h-sm"></div>
-                                    <button id="move-wander" class="{{#if isWander}}btn-primary{{else}}btn-secondary{{/if}}" style="anchor-width: 150; anchor-height: 38;">Wander</button>
-                                    <!-- <div class="spacer-h-sm"></div>
-                                    <button id="move-wander-circle" class="{{#if isWanderCircle}}btn-primary{{else}}btn-secondary{{/if}}" style="anchor-width: 150; anchor-height: 38;">Wander Circle</button>
+                                    <button id="move-wander" class="{{#if isWander}}btn-primary{{else}}btn-secondary{{/if}}" style="anchor-width: 130; anchor-height: 38;">Wander</button>
                                     <div class="spacer-h-sm"></div>
-                                    <button id="move-wander-rect" class="{{#if isWanderRect}}btn-primary{{else}}btn-secondary{{/if}}" style="anchor-width: 150; anchor-height: 38;">Wander Rect</button> -->
+                                    <button id="move-patrol" class="{{#if isPatrol}}btn-primary{{else}}btn-secondary{{/if}}" style="anchor-width: 130; anchor-height: 38;">Patrol</button>
                                 </div>
-                
+
                                 <div class="spacer-sm"></div>
-                
+
                                 {{#if isIdle}}
                                 <div class="card">
                                     <div class="card-body">
@@ -2911,7 +3024,21 @@ public class CitizensUI {
                                     </div>
                                 </div>
                                 {{/if}}
-                
+
+                                {{#if isPatrol}}
+                                {{#if hasPatrolPaths}}
+                                <select id="plugin-patrol-path-behavior" data-hyui-showlabel="true">
+                                    {{{$patrolPathOptions}}}
+                                </select>
+                                <div class="spacer-xs"></div>
+                                <button id="manage-paths-from-behaviors-btn" class="btn-secondary" style="anchor-width: 200;">Manage Patrol Paths</button>
+                                {{else}}
+                                <p style="color: #8b949e; font-size: 12; text-align: center;">No patrol paths exist yet.</p>
+                                <div class="spacer-xs"></div>
+                                <button id="manage-paths-from-behaviors-btn" class="btn-secondary" style="anchor-width: 130;">Create a Patrol Path</button>
+                                {{/if}}
+                                {{/if}}
+
                                 {{#if isAnyWander}}
                                 <div class="spacer-sm"></div>
                                 <div class="form-row">
@@ -2975,9 +3102,11 @@ public class CitizensUI {
                                     <div class="spacer-h-sm"></div>
                                     <button id="detection-config-btn" class="btn-info" style="anchor-width: 225; anchor-height: 44;">Detection Config</button>
                                     <div class="spacer-h-sm"></div>
-                                    <button id="path-config-btn" class="btn-info" style="anchor-width: 200; anchor-height: 44;">Path Config</button>
-                                    <div class="spacer-h-sm"></div>
                                     <button id="advanced-settings-btn" class="btn-info" style="anchor-width: 240; anchor-height: 44;">Advanced Settings</button>
+                                </div>
+                                <div class="spacer-sm"></div>
+                                <div class="form-row">
+                                    <button id="death-config-btn" class="btn-info" style="anchor-width: 200; anchor-height: 44;">Death Config</button>
                                 </div>
                             </div>
 
@@ -3018,19 +3147,19 @@ public class CitizensUI {
         // Attitude buttons
         page.addEventListener("att-passive", CustomUIEventBindingType.Activating, event -> {
             citizen.setAttitude("PASSIVE");
-            plugin.getCitizensManager().saveCitizen(citizen);
+            plugin.getCitizensManager().saveCitizen(citizen, true);
             openBehaviorsGUI(playerRef, store, citizen);
         });
 
         page.addEventListener("att-neutral", CustomUIEventBindingType.Activating, event -> {
             citizen.setAttitude("NEUTRAL");
-            plugin.getCitizensManager().saveCitizen(citizen);
+            plugin.getCitizensManager().saveCitizen(citizen, true);
             openBehaviorsGUI(playerRef, store, citizen);
         });
 
         page.addEventListener("att-aggressive", CustomUIEventBindingType.Activating, event -> {
             citizen.setAttitude("AGGRESSIVE");
-            plugin.getCitizensManager().saveCitizen(citizen);
+            plugin.getCitizensManager().saveCitizen(citizen, true);
             openBehaviorsGUI(playerRef, store, citizen);
         });
 
@@ -3041,6 +3170,44 @@ public class CitizensUI {
             openBehaviorsGUI(playerRef, store, citizen);
         });
 
+        // Override health toggle
+        page.addEventListener("toggle-override-health", CustomUIEventBindingType.Activating, event -> {
+            boolean newValue = !citizen.isOverrideHealth();
+            citizen.setOverrideHealth(newValue);
+            if (!newValue) {
+                citizen.setHealthAmount(100);
+            }
+            plugin.getCitizensManager().saveCitizen(citizen);
+            openBehaviorsGUI(playerRef, store, citizen);
+        });
+
+        // Health amount input
+        if (citizen.isOverrideHealth()) {
+            page.addEventListener("health-amount", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
+                ctx.getValue("health-amount", Double.class).ifPresent(val -> {
+                    citizen.setHealthAmount(val.floatValue());
+                    plugin.getCitizensManager().saveCitizen(citizen);
+                });
+            });
+        }
+
+        // Override damage toggle
+        page.addEventListener("toggle-override-damage", CustomUIEventBindingType.Activating, event -> {
+            citizen.setOverrideDamage(!citizen.isOverrideDamage());
+            plugin.getCitizensManager().saveCitizen(citizen);
+            openBehaviorsGUI(playerRef, store, citizen);
+        });
+
+        // Damage amount input
+        if (citizen.isOverrideDamage()) {
+            page.addEventListener("damage-amount", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
+                ctx.getValue("damage-amount", Double.class).ifPresent(val -> {
+                    citizen.setDamageAmount(val.floatValue());
+                    plugin.getCitizensManager().saveCitizen(citizen);
+                });
+            });
+        }
+
         // Respawn toggle
         page.addEventListener("toggle-respawn", CustomUIEventBindingType.Activating, event -> {
             citizen.setRespawnOnDeath(!citizen.isRespawnOnDeath());
@@ -3048,7 +3215,7 @@ public class CitizensUI {
             openBehaviorsGUI(playerRef, store, citizen);
         });
 
-        // Respawn delay input (only exists when respawn is enabled)
+        // Respawn delay input
         if (citizen.isRespawnOnDeath()) {
             page.addEventListener("respawn-delay", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
                 ctx.getValue("respawn-delay", Double.class).ifPresent(val -> {
@@ -3060,37 +3227,57 @@ public class CitizensUI {
 
         // Movement type buttons
         page.addEventListener("move-idle", CustomUIEventBindingType.Activating, event -> {
+            if ("PATROL".equals(moveType)) {
+                plugin.getCitizensManager().stopCitizenPatrol(citizen.getId());
+            }
             citizen.setMovementBehavior(new MovementBehavior("IDLE", walkSpeed[0], wanderRadius[0], wanderWidth[0], wanderDepth[0]));
-            plugin.getCitizensManager().saveCitizen(citizen);
+            plugin.getCitizensManager().saveCitizen(citizen, true);
             openBehaviorsGUI(playerRef, store, citizen);
         });
 
         page.addEventListener("move-wander", CustomUIEventBindingType.Activating, event -> {
+            if ("PATROL".equals(moveType)) {
+                plugin.getCitizensManager().stopCitizenPatrol(citizen.getId());
+            }
             citizen.setMovementBehavior(new MovementBehavior("WANDER", walkSpeed[0], wanderRadius[0], wanderWidth[0], wanderDepth[0]));
-            plugin.getCitizensManager().saveCitizen(citizen);
+            plugin.getCitizensManager().saveCitizen(citizen, true);
             openBehaviorsGUI(playerRef, store, citizen);
         });
 
-//        page.addEventListener("move-wander-circle", CustomUIEventBindingType.Activating, event -> {
-//            citizen.setMovementBehavior(new MovementBehavior("WANDER_CIRCLE", walkSpeed[0], wanderRadius[0], wanderWidth[0], wanderDepth[0]));
-//            plugin.getCitizensManager().saveCitizen(citizen);
-//            openBehaviorsGUI(playerRef, store, citizen);
-//        });
-//
-//        page.addEventListener("move-wander-rect", CustomUIEventBindingType.Activating, event -> {
-//            citizen.setMovementBehavior(new MovementBehavior("WANDER_RECT", walkSpeed[0], wanderRadius[0], wanderWidth[0], wanderDepth[0]));
-//            plugin.getCitizensManager().saveCitizen(citizen);
-//            openBehaviorsGUI(playerRef, store, citizen);
-//        });
+        page.addEventListener("move-patrol", CustomUIEventBindingType.Activating, event -> {
+            citizen.setMovementBehavior(new MovementBehavior("PATROL", walkSpeed[0], wanderRadius[0], wanderWidth[0], wanderDepth[0]));
+            plugin.getCitizensManager().saveCitizen(citizen, true);
+            String patrolPath = citizen.getPathConfig().getPluginPatrolPath();
+            if (!patrolPath.isEmpty()) {
+                plugin.getCitizensManager().startCitizenPatrol(citizen.getId(), patrolPath);
+            }
+            openBehaviorsGUI(playerRef, store, citizen);
+        });
 
-        // Walk speed input (only for wander modes)
-        boolean isAnyWander = !"IDLE".equals(moveType);
+        if ("PATROL".equals(moveType)) {
+            page.addEventListener("plugin-patrol-path-behavior", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
+                ctx.getValue("plugin-patrol-path-behavior", String.class).ifPresent(newPath -> {
+                    citizen.getPathConfig().setPluginPatrolPath(newPath);
+                    plugin.getCitizensManager().saveCitizen(citizen, true);
+                    plugin.getCitizensManager().stopCitizenPatrol(citizen.getId());
+                    if (!newPath.isEmpty()) {
+                        plugin.getCitizensManager().startCitizenPatrol(citizen.getId(), newPath);
+                    }
+                });
+            });
+            page.addEventListener("manage-paths-from-behaviors-btn", CustomUIEventBindingType.Activating, event -> {
+                openPatrolPathsGUI(playerRef, store, citizen);
+            });
+        }
+
+        // Walk speed input
+        boolean isAnyWander = "WANDER".equals(moveType) || "WANDER_CIRCLE".equals(moveType) || "WANDER_RECT".equals(moveType);
         if (isAnyWander) {
             page.addEventListener("walk-speed", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
                 ctx.getValue("walk-speed", Double.class).ifPresent(v -> {
                     walkSpeed[0] = v.floatValue();
                     citizen.setMovementBehavior(new MovementBehavior(moveType, walkSpeed[0], wanderRadius[0], wanderWidth[0], wanderDepth[0]));
-                    plugin.getCitizensManager().saveCitizen(citizen);
+                    plugin.getCitizensManager().saveCitizen(citizen, true);
                 });
             });
         }
@@ -3101,7 +3288,7 @@ public class CitizensUI {
                 ctx.getValue("wander-radius", Double.class).ifPresent(v -> {
                     wanderRadius[0] = Math.max(1, v.floatValue());
                     citizen.setMovementBehavior(new MovementBehavior(moveType, walkSpeed[0], wanderRadius[0], wanderWidth[0], wanderDepth[0]));
-                    plugin.getCitizensManager().saveCitizen(citizen);
+                    plugin.getCitizensManager().saveCitizen(citizen, true);
                 });
             });
         }
@@ -3137,12 +3324,12 @@ public class CitizensUI {
             openDetectionConfigGUI(playerRef, store, citizen);
         });
 
-        page.addEventListener("path-config-btn", CustomUIEventBindingType.Activating, event -> {
-            openPathConfigGUI(playerRef, store, citizen);
-        });
-
         page.addEventListener("advanced-settings-btn", CustomUIEventBindingType.Activating, event -> {
             openAdvancedSettingsGUI(playerRef, store, citizen);
+        });
+
+        page.addEventListener("death-config-btn", CustomUIEventBindingType.Activating, event -> {
+            openDeathConfigGUI(playerRef, store, citizen);
         });
 
         // Done - save and respawn NPC
@@ -3565,8 +3752,8 @@ public class CitizensUI {
 
         String html = template.process(getSharedStyles() + """
                 <div class="page-overlay">
-                    <div class="main-container" style="anchor-width: 850; anchor-height: 700;">
-                
+                    <div class="main-container" style="anchor-width: 900; anchor-height: 720;">
+
                         <!-- Header -->
                         <div class="header">
                             <div class="header-content">
@@ -3574,62 +3761,60 @@ public class CitizensUI {
                                 <p class="header-subtitle">Configure messages sent on interaction ({{$messageCount}} messages)</p>
                             </div>
                         </div>
-                
+
                         <!-- Body -->
                         <div class="body">
-                
-                            <!-- Add Message Section -->
+
+                            <!-- Info + Add Section -->
                             <div class="section">
-                                {{@sectionHeader:title=Add New Message}}
-                
-                                <div class="form-row">
-                                    <input type="text" id="new-message" class="form-input" value=""
-                                           placeholder="Enter message text with optional color codes..."
-                                           style="flex-weight: 1;" />
-                                    <div class="spacer-h-sm"></div>
-                                    <button id="add-message-btn" class="btn-primary" style="anchor-width: 120;">Add</button>
+                                {{@sectionHeader:title=Messages}}
+                                
+                                <div style="layout: center;">
+                                    <button id="add-message-btn" class="btn-primary" style="anchor-width: 200; anchor-height: 38;">Add Message</button>
                                 </div>
-                
+                                
                                 <div class="spacer-sm"></div>
-                
+
                                 <div class="card">
                                     <div class="card-body">
-                                        <p style="color: #8b949e; font-size: 12;"><span style="color: #58a6ff;">Colors:</span> {RED}, {GREEN}, {BLUE}, {YELLOW}, {#HEX} for colored text</p>
+                                        <p style="color: #8b949e; font-size: 12;"><span style="color: #58a6ff;">Colors:</span> {RED}, {GREEN}, {BLUE}, {YELLOW}, {#HEX}</p>
                                         <div class="spacer-xs"></div>
-                                        <p style="color: #8b949e; font-size: 12;"><span style="color: #58a6ff;">Variables:</span> {PlayerName} for player's name, {CitizenName} for citizen's name</p>
+                                        <p style="color: #8b949e; font-size: 12;"><span style="color: #58a6ff;">Variables:</span> {PlayerName}, {CitizenName}</p>
+                                        <div class="spacer-xs"></div>
+                                        <p style="color: #8b949e; font-size: 12;">Each message can be triggered by <span style="color: #58a6ff;">Left Click</span>, <span style="color: #a371f7;">F Key</span>, or <span style="color: #3fb950;">Both</span>.</p>
                                     </div>
                                 </div>
                             </div>
-                
+
                             <div class="spacer-md"></div>
-                
+
                             <!-- Selection Mode -->
                             <div class="section">
                                 {{@sectionHeader:title=Selection Mode,description=How messages are chosen when the citizen is interacted with}}
                                 <div class="form-row">
-                                    <button id="mode-random" class="{{#if isRandom}}btn-primary{{else}}btn-secondary{{/if}}" style="anchor-width: 150; anchor-height: 38;">Random</button>
+                                    <button id="mode-random" class="{{#if isRandom}}btn-primary{{else}}btn-secondary{{/if}}" style="flex-weight: 1; anchor-height: 38;">Random</button>
                                     <div class="spacer-h-sm"></div>
-                                    <button id="mode-sequential" class="{{#if isSequential}}btn-primary{{else}}btn-secondary{{/if}}" style="anchor-width: 175; anchor-height: 38;">Sequential</button>
+                                    <button id="mode-sequential" class="{{#if isSequential}}btn-primary{{else}}btn-secondary{{/if}}" style="flex-weight: 1; anchor-height: 38;">Sequential</button>
                                     <div class="spacer-h-sm"></div>
-                                    <button id="mode-all" class="{{#if isAll}}btn-primary{{else}}btn-secondary{{/if}}" style="anchor-width: 150; anchor-height: 38;">All</button>
+                                    <button id="mode-all" class="{{#if isAll}}btn-primary{{else}}btn-secondary{{/if}}" style="flex-weight: 1; anchor-height: 38;">All</button>
                                 </div>
                                 <div class="spacer-xs"></div>
                                 {{#if isRandom}}
-                                <p style="color: #8b949e; font-size: 12; style="text-align: center;">A random message is picked each interaction.</p>
+                                <p style="color: #8b949e; font-size: 12; text-align: center;">A random matching message is picked each interaction.</p>
                                 {{/if}}
                                 {{#if isSequential}}
-                                <p style="color: #8b949e; font-size: 12; style="text-align: center;">Messages cycle in order for each player.</p>
+                                <p style="color: #8b949e; font-size: 12; text-align: center;">Matching messages cycle in order for each player.</p>
                                 {{/if}}
                                 {{#if isAll}}
-                                <p style="color: #8b949e; font-size: 12; style="text-align: center;">All messages are sent at once on each interaction.</p>
+                                <p style="color: #8b949e; font-size: 12; text-align: center;">All matching messages are sent in sequence, with per-message delays applied.</p>
                                 {{/if}}
                             </div>
-                
+
                             <div class="spacer-md"></div>
-                
+
                             <!-- Messages List -->
                             {{#if hasMessages}}
-                            <div class="list-container" style="anchor-height: 220;">
+                            <div class="list-container" style="anchor-height: 240;">
                                 {{#each messages}}
                                 <div class="command-item">
                                     <div class="command-icon command-icon-player">
@@ -3637,6 +3822,7 @@ public class CitizensUI {
                                     </div>
                                     <div class="command-content">
                                         <p class="command-text">{{$truncated}}</p>
+                                        <p class="command-type">{{$triggerLabel}}{{#if hasDelay}} | Delay: {{$delaySeconds}}s{{/if}}</p>
                                     </div>
                                     <div class="command-actions">
                                         <button id="edit-msg-{{$index}}" class="btn-info btn-small">Edit</button>
@@ -3651,20 +3837,20 @@ public class CitizensUI {
                             <div class="empty-state">
                                 <div class="empty-state-content">
                                     <p class="empty-state-title">No Messages</p>
-                                    <p class="empty-state-description">Add messages above to send when players interact with this citizen.</p>
+                                    <p class="empty-state-description">Click "Add Message" above to create a new message.</p>
                                 </div>
                             </div>
                             {{/if}}
-                
+
                         </div>
-                
+
                         <!-- Footer -->
                         <div class="footer">
                             <button id="cancel-btn" class="btn-ghost">Cancel</button>
                             <div class="spacer-h-md"></div>
                             <button id="done-btn" class="btn-primary" style="anchor-width: 110;">Done</button>
                         </div>
-                
+
                     </div>
                 </div>
                 """);
@@ -3680,30 +3866,14 @@ public class CitizensUI {
 
     private void setupMessagesListeners(PageBuilder page, PlayerRef playerRef, Store<EntityStore> store,
                                         CitizenData citizen) {
-        final String[] currentMessage = {""};
         List<CitizenMessage> msgs = new ArrayList<>(citizen.getMessagesConfig().getMessages());
 
-        page.addEventListener("new-message", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
-            currentMessage[0] = ctx.getValue("new-message", String.class).orElse("");
-        });
+        // "Add Message" opens the edit/add form in add-new mode (editIndex = -1)
+        page.addEventListener("add-message-btn", CustomUIEventBindingType.Activating, event ->
+                openEditMessageGUI(playerRef, store, citizen,
+                        new CitizenMessage("", "BOTH", 0.0f), -1));
 
-        page.addEventListener("add-message-btn", CustomUIEventBindingType.Activating, event -> {
-            String msg = currentMessage[0].trim();
-
-            if (msg.isEmpty()) {
-                playerRef.sendMessage(Message.raw("Please enter a message!").color(Color.RED));
-                return;
-            }
-
-            msgs.add(new CitizenMessage(msg));
-            MessagesConfig mc = citizen.getMessagesConfig();
-            citizen.setMessagesConfig(new MessagesConfig(msgs, mc.getSelectionMode(), mc.isEnabled()));
-            plugin.getCitizensManager().saveCitizen(citizen);
-            playerRef.sendMessage(Message.raw("Message added!").color(Color.GREEN));
-            openMessagesGUI(playerRef, store, citizen);
-        });
-
-        // Selection mode buttons
+        // Selection mode buttons — only affect mode, not interaction component, so use saveCitizen.
         page.addEventListener("mode-random", CustomUIEventBindingType.Activating, event -> {
             MessagesConfig mc = citizen.getMessagesConfig();
             citizen.setMessagesConfig(new MessagesConfig(mc.getMessages(), "RANDOM", mc.isEnabled()));
@@ -3725,50 +3895,54 @@ public class CitizensUI {
             openMessagesGUI(playerRef, store, citizen);
         });
 
-        // Edit and Delete message buttons
+        // Edit and Delete — use updateCitizen so the F-key Interactable component is refreshed.
         for (int i = 0; i < msgs.size(); i++) {
             final int index = i;
 
-            page.addEventListener("edit-msg-" + i, CustomUIEventBindingType.Activating, event -> {
-                CitizenMessage msg = msgs.get(index);
-                openEditMessageGUI(playerRef, store, citizen, msg, index);
-            });
+            page.addEventListener("edit-msg-" + i, CustomUIEventBindingType.Activating, event ->
+                    openEditMessageGUI(playerRef, store, citizen, msgs.get(index), index));
 
             page.addEventListener("delete-msg-" + i, CustomUIEventBindingType.Activating, event -> {
                 msgs.remove(index);
                 MessagesConfig mc = citizen.getMessagesConfig();
                 citizen.setMessagesConfig(new MessagesConfig(msgs, mc.getSelectionMode(), mc.isEnabled()));
-                plugin.getCitizensManager().saveCitizen(citizen);
+                plugin.getCitizensManager().updateCitizen(citizen, true);
                 playerRef.sendMessage(Message.raw("Message removed!").color(Color.GREEN));
                 openMessagesGUI(playerRef, store, citizen);
             });
         }
 
-        // Done
         page.addEventListener("done-btn", CustomUIEventBindingType.Activating, event -> {
             playerRef.sendMessage(Message.raw("Messages saved!").color(Color.GREEN));
             openEditCitizenGUI(playerRef, store, citizen);
         });
 
-        page.addEventListener("cancel-btn", CustomUIEventBindingType.Activating, event -> {
-            openEditCitizenGUI(playerRef, store, citizen);
-        });
+        page.addEventListener("cancel-btn", CustomUIEventBindingType.Activating, event ->
+                openEditCitizenGUI(playerRef, store, citizen));
     }
 
     public void openEditMessageGUI(@Nonnull PlayerRef playerRef, @Nonnull Store<EntityStore> store,
                                    @Nonnull CitizenData citizen, @Nonnull CitizenMessage message, int editIndex) {
+        boolean isNew = (editIndex == -1);
+        String currentTrigger = message.getInteractionTrigger() != null ? message.getInteractionTrigger() : "BOTH";
+
         TemplateProcessor template = createBaseTemplate()
-                .setVariable("message", escapeHtml(message.getMessage()));
+                .setVariable("message", escapeHtml(message.getMessage()))
+                .setVariable("delaySeconds", message.getDelaySeconds())
+                .setVariable("isNew", isNew)
+                .setVariable("isLeftClick", "LEFT_CLICK".equals(currentTrigger))
+                .setVariable("isFKey", "F_KEY".equals(currentTrigger))
+                .setVariable("isBoth", "BOTH".equals(currentTrigger));
 
         String html = template.process(getSharedStyles() + """
                 <div class="page-overlay">
-                    <div class="main-container" style="anchor-width: 650; anchor-height: 450;">
+                    <div class="main-container" style="anchor-width: 680; anchor-height: 580;">
 
                         <!-- Header -->
                         <div class="header">
                             <div class="header-content">
-                                <p class="header-title">Edit Message</p>
-                                <p class="header-subtitle">Modify the message sent on interaction</p>
+                                <p class="header-title">{{#if isNew}}Add Message{{else}}Edit Message{{/if}}</p>
+                                <p class="header-subtitle">{{#if isNew}}Configure a new message to send on interaction{{else}}Modify the message sent on interaction{{/if}}</p>
                             </div>
                         </div>
 
@@ -3780,18 +3954,39 @@ public class CitizensUI {
                                 {{@sectionHeader:title=Message Text}}
                                 <input type="text" id="message-input" class="form-input" value="{{$message}}"
                                        placeholder="Enter message text with optional color codes..." />
-                                <p class="form-hint">The message to send when interacting</p>
+                                <p class="form-hint">The message to send. Colors: {RED}, {GREEN}, {#HEX}. Variables: {PlayerName}, {CitizenName}</p>
                             </div>
 
                             <div class="spacer-md"></div>
 
-                            <!-- Color Reference -->
-                            <div class="card">
-                                <div class="card-body">
-                                    <p style="color: #8b949e; font-size: 12;"><span style="color: #58a6ff;">Colors:</span> {RED}, {GREEN}, {BLUE}, {YELLOW}, {#HEX} for colored text</p>
-                                    <div class="spacer-xs"></div>
-                                    <p style="color: #8b949e; font-size: 12;"><span style="color: #58a6ff;">Variables:</span> {PlayerName} for player's name, {CitizenName} for citizen's name</p>
+                            <!-- Interaction Trigger -->
+                            <div class="section">
+                                {{@sectionHeader:title=Interaction Trigger,description=Which player action sends this message}}
+                                <div class="form-row">
+                                    <button id="trigger-left-click" class="{{#if isLeftClick}}btn-primary{{else}}btn-secondary{{/if}}" style="flex-weight: 1; anchor-height: 38;">Left Click</button>
+                                    <div class="spacer-h-sm"></div>
+                                    <button id="trigger-f-key" class="{{#if isFKey}}btn-primary{{else}}btn-secondary{{/if}}" style="flex-weight: 1; anchor-height: 38;">F Key</button>
+                                    <div class="spacer-h-sm"></div>
+                                    <button id="trigger-both" class="{{#if isBoth}}btn-primary{{else}}btn-secondary{{/if}}" style="flex-weight: 1; anchor-height: 38;">Both</button>
                                 </div>
+                                <div class="spacer-xs"></div>
+                                {{#if isLeftClick}}
+                                <p style="color: #8b949e; font-size: 12; text-align: center;">Sent when the player left-clicks the NPC.</p>
+                                {{/if}}
+                                {{#if isFKey}}
+                                <p style="color: #8b949e; font-size: 12; text-align: center;">Sent when the player presses F to interact with the NPC.</p>
+                                {{/if}}
+                                {{#if isBoth}}
+                                <p style="color: #8b949e; font-size: 12; text-align: center;">Sent on any interaction (left click or F key).</p>
+                                {{/if}}
+                            </div>
+
+                            <div class="spacer-md"></div>
+
+                            <!-- Delay -->
+                            <div class="section">
+                                {{@sectionHeader:title=Delay,description=Wait before sending this message (especially useful in All mode)}}
+                                {{@numberField:id=delay-seconds,label=Delay Before Message (seconds),value={{$delaySeconds}},placeholder=0,min=0,max=60,step=0.5,decimals=1,hint=Delay before this message is sent. In All mode messages send one after another with each message's delay.}}
                             </div>
 
                         </div>
@@ -3800,7 +3995,7 @@ public class CitizensUI {
                         <div class="footer">
                             <button id="cancel-btn" class="btn-ghost">Cancel</button>
                             <div class="spacer-h-md"></div>
-                            <button id="save-msg-btn" class="btn-primary" style="anchor-width: 200;">Save Changes</button>
+                            <button id="save-msg-btn" class="btn-primary" style="anchor-width: 200;">{{#if isNew}}Add Message{{else}}Save Changes{{/if}}</button>
                         </div>
 
                     </div>
@@ -3812,9 +4007,44 @@ public class CitizensUI {
                 .fromHtml(html);
 
         final String[] messageText = {message.getMessage()};
+        final float[] delaySeconds = {message.getDelaySeconds()};
+        final String[] interactionTrigger = {currentTrigger};
 
         page.addEventListener("message-input", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
             messageText[0] = ctx.getValue("message-input", String.class).orElse("");
+        });
+
+        page.addEventListener("trigger-left-click", CustomUIEventBindingType.Activating, event -> {
+            interactionTrigger[0] = "LEFT_CLICK";
+            openEditMessageGUI(playerRef, store, citizen,
+                    new CitizenMessage(messageText[0], "LEFT_CLICK", delaySeconds[0]), editIndex);
+        });
+
+        page.addEventListener("trigger-f-key", CustomUIEventBindingType.Activating, event -> {
+            interactionTrigger[0] = "F_KEY";
+            openEditMessageGUI(playerRef, store, citizen,
+                    new CitizenMessage(messageText[0], "F_KEY", delaySeconds[0]), editIndex);
+        });
+
+        page.addEventListener("trigger-both", CustomUIEventBindingType.Activating, event -> {
+            interactionTrigger[0] = "BOTH";
+            openEditMessageGUI(playerRef, store, citizen,
+                    new CitizenMessage(messageText[0], "BOTH", delaySeconds[0]), editIndex);
+        });
+
+        page.addEventListener("delay-seconds", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
+            ctx.getValue("delay-seconds", Double.class)
+                    .ifPresent(val -> delaySeconds[0] = val.floatValue());
+
+            if (delaySeconds[0] == 0.0f) {
+                ctx.getValue("delay-seconds", String.class)
+                        .ifPresent(val -> {
+                            try {
+                                delaySeconds[0] = Float.parseFloat(val);
+                            } catch (NumberFormatException ignored) {
+                            }
+                        });
+            }
         });
 
         page.addEventListener("save-msg-btn", CustomUIEventBindingType.Activating, event -> {
@@ -3823,18 +4053,26 @@ public class CitizensUI {
                 return;
             }
 
+            CitizenMessage saved = new CitizenMessage(messageText[0].trim(), interactionTrigger[0], delaySeconds[0]);
             List<CitizenMessage> msgs = new ArrayList<>(citizen.getMessagesConfig().getMessages());
-            msgs.set(editIndex, new CitizenMessage(messageText[0].trim()));
             MessagesConfig mc = citizen.getMessagesConfig();
+
+            if (isNew) {
+                msgs.add(saved);
+                playerRef.sendMessage(Message.raw("Message added!").color(Color.GREEN));
+            } else {
+                msgs.set(editIndex, saved);
+                playerRef.sendMessage(Message.raw("Message updated!").color(Color.GREEN));
+            }
+
             citizen.setMessagesConfig(new MessagesConfig(msgs, mc.getSelectionMode(), mc.isEnabled()));
-            plugin.getCitizensManager().saveCitizen(citizen);
-            playerRef.sendMessage(Message.raw("Message updated!").color(Color.GREEN));
+            // Use updateCitizen so the F-key Interactable component is refreshed on the live NPC.
+            plugin.getCitizensManager().updateCitizen(citizen, true);
             openMessagesGUI(playerRef, store, citizen);
         });
 
-        page.addEventListener("cancel-btn", CustomUIEventBindingType.Activating, event -> {
-            openMessagesGUI(playerRef, store, citizen);
-        });
+        page.addEventListener("cancel-btn", CustomUIEventBindingType.Activating, event ->
+                openMessagesGUI(playerRef, store, citizen));
 
         page.open(store);
     }
@@ -4141,7 +4379,6 @@ public class CitizensUI {
         // Auto-resolve attack type
         page.addEventListener("auto-resolve-btn", CustomUIEventBindingType.Activating, event -> {
             plugin.getCitizensManager().autoResolveAttackType(citizen);
-            playerRef.sendMessage(Message.raw("Attack type resolved to: " + citizen.getCombatConfig().getAttackType()).color(Color.GREEN));
             openCombatConfigGUI(playerRef, store, citizen);
         });
 
@@ -4506,157 +4743,6 @@ public class CitizensUI {
         });
     }
 
-    public void openPathConfigGUI(@Nonnull PlayerRef playerRef, @Nonnull Store<EntityStore> store,
-                                   @Nonnull CitizenData citizen) {
-        PathConfig pc = citizen.getPathConfig();
-
-        TemplateProcessor template = createBaseTemplate()
-                .setVariable("followPath", pc.isFollowPath())
-                .setVariable("pathName", escapeHtml(pc.getPathName()))
-                .setVariable("patrol", pc.isPatrol())
-                .setVariable("patrolWanderDistance", pc.getPatrolWanderDistance())
-                .setVariable("leashMinPlayerDistance", citizen.getLeashMinPlayerDistance())
-                .setVariable("leashTimerMin", citizen.getLeashTimerMin())
-                .setVariable("leashTimerMax", citizen.getLeashTimerMax())
-                .setVariable("hardLeashDistance", citizen.getHardLeashDistance());
-
-        String html = template.process(getSharedStyles() + """
-                <div class="page-overlay">
-                    <div class="main-container" style="anchor-width: 750; anchor-height: 700;">
-
-                        <!-- Header -->
-                        <div class="header">
-                            <div class="header-content">
-                                <p class="header-title">Path & Leash Configuration</p>
-                                <p class="header-subtitle">Configure patrolling, path following, and leash settings</p>
-                            </div>
-                        </div>
-
-                        <!-- Body -->
-                        <div class="body">
-
-                            <!-- Path Settings -->
-                            <div class="section">
-                                {{@sectionHeader:title=Path Settings,description=Enable path following and patrol behavior}}
-                                {{@checkbox:id=follow-path,label=Follow Path,checked={{$followPath}},description=NPC follows a named path}}
-                                <div class="spacer-xs"></div>
-                                {{@formField:id=path-name,label=Path Name,value={{$pathName}},placeholder=Enter path name...,hint=Name of the path to follow}}
-                                <div class="spacer-sm"></div>
-                                {{@checkbox:id=patrol,label=Patrol,checked={{$patrol}},description=NPC patrols back and forth along the path}}
-                                <div class="spacer-xs"></div>
-                                <div style="layout: center; flex-weight: 0;">
-                                    <div style="anchor-width: 350; flex-weight: 0;">
-                                        {{@numberField:id=patrol-wander-distance,label=Patrol Wander Distance,value={{$patrolWanderDistance}},placeholder=25,min=1,max=200,step=1,decimals=0}}
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div class="spacer-md"></div>
-
-                            <!-- Leash Settings -->
-                            <div class="section">
-                                {{@sectionHeader:title=Leash Settings,description=How far the NPC can stray from its origin}}
-                                <div class="form-row">
-                                    <div style="flex-weight: 1;">
-                                        {{@numberField:id=leash-min-player-dist,label=Min Player Distance,value={{$leashMinPlayerDistance}},placeholder=4.0,min=0,max=100,step=0.5,decimals=1}}
-                                    </div>
-                                    <div class="spacer-h-sm"></div>
-                                    <div style="flex-weight: 1;">
-                                        {{@numberField:id=hard-leash-distance,label=Hard Leash Distance,value={{$hardLeashDistance}},placeholder=200,min=1,max=1000,step=5,decimals=0}}
-                                    </div>
-                                </div>
-                                <div class="spacer-xs"></div>
-                                <div class="form-row">
-                                    <div style="flex-weight: 1;">
-                                        {{@numberField:id=leash-timer-min,label=Leash Timer Min,value={{$leashTimerMin}},placeholder=3.0,min=0,max=60,step=0.5,decimals=1}}
-                                    </div>
-                                    <div class="spacer-h-sm"></div>
-                                    <div style="flex-weight: 1;">
-                                        {{@numberField:id=leash-timer-max,label=Leash Timer Max,value={{$leashTimerMax}},placeholder=5.0,min=0,max=60,step=0.5,decimals=1}}
-                                    </div>
-                                </div>
-                            </div>
-
-                        </div>
-
-                        <!-- Footer -->
-                        <div class="footer">
-                            <button id="cancel-btn" class="btn-ghost">Back</button>
-                            <div class="spacer-h-md"></div>
-                            <button id="save-btn" class="btn-primary" style="anchor-width: 200;">Save Path Config</button>
-                        </div>
-
-                    </div>
-                </div>
-                """);
-
-        PageBuilder page = PageBuilder.pageForPlayer(playerRef)
-                .withLifetime(CustomPageLifetime.CanDismiss)
-                .fromHtml(html);
-
-        setupPathConfigListeners(page, playerRef, store, citizen);
-
-        page.open(store);
-    }
-
-    private void setupPathConfigListeners(PageBuilder page, PlayerRef playerRef, Store<EntityStore> store,
-                                          CitizenData citizen) {
-        PathConfig pc = citizen.getPathConfig();
-
-        final boolean[] followPath = {pc.isFollowPath()};
-        final String[] pathName = {pc.getPathName()};
-        final boolean[] patrol = {pc.isPatrol()};
-        final float[] patrolWanderDist = {pc.getPatrolWanderDistance()};
-        final float[] leashMinPlayerDist = {citizen.getLeashMinPlayerDistance()};
-        final float[] leashTimerMin = {citizen.getLeashTimerMin()};
-        final float[] leashTimerMax = {citizen.getLeashTimerMax()};
-        final float[] hardLeashDist = {citizen.getHardLeashDistance()};
-
-        page.addEventListener("follow-path", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
-            ctx.getValue("follow-path", Boolean.class).ifPresent(v -> followPath[0] = v);
-        });
-        page.addEventListener("path-name", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
-            pathName[0] = ctx.getValue("path-name", String.class).orElse("");
-        });
-        page.addEventListener("patrol", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
-            ctx.getValue("patrol", Boolean.class).ifPresent(v -> patrol[0] = v);
-        });
-        page.addEventListener("patrol-wander-distance", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
-            ctx.getValue("patrol-wander-distance", Double.class).ifPresent(v -> patrolWanderDist[0] = v.floatValue());
-        });
-        page.addEventListener("leash-min-player-dist", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
-            ctx.getValue("leash-min-player-dist", Double.class).ifPresent(v -> leashMinPlayerDist[0] = v.floatValue());
-        });
-        page.addEventListener("leash-timer-min", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
-            ctx.getValue("leash-timer-min", Double.class).ifPresent(v -> leashTimerMin[0] = v.floatValue());
-        });
-        page.addEventListener("leash-timer-max", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
-            ctx.getValue("leash-timer-max", Double.class).ifPresent(v -> leashTimerMax[0] = v.floatValue());
-        });
-        page.addEventListener("hard-leash-distance", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
-            ctx.getValue("hard-leash-distance", Double.class).ifPresent(v -> hardLeashDist[0] = v.floatValue());
-        });
-
-        // Save
-        page.addEventListener("save-btn", CustomUIEventBindingType.Activating, event -> {
-            pc.setFollowPath(followPath[0]);
-            pc.setPathName(pathName[0]);
-            pc.setPatrol(patrol[0]);
-            pc.setPatrolWanderDistance(patrolWanderDist[0]);
-            citizen.setLeashMinPlayerDistance(leashMinPlayerDist[0]);
-            citizen.setLeashTimerMin(leashTimerMin[0]);
-            citizen.setLeashTimerMax(leashTimerMax[0]);
-            citizen.setHardLeashDistance(hardLeashDist[0]);
-            plugin.getCitizensManager().saveCitizen(citizen);
-            playerRef.sendMessage(Message.raw("Path config saved!").color(Color.GREEN));
-            openBehaviorsGUI(playerRef, store, citizen);
-        });
-
-        page.addEventListener("cancel-btn", CustomUIEventBindingType.Activating, event -> {
-            openBehaviorsGUI(playerRef, store, citizen);
-        });
-    }
-
     public void openAdvancedSettingsGUI(@Nonnull PlayerRef playerRef, @Nonnull Store<EntityStore> store,
                                         @Nonnull CitizenData citizen) {
         TemplateProcessor template = createBaseTemplate()
@@ -4962,5 +5048,1062 @@ public class CitizensUI {
             }
         }
         return result;
+    }
+
+    private static final int DEATH_ITEMS_PER_PAGE = 75;
+
+    public void openDeathConfigGUI(@Nonnull PlayerRef playerRef, @Nonnull Store<EntityStore> store,
+                                   @Nonnull CitizenData citizen) {
+        DeathConfig dc = citizen.getDeathConfig();
+        List<DeathDropItem> drops = dc.getDropItems();
+        List<CommandAction> cmds = dc.getDeathCommands();
+        List<CitizenMessage> msgs = dc.getDeathMessages();
+
+        // Build drop items HTML
+        StringBuilder dropsHtml = new StringBuilder();
+        for (int i = 0; i < drops.size(); i++) {
+            DeathDropItem drop = drops.get(i);
+            dropsHtml.append("""
+                <div class="trade-row">
+                    <div class="slot-background">
+                        <button id="drop-item-%d" class="slot-container" style="layout: top; flex-direction: column;">
+                            <span class="slot-icon item-icon" data-hyui-item-id="%s"></span>
+                            <p class="slot-label slot-label-filled">%dx</p>
+                        </button>
+                    </div>
+                    <div class="spacer-h-sm"></div>
+                    <div class="list-item-content">
+                        <p class="list-item-title">%s</p>
+                        <p class="list-item-subtitle">Quantity: %d</p>
+                    </div>
+                    <button id="delete-drop-%d" class="btn-danger btn-small">Delete</button>
+                </div>
+                <div class="spacer-sm"></div>
+                """.formatted(i, drop.getItemId(), drop.getQuantity(),
+                    drop.getItemId(), drop.getQuantity(), i));
+        }
+
+        // Build commands HTML
+        StringBuilder cmdsHtml = new StringBuilder();
+        for (int i = 0; i < cmds.size(); i++) {
+            CommandAction cmd = cmds.get(i);
+            cmdsHtml.append("""
+                <div class="list-item">
+                    <div class="list-item-content">
+                        <p class="list-item-title">/%s</p>
+                        <p class="list-item-subtitle">%s | Delay: %.1fs</p>
+                    </div>
+                    <div class="list-item-actions">
+                        <button id="edit-dcmd-%d" class="btn-secondary btn-small">Edit</button>
+                        <div class="spacer-h-sm"></div>
+                        <button id="delete-dcmd-%d" class="btn-danger btn-small">Delete</button>
+                    </div>
+                </div>
+                <div class="spacer-sm"></div>
+                """.formatted(escapeHtml(cmd.getCommand()),
+                    cmd.isRunAsServer() ? "Server" : "Player", cmd.getDelaySeconds(), i, i));
+        }
+
+        // Build messages HTML
+        StringBuilder msgsHtml = new StringBuilder();
+        for (int i = 0; i < msgs.size(); i++) {
+            CitizenMessage msg = msgs.get(i);
+            String preview = msg.getMessage().length() > 40
+                    ? msg.getMessage().substring(0, 37) + "..."
+                    : msg.getMessage();
+            msgsHtml.append("""
+                <div class="list-item">
+                    <div class="list-item-content">
+                        <p class="list-item-title">%s</p>
+                        <p class="list-item-subtitle">Delay: %.1fs</p>
+                    </div>
+                    <div class="list-item-actions">
+                        <button id="edit-dmsg-%d" class="btn-secondary btn-small">Edit</button>
+                        <div class="spacer-h-sm"></div>
+                        <button id="delete-dmsg-%d" class="btn-danger btn-small">Delete</button>
+                    </div>
+                </div>
+                <div class="spacer-sm"></div>
+                """.formatted(escapeHtml(preview), msg.getDelaySeconds(), i, i));
+        }
+
+        TemplateProcessor template = createBaseTemplate()
+                .setVariable("hasDrops", !drops.isEmpty())
+                .setVariable("dropCount", drops.size())
+                .setVariable("hasCmds", !cmds.isEmpty())
+                .setVariable("cmdCount", cmds.size())
+                .setVariable("hasMsgs", !msgs.isEmpty())
+                .setVariable("msgCount", msgs.size())
+                .setVariable("cmdModeAll", "ALL".equals(dc.getCommandSelectionMode()))
+                .setVariable("cmdModeRandom", "RANDOM".equals(dc.getCommandSelectionMode()))
+                .setVariable("msgModeAll", "ALL".equals(dc.getMessageSelectionMode()))
+                .setVariable("msgModeRandom", "RANDOM".equals(dc.getMessageSelectionMode()));
+
+        String html = template.process(getSharedStyles() + """
+                <div class="page-overlay">
+                    <div class="main-container" style="layout-mode: TopScrolling; anchor-width: 950; anchor-height: 1000;">
+
+                        <!-- Header -->
+                        <div class="header">
+                            <div class="header-content">
+                                <p class="header-title">Death Configuration</p>
+                                <p class="header-subtitle">Configure what happens when this citizen dies</p>
+                            </div>
+                        </div>
+
+                        <!-- Body -->
+                        <div class="body">
+
+                            <div class="spacer-sm"></div>
+
+                            <!-- Drop Items Section -->
+                            <div class="section">
+                                {{@sectionHeader:title=Drop Items ({{$dropCount}}),description=Items dropped at the citizen's position on death}}
+
+                                <button id="add-drop-btn" class="btn-primary" style="anchor-width: 200; anchor-height: 40;">Add Drop Item</button>
+                                <div class="spacer-sm"></div>
+
+                                {{#if hasDrops}}
+                                <div class="list-container" style="anchor-height: 200;">
+                                """ + dropsHtml.toString() + """
+                                </div>
+                                {{else}}
+                                <div class="empty-state" style="padding: 20;">
+                                    <p class="empty-state-description">No drop items configured.</p>
+                                </div>
+                                {{/if}}
+                            </div>
+
+                            <div class="spacer-sm"></div>
+
+                            <!-- Death Commands Section -->
+                            <div class="section">
+                                {{@sectionHeader:title=Death Commands ({{$cmdCount}}),description=Commands executed when the citizen dies}}
+
+                                <div class="form-row">
+                                    <button id="add-dcmd-btn" class="btn-primary" style="anchor-width: 200; anchor-height: 40;">Add Command</button>
+                                    <div class="spacer-h-sm"></div>
+                                    <button id="cmd-mode-all" class="{{#if cmdModeAll}}btn-primary{{else}}btn-secondary{{/if}}" style="anchor-width: 120; anchor-height: 40;">All</button>
+                                    <div class="spacer-h-sm"></div>
+                                    <button id="cmd-mode-random" class="{{#if cmdModeRandom}}btn-primary{{else}}btn-secondary{{/if}}" style="anchor-width: 120; anchor-height: 40;">Random</button>
+                                </div>
+                                <div class="spacer-sm"></div>
+
+                                {{#if hasCmds}}
+                                <div class="list-container" style="anchor-height: 200;">
+                                """ + cmdsHtml.toString() + """
+                                </div>
+                                {{else}}
+                                <div class="empty-state" style="padding: 20;">
+                                    <p class="empty-state-description">No death commands configured.</p>
+                                </div>
+                                {{/if}}
+                            </div>
+
+                            <div class="spacer-sm"></div>
+
+                            <!-- Death Messages Section -->
+                            <div class="section">
+                                {{@sectionHeader:title=Death Messages ({{$msgCount}}),description=Messages sent to the killer when the citizen dies}}
+
+                                <div class="form-row">
+                                    <button id="add-dmsg-btn" class="btn-primary" style="anchor-width: 200; anchor-height: 40;">Add Message</button>
+                                    <div class="spacer-h-sm"></div>
+                                    <button id="msg-mode-all" class="{{#if msgModeAll}}btn-primary{{else}}btn-secondary{{/if}}" style="anchor-width: 120; anchor-height: 40;">All</button>
+                                    <div class="spacer-h-sm"></div>
+                                    <button id="msg-mode-random" class="{{#if msgModeRandom}}btn-primary{{else}}btn-secondary{{/if}}" style="anchor-width: 120; anchor-height: 40;">Random</button>
+                                </div>
+                                <div class="spacer-sm"></div>
+
+                                {{#if hasMsgs}}
+                                <div class="list-container" style="anchor-height: 200;">
+                                """ + msgsHtml.toString() + """
+                                </div>
+                                {{else}}
+                                <div class="empty-state" style="padding: 20;">
+                                    <p class="empty-state-description">No death messages configured.</p>
+                                </div>
+                                {{/if}}
+                            </div>
+
+                        </div>
+
+                        <div class="spacer-sm"></div>
+
+                        <!-- Footer -->
+                        <div class="footer">
+                            <button id="back-btn" class="btn-ghost">Back</button>
+                        </div>
+
+                    </div>
+                </div>
+                """);
+
+        PageBuilder page = PageBuilder.pageForPlayer(playerRef)
+                .withLifetime(CustomPageLifetime.CanDismiss)
+                .fromHtml(html);
+
+        setupDeathConfigListeners(page, playerRef, store, citizen, dc, drops, cmds, msgs);
+
+        page.open(store);
+    }
+
+    private void setupDeathConfigListeners(PageBuilder page, PlayerRef playerRef, Store<EntityStore> store,
+                                           CitizenData citizen, DeathConfig dc,
+                                           List<DeathDropItem> drops, List<CommandAction> cmds,
+                                           List<CitizenMessage> msgs) {
+        // Add drop item
+        page.addEventListener("add-drop-btn", CustomUIEventBindingType.Activating, event -> {
+            openDeathItemSelectionGUI(playerRef, store, citizen, "", 0, -1);
+        });
+
+        // Drop item click (to change) and delete
+        for (int i = 0; i < drops.size(); i++) {
+            final int index = i;
+            page.addEventListener("drop-item-" + i, CustomUIEventBindingType.Activating, event -> {
+                openDeathItemSelectionGUI(playerRef, store, citizen, "", 0, index);
+            });
+            page.addEventListener("delete-drop-" + i, CustomUIEventBindingType.Activating, event -> {
+                List<DeathDropItem> updated = new ArrayList<>(drops);
+                updated.remove(index);
+                dc.setDropItems(updated);
+                citizen.setDeathConfig(dc);
+                plugin.getCitizensManager().saveCitizen(citizen);
+                openDeathConfigGUI(playerRef, store, citizen);
+            });
+        }
+
+        // Command mode buttons
+        page.addEventListener("cmd-mode-all", CustomUIEventBindingType.Activating, event -> {
+            dc.setCommandSelectionMode("ALL");
+            citizen.setDeathConfig(dc);
+            plugin.getCitizensManager().saveCitizen(citizen);
+            openDeathConfigGUI(playerRef, store, citizen);
+        });
+        page.addEventListener("cmd-mode-random", CustomUIEventBindingType.Activating, event -> {
+            dc.setCommandSelectionMode("RANDOM");
+            citizen.setDeathConfig(dc);
+            plugin.getCitizensManager().saveCitizen(citizen);
+            openDeathConfigGUI(playerRef, store, citizen);
+        });
+
+        // Add command
+        page.addEventListener("add-dcmd-btn", CustomUIEventBindingType.Activating, event -> {
+            openEditDeathCommandGUI(playerRef, store, citizen, new CommandAction("", true, 0), -1);
+        });
+
+        // Edit/delete commands
+        for (int i = 0; i < cmds.size(); i++) {
+            final int index = i;
+            page.addEventListener("edit-dcmd-" + i, CustomUIEventBindingType.Activating, event -> {
+                openEditDeathCommandGUI(playerRef, store, citizen, cmds.get(index), index);
+            });
+            page.addEventListener("delete-dcmd-" + i, CustomUIEventBindingType.Activating, event -> {
+                List<CommandAction> updated = new ArrayList<>(cmds);
+                updated.remove(index);
+                dc.setDeathCommands(updated);
+                citizen.setDeathConfig(dc);
+                plugin.getCitizensManager().saveCitizen(citizen);
+                openDeathConfigGUI(playerRef, store, citizen);
+            });
+        }
+
+        // Message mode buttons
+        page.addEventListener("msg-mode-all", CustomUIEventBindingType.Activating, event -> {
+            dc.setMessageSelectionMode("ALL");
+            citizen.setDeathConfig(dc);
+            plugin.getCitizensManager().saveCitizen(citizen);
+            openDeathConfigGUI(playerRef, store, citizen);
+        });
+        page.addEventListener("msg-mode-random", CustomUIEventBindingType.Activating, event -> {
+            dc.setMessageSelectionMode("RANDOM");
+            citizen.setDeathConfig(dc);
+            plugin.getCitizensManager().saveCitizen(citizen);
+            openDeathConfigGUI(playerRef, store, citizen);
+        });
+
+        // Add message
+        page.addEventListener("add-dmsg-btn", CustomUIEventBindingType.Activating, event -> {
+            openEditDeathMessageGUI(playerRef, store, citizen, new CitizenMessage("", null, 0), -1);
+        });
+
+        // Edit/delete messages
+        for (int i = 0; i < msgs.size(); i++) {
+            final int index = i;
+            page.addEventListener("edit-dmsg-" + i, CustomUIEventBindingType.Activating, event -> {
+                openEditDeathMessageGUI(playerRef, store, citizen, msgs.get(index), index);
+            });
+            page.addEventListener("delete-dmsg-" + i, CustomUIEventBindingType.Activating, event -> {
+                List<CitizenMessage> updated = new ArrayList<>(msgs);
+                updated.remove(index);
+                dc.setDeathMessages(updated);
+                citizen.setDeathConfig(dc);
+                plugin.getCitizensManager().saveCitizen(citizen);
+                openDeathConfigGUI(playerRef, store, citizen);
+            });
+        }
+
+        // Back button
+        page.addEventListener("back-btn", CustomUIEventBindingType.Activating, event -> {
+            openBehaviorsGUI(playerRef, store, citizen);
+        });
+    }
+
+    private void openDeathItemSelectionGUI(@Nonnull PlayerRef playerRef, @Nonnull Store<EntityStore> store,
+                                           @Nonnull CitizenData citizen, @Nonnull String searchFilter,
+                                           int pageNum, int editDropIndex) {
+        Map<String, Item> itemMap = Item.getAssetMap().getAssetMap();
+        String lowerFilter = searchFilter.toLowerCase().trim();
+
+        List<Map.Entry<String, Item>> filteredItems;
+        if (lowerFilter.isEmpty()) {
+            filteredItems = itemMap.entrySet().stream()
+                    .sorted(Comparator.comparing(Map.Entry::getKey))
+                    .collect(java.util.stream.Collectors.toList());
+        } else {
+            filteredItems = itemMap.entrySet().stream()
+                    .filter(entry -> {
+                        String id = entry.getKey().toLowerCase();
+                        String translation = Message.translation(entry.getValue().getTranslationKey()).getAnsiMessage().toLowerCase();
+                        if (translation.startsWith("server.")) {
+                            translation = translation.replaceFirst("(?i)\\.name$", "");
+                            int lastDot = translation.lastIndexOf('.');
+                            if (lastDot != -1) translation = translation.substring(lastDot + 1);
+                            translation = translation.replace("_", " ");
+                        }
+                        return id.contains(lowerFilter) || translation.contains(lowerFilter);
+                    })
+                    .sorted(Comparator.comparing(Map.Entry::getKey))
+                    .collect(java.util.stream.Collectors.toList());
+        }
+
+        int totalItems = filteredItems.size();
+        int totalPages = Math.max(1, (int) Math.ceil((double) totalItems / DEATH_ITEMS_PER_PAGE));
+        int currentPage = Math.max(0, Math.min(pageNum, totalPages - 1));
+        int startIndex = currentPage * DEATH_ITEMS_PER_PAGE;
+        int endIndex = Math.min(startIndex + DEATH_ITEMS_PER_PAGE, totalItems);
+        List<Map.Entry<String, Item>> pageItems = filteredItems.subList(startIndex, endIndex);
+
+        int itemsPerRow = 8;
+        StringBuilder itemsHtml = new StringBuilder();
+
+        for (int rowStart = 0; rowStart < pageItems.size(); rowStart += itemsPerRow) {
+            if (rowStart > 0) {
+                itemsHtml.append("<div style=\"flex-weight: 0; anchor-height: 6;\"></div>\n");
+            }
+            itemsHtml.append("<div style=\"layout: center; flex-weight: 0;\">\n");
+
+            int rowEnd = Math.min(rowStart + itemsPerRow, pageItems.size());
+            for (int i = rowStart; i < rowEnd; i++) {
+                if (i > rowStart) {
+                    itemsHtml.append("<div style=\"flex-weight: 0; anchor-width: 6;\"></div>\n");
+                }
+
+                Map.Entry<String, Item> entry = pageItems.get(i);
+                String itemId = entry.getKey();
+                String displayName = Message.translation(entry.getValue().getTranslationKey()).getAnsiMessage();
+
+                if (displayName.startsWith("server.")) {
+                    displayName = displayName.replaceFirst("(?i)\\.name$", "");
+                    int lastDot = displayName.lastIndexOf('.');
+                    if (lastDot != -1) displayName = displayName.substring(lastDot + 1);
+                    displayName = displayName.replace("_", " ");
+                }
+                if (displayName.length() > 12) {
+                    displayName = displayName.substring(0, 11) + "...";
+                }
+
+                itemsHtml.append("""
+                    <div style="layout: top; flex-weight: 0; anchor-width: 90; anchor-height: 90; background-color: #535359;">
+                        <button id="pick-%d" style="layout: top; flex-weight: 0; anchor-width: 80; anchor-height: 80; background-color: #21262d; border-radius: 6; padding: 6;">
+                            <div style="layout: center; flex-weight: 0; anchor-height: 50; anchor-width: 50;">
+                                <span class="item-icon" data-hyui-item-id="%s" style="anchor-width: 36; anchor-height: 36;"></span>
+                            </div>
+                            <p style="color: #e6edf3; font-size: 9; text-align: center;">%s</p>
+                        </button>
+                    </div>
+                    """.formatted(i, itemId, displayName));
+            }
+            itemsHtml.append("</div>\n");
+        }
+
+        if (pageItems.isEmpty()) {
+            itemsHtml.append("""
+                <div style="layout: center; flex-weight: 1; padding: 40;">
+                    <p style="color: #6e7681; font-size: 13; text-align: center;">No items match your search.</p>
+                </div>
+                """);
+        }
+
+        String html = getSharedStyles() + """
+                <div class="page-overlay">
+                    <div class="main-container" style="anchor-width: 850; anchor-height: 750;">
+
+                        <div class="header">
+                            <div class="header-content">
+                                <p class="header-title">Select Drop Item</p>
+                                <p class="header-subtitle">Page %d of %d (%d items total)</p>
+                            </div>
+                        </div>
+
+                        <div style="layout: top; flex-weight: 0; padding: 12 16 8 16;">
+                            <div style="layout: center; flex-weight: 0;">
+                                <input type="text" id="item-search" class="form-input" style="flex-weight: 1;"
+                                       value="%s" placeholder="Search items..." maxlength="64" />
+                                <div style="flex-weight: 0; anchor-width: 8;"></div>
+                                <button id="search-btn" class="btn-primary" style="anchor-width: 130;">Search</button>
+                            </div>
+                        </div>
+
+                        <div style="layout-mode: TopScrolling; flex-weight: 1; padding: 4 16 4 16;">
+                            %s
+                        </div>
+
+                        <div class="footer">
+                            <button id="back-btn" class="btn-ghost">Back</button>
+                            <div style="flex-weight: 1;"></div>
+                            <button id="prev-page-btn" class="btn-secondary btn-small" %s>Prev</button>
+                            <div style="flex-weight: 0; anchor-width: 8;"></div>
+                            <p style="color: #8b949e; font-size: 12;">%d / %d</p>
+                            <div style="flex-weight: 0; anchor-width: 8;"></div>
+                            <button id="next-page-btn" class="btn-secondary btn-small" %s>Next</button>
+                        </div>
+
+                    </div>
+                </div>
+                """.formatted(
+                currentPage + 1, totalPages, totalItems,
+                searchFilter,
+                itemsHtml.toString(),
+                currentPage <= 0 ? "disabled" : "",
+                currentPage + 1, totalPages,
+                currentPage >= totalPages - 1 ? "disabled" : ""
+        );
+
+        PageBuilder page = PageBuilder.pageForPlayer(playerRef)
+                .withLifetime(CustomPageLifetime.CanDismiss)
+                .fromHtml(html);
+
+        final String[] searchText = {searchFilter};
+
+        page.addEventListener("item-search", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
+            searchText[0] = ctx.getValue("item-search", String.class).orElse("");
+        });
+
+        page.addEventListener("search-btn", CustomUIEventBindingType.Activating, event -> {
+            openDeathItemSelectionGUI(playerRef, store, citizen, searchText[0], 0, editDropIndex);
+        });
+
+        if (currentPage > 0) {
+            page.addEventListener("prev-page-btn", CustomUIEventBindingType.Activating, event -> {
+                openDeathItemSelectionGUI(playerRef, store, citizen, searchFilter, currentPage - 1, editDropIndex);
+            });
+        }
+        if (currentPage < totalPages - 1) {
+            page.addEventListener("next-page-btn", CustomUIEventBindingType.Activating, event -> {
+                openDeathItemSelectionGUI(playerRef, store, citizen, searchFilter, currentPage + 1, editDropIndex);
+            });
+        }
+
+        for (int i = 0; i < pageItems.size(); i++) {
+            final String itemId = pageItems.get(i).getKey();
+            final int idx = i;
+            page.addEventListener("pick-" + idx, CustomUIEventBindingType.Activating, event -> {
+                openDeathItemQuantityGUI(playerRef, store, citizen, itemId, editDropIndex);
+            });
+        }
+
+        page.addEventListener("back-btn", CustomUIEventBindingType.Activating, event -> {
+            openDeathConfigGUI(playerRef, store, citizen);
+        });
+
+        page.open(store);
+    }
+
+    private void openDeathItemQuantityGUI(@Nonnull PlayerRef playerRef, @Nonnull Store<EntityStore> store,
+                                          @Nonnull CitizenData citizen, @Nonnull String itemId, int editDropIndex) {
+        DeathConfig dc = citizen.getDeathConfig();
+        int currentQty = 1;
+        if (editDropIndex >= 0 && editDropIndex < dc.getDropItems().size()) {
+            currentQty = dc.getDropItems().get(editDropIndex).getQuantity();
+        }
+
+        Item item = Item.getAssetMap().getAssetMap().get(itemId);
+        String displayName = itemId;
+        if (item != null) {
+            displayName = Message.translation(item.getTranslationKey()).getAnsiMessage();
+            if (displayName.startsWith("server.")) {
+                displayName = displayName.replaceFirst("(?i)\\.name$", "");
+                int lastDot = displayName.lastIndexOf('.');
+                if (lastDot != -1) displayName = displayName.substring(lastDot + 1);
+                displayName = displayName.replace("_", " ");
+            }
+        }
+
+        TemplateProcessor template = createBaseTemplate()
+                .setVariable("itemId", itemId)
+                .setVariable("displayName", displayName)
+                .setVariable("currentQty", currentQty);
+
+        String html = template.process(getSharedStyles() + """
+                <div class="page-overlay">
+                    <div class="main-container" style="anchor-width: 500; anchor-height: 400;">
+
+                        <div class="header">
+                            <div class="header-content">
+                                <p class="header-title">Set Drop Quantity</p>
+                                <p class="header-subtitle">How many of this item to drop</p>
+                            </div>
+                        </div>
+
+                        <div class="body">
+                            <div class="section">
+                                <div style="layout: center; flex-weight: 0; padding-bottom: 16;">
+                                    <span class="item-icon" data-hyui-item-id="{{$itemId}}" style="anchor-width: 48; anchor-height: 48;"></span>
+                                    <p style="color: #e6edf3; font-size: 16; font-weight: bold; padding-left: 12;">{{$displayName}}</p>
+                                </div>
+                                <div style="layout: center; flex-weight: 0;">
+                                    <div style="anchor-width: 250; flex-weight: 0;">
+                                        {{@numberField:id=quantity-input,label=Quantity,value={{$currentQty}},placeholder=1,min=1,max=9999,step=1,decimals=0}}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="footer">
+                            <button id="qty-back-btn" class="btn-ghost">Back</button>
+                            <div style="flex-weight: 0; anchor-width: 8;"></div>
+                            <button id="qty-confirm-btn" class="btn-primary" style="anchor-width: 160;">Confirm</button>
+                        </div>
+
+                    </div>
+                </div>
+                """);
+
+        PageBuilder page = PageBuilder.pageForPlayer(playerRef)
+                .withLifetime(CustomPageLifetime.CanDismiss)
+                .fromHtml(html);
+
+        final int[] quantity = {currentQty};
+
+        page.addEventListener("quantity-input", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
+            ctx.getValue("quantity-input", Double.class).ifPresent(val -> {
+                quantity[0] = Math.max(1, val.intValue());
+            });
+        });
+
+        page.addEventListener("qty-confirm-btn", CustomUIEventBindingType.Activating, event -> {
+            List<DeathDropItem> drops = new ArrayList<>(dc.getDropItems());
+            DeathDropItem dropItem = new DeathDropItem(itemId, quantity[0]);
+
+            if (editDropIndex >= 0 && editDropIndex < drops.size()) {
+                drops.set(editDropIndex, dropItem);
+            } else {
+                drops.add(dropItem);
+            }
+
+            dc.setDropItems(drops);
+            citizen.setDeathConfig(dc);
+            plugin.getCitizensManager().saveCitizen(citizen);
+            playerRef.sendMessage(Message.raw("Drop item saved!").color(Color.GREEN));
+            openDeathConfigGUI(playerRef, store, citizen);
+        });
+
+        page.addEventListener("qty-back-btn", CustomUIEventBindingType.Activating, event -> {
+            openDeathItemSelectionGUI(playerRef, store, citizen, "", 0, editDropIndex);
+        });
+
+        page.open(store);
+    }
+
+    public void openEditDeathCommandGUI(@Nonnull PlayerRef playerRef, @Nonnull Store<EntityStore> store,
+                                        @Nonnull CitizenData citizen, @Nonnull CommandAction command, int editIndex) {
+        boolean isNew = (editIndex == -1);
+
+        TemplateProcessor template = createBaseTemplate()
+                .setVariable("command", escapeHtml(command.getCommand()))
+                .setVariable("runAsServer", command.isRunAsServer())
+                .setVariable("delaySeconds", command.getDelaySeconds())
+                .setVariable("isNew", isNew);
+
+        String html = template.process(getSharedStyles() + """
+                <div class="page-overlay">
+                    <div class="main-container" style="anchor-width: 680; anchor-height: 480;">
+
+                        <div class="header">
+                            <div class="header-content">
+                                <p class="header-title">{{#if isNew}}Add Death Command{{else}}Edit Death Command{{/if}}</p>
+                                <p class="header-subtitle">Command to execute when the citizen dies</p>
+                            </div>
+                        </div>
+
+                        <div class="body">
+                            <div class="section">
+                                {{@sectionHeader:title=Command}}
+                                <input type="text" id="command-input" class="form-input" value="{{$command}}"
+                                       placeholder="give {PlayerName} Rock_Gem_Diamond" />
+                                <p class="form-hint">Do not include the leading /. Use {PlayerName} or {CitizenName} as variables.</p>
+                            </div>
+
+                            <div class="spacer-md"></div>
+
+                            <div class="section">
+                                {{@sectionHeader:title=Delay}}
+                                {{@numberField:id=delay-seconds,label=Delay Before Command (seconds),value={{$delaySeconds}},placeholder=0,min=0,max=300,step=0.5,decimals=1}}
+                            </div>
+
+                            <div class="spacer-md"></div>
+
+                            <div class="section">
+                                {{@sectionHeader:title=Execution Mode}}
+                                <div class="checkbox-row">
+                                    <input type="checkbox" id="run-as-server" {{#if runAsServer}}checked{{/if}} />
+                                    <div style="layout: top; flex-weight: 0;">
+                                        <p class="checkbox-label">Run as Server</p>
+                                        <p class="checkbox-description">Execute as console command instead of player</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="footer">
+                            <button id="cancel-btn" class="btn-ghost">Cancel</button>
+                            <div style="flex-weight: 0; anchor-width: 16;"></div>
+                            <button id="save-dcmd-btn" class="btn-primary" style="anchor-width: 200;">{{#if isNew}}Add Command{{else}}Save Changes{{/if}}</button>
+                        </div>
+
+                    </div>
+                </div>
+                """);
+
+        PageBuilder page = PageBuilder.pageForPlayer(playerRef)
+                .withLifetime(CustomPageLifetime.CanDismiss)
+                .fromHtml(html);
+
+        final String[] commandText = {command.getCommand()};
+        final boolean[] runAsServer = {command.isRunAsServer()};
+        final float[] delaySeconds = {command.getDelaySeconds()};
+
+        page.addEventListener("command-input", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
+            commandText[0] = ctx.getValue("command-input", String.class).orElse("");
+        });
+
+        page.addEventListener("delay-seconds", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
+            ctx.getValue("delay-seconds", Double.class).ifPresent(val -> delaySeconds[0] = val.floatValue());
+            if (delaySeconds[0] == 0.0f) {
+                ctx.getValue("delay-seconds", String.class).ifPresent(val -> {
+                    try { delaySeconds[0] = Float.parseFloat(val); } catch (NumberFormatException ignored) {}
+                });
+            }
+        });
+
+        page.addEventListener("run-as-server", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
+            runAsServer[0] = ctx.getValue("run-as-server", Boolean.class).orElse(false);
+        });
+
+        page.addEventListener("save-dcmd-btn", CustomUIEventBindingType.Activating, event -> {
+            String cmd = commandText[0].trim();
+            if (cmd.isEmpty()) {
+                playerRef.sendMessage(Message.raw("Command cannot be empty!").color(Color.RED));
+                return;
+            }
+            if (cmd.startsWith("/")) cmd = cmd.substring(1);
+
+            DeathConfig dc = citizen.getDeathConfig();
+            List<CommandAction> cmds = new ArrayList<>(dc.getDeathCommands());
+            CommandAction saved = new CommandAction(cmd, runAsServer[0], delaySeconds[0]);
+
+            if (isNew) {
+                cmds.add(saved);
+                playerRef.sendMessage(Message.raw("Death command added!").color(Color.GREEN));
+            } else {
+                cmds.set(editIndex, saved);
+                playerRef.sendMessage(Message.raw("Death command updated!").color(Color.GREEN));
+            }
+
+            dc.setDeathCommands(cmds);
+            citizen.setDeathConfig(dc);
+            plugin.getCitizensManager().saveCitizen(citizen);
+            openDeathConfigGUI(playerRef, store, citizen);
+        });
+
+        page.addEventListener("cancel-btn", CustomUIEventBindingType.Activating, event -> {
+            openDeathConfigGUI(playerRef, store, citizen);
+        });
+
+        page.open(store);
+    }
+
+    public void openEditDeathMessageGUI(@Nonnull PlayerRef playerRef, @Nonnull Store<EntityStore> store,
+                                        @Nonnull CitizenData citizen, @Nonnull CitizenMessage message, int editIndex) {
+        boolean isNew = (editIndex == -1);
+
+        TemplateProcessor template = createBaseTemplate()
+                .setVariable("message", escapeHtml(message.getMessage()))
+                .setVariable("delaySeconds", message.getDelaySeconds())
+                .setVariable("isNew", isNew);
+
+        String html = template.process(getSharedStyles() + """
+                <div class="page-overlay">
+                    <div class="main-container" style="anchor-width: 680; anchor-height: 400;">
+
+                        <div class="header">
+                            <div class="header-content">
+                                <p class="header-title">{{#if isNew}}Add Death Message{{else}}Edit Death Message{{/if}}</p>
+                                <p class="header-subtitle">Message sent to the killer when the citizen dies</p>
+                            </div>
+                        </div>
+
+                        <div class="body">
+                            <div class="section">
+                                {{@sectionHeader:title=Message Text}}
+                                <input type="text" id="message-input" class="form-input" value="{{$message}}"
+                                       placeholder="Enter message with optional color codes..." />
+                                <p class="form-hint">Colors: {RED}, {GREEN}, {#HEX}. Variables: {PlayerName}, {CitizenName}</p>
+                            </div>
+
+                            <div class="spacer-md"></div>
+
+                            <div class="section">
+                                {{@sectionHeader:title=Delay}}
+                                {{@numberField:id=delay-seconds,label=Delay Before Message (seconds),value={{$delaySeconds}},placeholder=0,min=0,max=60,step=0.5,decimals=1}}
+                            </div>
+                        </div>
+
+                        <div class="footer">
+                            <button id="cancel-btn" class="btn-ghost">Cancel</button>
+                            <div style="flex-weight: 0; anchor-width: 16;"></div>
+                            <button id="save-dmsg-btn" class="btn-primary" style="anchor-width: 200;">{{#if isNew}}Add Message{{else}}Save Changes{{/if}}</button>
+                        </div>
+
+                    </div>
+                </div>
+                """);
+
+        PageBuilder page = PageBuilder.pageForPlayer(playerRef)
+                .withLifetime(CustomPageLifetime.CanDismiss)
+                .fromHtml(html);
+
+        final String[] messageText = {message.getMessage()};
+        final float[] delaySeconds = {message.getDelaySeconds()};
+
+        page.addEventListener("message-input", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
+            messageText[0] = ctx.getValue("message-input", String.class).orElse("");
+        });
+
+        page.addEventListener("delay-seconds", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
+            ctx.getValue("delay-seconds", Double.class).ifPresent(val -> delaySeconds[0] = val.floatValue());
+            if (delaySeconds[0] == 0.0f) {
+                ctx.getValue("delay-seconds", String.class).ifPresent(val -> {
+                    try { delaySeconds[0] = Float.parseFloat(val); } catch (NumberFormatException ignored) {}
+                });
+            }
+        });
+
+        page.addEventListener("save-dmsg-btn", CustomUIEventBindingType.Activating, event -> {
+            if (messageText[0].trim().isEmpty()) {
+                playerRef.sendMessage(Message.raw("Message cannot be empty!").color(Color.RED));
+                return;
+            }
+
+            DeathConfig dc = citizen.getDeathConfig();
+            List<CitizenMessage> msgs = new ArrayList<>(dc.getDeathMessages());
+            CitizenMessage saved = new CitizenMessage(messageText[0].trim(), null, delaySeconds[0]);
+
+            if (isNew) {
+                msgs.add(saved);
+                playerRef.sendMessage(Message.raw("Death message added!").color(Color.GREEN));
+            } else {
+                msgs.set(editIndex, saved);
+                playerRef.sendMessage(Message.raw("Death message updated!").color(Color.GREEN));
+            }
+
+            dc.setDeathMessages(msgs);
+            citizen.setDeathConfig(dc);
+            plugin.getCitizensManager().saveCitizen(citizen);
+            openDeathConfigGUI(playerRef, store, citizen);
+        });
+
+        page.addEventListener("cancel-btn", CustomUIEventBindingType.Activating, event -> {
+            openDeathConfigGUI(playerRef, store, citizen);
+        });
+
+        page.open(store);
+    }
+
+    public void openPatrolPathsGUI(@Nonnull PlayerRef playerRef, @Nonnull Store<EntityStore> store,
+                                   @Nonnull CitizenData citizen) {
+        List<PatrolPath> allPaths = new ArrayList<>(plugin.getCitizensManager().getPatrolManager().getAllPaths());
+        allPaths.sort(Comparator.comparing(PatrolPath::getName));
+
+        TemplateProcessor template = createBaseTemplate()
+                .setVariable("paths", allPaths)
+                .setVariable("hasPaths", !allPaths.isEmpty());
+
+        String html = template.process(getSharedStyles() + """
+                <div class="page-overlay">
+                    <div class="main-container" style="anchor-width: 750; anchor-height: 700;">
+
+                        <div class="header">
+                            <div class="header-content">
+                                <p class="header-title">Patrol Paths</p>
+                                <p class="header-subtitle">Manage plugin-managed patrol paths</p>
+                            </div>
+                        </div>
+
+                        <div class="body">
+
+                            <div class="section">
+                                {{@sectionHeader:title=Create New Path,description=Create a new named patrol path}}
+                                <div class="form-row">
+                                    <div style="flex-weight: 1;">
+                                        {{@formField:id=new-path-name,label=Path Name,value=,placeholder=Enter path name...}}
+                                    </div>
+                                    <div class="spacer-h-sm"></div>
+                                    <div style="flex-weight: 0; layout: center; padding-top: 18;">
+                                        <button id="create-path-btn" class="btn-primary">Create</button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="spacer-md"></div>
+
+                            <div class="section">
+                                {{@sectionHeader:title=Existing Paths,description=Edit or delete patrol paths}}
+                                {{#if hasPaths}}
+                                {{#each paths}}
+                                <div class="list-item">
+                                    <div style="flex-weight: 1;">
+                                        <p style="font-size: 14; font-weight: bold;">{{$name}}</p>
+                                        <p style="font-size: 12; color: #888888;">{{$loopMode}} | {{$waypoints.size}} waypoints</p>
+                                    </div>
+                                    <button id="edit-path-{{$name}}" class="btn-secondary" style="anchor-width: 100;">Edit</button>
+                                    <div class="spacer-h-xs"></div>
+                                    <button id="delete-path-{{$name}}" class="btn-danger" style="anchor-width: 120;">Delete</button>
+                                </div>
+                                <div class="spacer-xs"></div>
+                                {{/each}}
+                                {{else}}
+                                <p style="color: #888888; font-size: 13;">No patrol paths created yet.</p>
+                                {{/if}}
+                            </div>
+
+                        </div>
+
+                        <div class="footer">
+                            <button id="back-btn" class="btn-ghost">Back</button>
+                        </div>
+
+                    </div>
+                </div>
+                """);
+
+        PageBuilder page = PageBuilder.pageForPlayer(playerRef)
+                .withLifetime(CustomPageLifetime.CanDismiss)
+                .fromHtml(html);
+
+        setupPatrolPathsListeners(page, playerRef, store, citizen, allPaths);
+
+        page.open(store);
+    }
+
+    private void setupPatrolPathsListeners(@Nonnull PageBuilder page, @Nonnull PlayerRef playerRef,
+                                           @Nonnull Store<EntityStore> store, @Nonnull CitizenData citizen,
+                                           @Nonnull List<PatrolPath> paths) {
+        final String[] newPathName = {""};
+
+        page.addEventListener("new-path-name", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
+            newPathName[0] = ctx.getValue("new-path-name", String.class).orElse("").trim();
+        });
+
+        page.addEventListener("create-path-btn", CustomUIEventBindingType.Activating, event -> {
+            String name = newPathName[0];
+            if (name.isEmpty()) {
+                playerRef.sendMessage(Message.raw("Enter a path name first.").color(Color.RED));
+                return;
+            }
+            if (plugin.getCitizensManager().getPatrolManager().getPath(name) != null) {
+                playerRef.sendMessage(Message.raw("A path with that name already exists.").color(Color.RED));
+                return;
+            }
+            PatrolPath newPath = new PatrolPath(name, PatrolPath.LoopMode.LOOP);
+            plugin.getCitizensManager().getPatrolManager().savePath(newPath);
+            openPatrolPathEditorGUI(playerRef, store, citizen, name);
+        });
+
+        for (PatrolPath path : paths) {
+            String name = path.getName();
+            page.addEventListener("edit-path-" + name, CustomUIEventBindingType.Activating, event -> {
+                openPatrolPathEditorGUI(playerRef, store, citizen, name);
+            });
+            page.addEventListener("delete-path-" + name, CustomUIEventBindingType.Activating, event -> {
+                plugin.getCitizensManager().stopCitizenPatrol(citizen.getId());
+                plugin.getCitizensManager().getPatrolManager().deletePath(name);
+                String current = citizen.getPathConfig().getPluginPatrolPath();
+                if (name.equals(current)) {
+                    citizen.getPathConfig().setPluginPatrolPath("");
+                    plugin.getCitizensManager().saveCitizen(citizen);
+                }
+                playerRef.sendMessage(Message.raw("Patrol path deleted.").color(Color.GREEN));
+                openPatrolPathsGUI(playerRef, store, citizen);
+            });
+        }
+
+        page.addEventListener("back-btn", CustomUIEventBindingType.Activating, event -> {
+            openBehaviorsGUI(playerRef, store, citizen);
+        });
+    }
+
+    public void openPatrolPathEditorGUI(@Nonnull PlayerRef playerRef, @Nonnull Store<EntityStore> store,
+                                        @Nonnull CitizenData citizen, @Nonnull String pathName) {
+        PatrolPath path = plugin.getCitizensManager().getPatrolManager().getPath(pathName);
+        if (path == null) {
+            openPatrolPathsGUI(playerRef, store, citizen);
+            return;
+        }
+
+        List<PatrolWaypoint> waypoints = path.getWaypoints();
+        List<IndexedWaypoint> indexedWaypoints = new ArrayList<>();
+        for (int i = 0; i < waypoints.size(); i++) {
+            indexedWaypoints.add(new IndexedWaypoint(i, waypoints.get(i)));
+        }
+
+        TemplateProcessor template = createBaseTemplate()
+                .setVariable("pathName", escapeHtml(pathName))
+                .setVariable("isLoop", path.getLoopMode() == PatrolPath.LoopMode.LOOP)
+                .setVariable("waypoints", indexedWaypoints)
+                .setVariable("hasWaypoints", !indexedWaypoints.isEmpty())
+                .setVariable("waypointCount", indexedWaypoints.size());
+
+        String html = template.process(getSharedStyles() + """
+                <div class="page-overlay">
+                    <div class="main-container" style="anchor-width: 750; anchor-height: 700;">
+
+                        <div class="header">
+                            <div class="header-content">
+                                <p class="header-title">Edit Path: {{$pathName}}</p>
+                                <p class="header-subtitle">Manage waypoints and loop mode</p>
+                            </div>
+                        </div>
+
+                        <div class="body">
+
+                            <div class="section">
+                                {{@sectionHeader:title=Loop Mode,description=How the citizen loops through waypoints}}
+                                <div class="button-group">
+                                    {{#if isLoop}}
+                                    <button id="mode-loop" class="btn-primary" style="anchor-width: 140;">Loop</button>
+                                    {{else}}
+                                    <button id="mode-loop" class="btn-primary" style="anchor-width: 140;">Ping Pong</button>
+                                    {{/if}}
+                                </div>
+                            </div>
+
+                            <div class="spacer-md"></div>
+
+                            <div class="section">
+                                {{@sectionHeader:title=Waypoints ({{$waypointCount}}),description=Waypoints the citizen follows in order}}
+                                {{#if hasWaypoints}}
+                                {{#each waypoints}}
+                                <div class="list-item">
+                                    <div style="flex-weight: 1;">
+                                        <p style="font-size: 13; font-weight: bold;">#{{$index}}: X:{{$displayX}} Y:{{$displayY}} Z:{{$displayZ}}</p>
+                                    </div>
+                                    <div style="anchor-width: 110; flex-weight: 0;">
+                                        {{@numberField:id=pause-{{$index}},label=Pause (s),value={{$pauseSeconds}},min=0,max=300,step=0.5,decimals=1}}
+                                    </div>
+                                    <div class="spacer-h-xs"></div>
+                                    <button id="delete-wp-{{$index}}" class="btn-danger" style="anchor-width: 110; flex-weight: 0;">Delete</button>
+                                </div>
+                                <div class="spacer-xs"></div>
+                                {{/each}}
+                                {{else}}
+                                <p style="color: #888888; font-size: 13;">No waypoints yet. Stand where you want a waypoint and click Add.</p>
+                                {{/if}}
+                                <div class="spacer-sm"></div>
+                                <button id="add-waypoint-btn" class="btn-secondary" style="anchor-width: 250;">Add Waypoint at my position</button>
+                            </div>
+
+                        </div>
+
+                        <div class="footer">
+                            <button id="back-btn" class="btn-ghost">Back</button>
+                            <div class="spacer-h-md"></div>
+                            <button id="save-btn" class="btn-primary" style="anchor-width: 180;">Save Changes</button>
+                        </div>
+
+                    </div>
+                </div>
+                """);
+
+        PageBuilder page = PageBuilder.pageForPlayer(playerRef)
+                .withLifetime(CustomPageLifetime.CanDismiss)
+                .fromHtml(html);
+
+        setupPatrolPathEditorListeners(page, playerRef, store, citizen, path, indexedWaypoints);
+
+        page.open(store);
+    }
+
+    private void setupPatrolPathEditorListeners(@Nonnull PageBuilder page, @Nonnull PlayerRef playerRef,
+                                                @Nonnull Store<EntityStore> store, @Nonnull CitizenData citizen,
+                                                @Nonnull PatrolPath path,
+                                                @Nonnull List<IndexedWaypoint> indexedWaypoints) {
+        final PatrolPath.LoopMode[] loopMode = {path.getLoopMode()};
+        final float[] pauseValues = new float[indexedWaypoints.size()];
+        for (int i = 0; i < indexedWaypoints.size(); i++) {
+            pauseValues[i] = indexedWaypoints.get(i).getPauseSeconds();
+        }
+
+        page.addEventListener("mode-loop", CustomUIEventBindingType.Activating, event -> {
+            if (path.getLoopMode() == PatrolPath.LoopMode.PING_PONG) {
+                loopMode[0] = PatrolPath.LoopMode.LOOP;
+                path.setLoopMode(PatrolPath.LoopMode.LOOP);
+            }
+            else {
+                loopMode[0] = PatrolPath.LoopMode.PING_PONG;
+                path.setLoopMode(PatrolPath.LoopMode.PING_PONG);
+            }
+            plugin.getCitizensManager().getPatrolManager().savePath(path);
+            openPatrolPathEditorGUI(playerRef, store, citizen, path.getName());
+        });
+
+        for (int i = 0; i < indexedWaypoints.size(); i++) {
+            final int idx = i;
+            page.addEventListener("pause-" + i, CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
+                ctx.getValue("pause-" + idx, Double.class).ifPresent(v -> pauseValues[idx] = v.floatValue());
+            });
+            page.addEventListener("delete-wp-" + i, CustomUIEventBindingType.Activating, event -> {
+                plugin.getCitizensManager().getPatrolManager().removeWaypoint(path.getName(), idx);
+                openPatrolPathEditorGUI(playerRef, store, citizen, path.getName());
+            });
+        }
+
+        page.addEventListener("add-waypoint-btn", CustomUIEventBindingType.Activating, event -> {
+            UUID worldUUID = playerRef.getWorldUuid();
+            if (worldUUID == null) {
+                playerRef.sendMessage(Message.raw("Could not determine your world.").color(Color.RED));
+                return;
+            }
+            Vector3d pos = new Vector3d(playerRef.getTransform().getPosition());
+            plugin.getCitizensManager().getPatrolManager().addWaypoint(
+                    path.getName(), new PatrolWaypoint(pos.x, pos.y, pos.z, 0f));
+            openPatrolPathEditorGUI(playerRef, store, citizen, path.getName());
+        });
+
+        page.addEventListener("save-btn", CustomUIEventBindingType.Activating, event -> {
+            List<PatrolWaypoint> waypoints = path.getWaypoints();
+            for (int i = 0; i < Math.min(pauseValues.length, waypoints.size()); i++) {
+                waypoints.get(i).setPauseSeconds(pauseValues[i]);
+            }
+            path.setLoopMode(loopMode[0]);
+            plugin.getCitizensManager().getPatrolManager().savePath(path);
+            playerRef.sendMessage(Message.raw("Patrol path saved!").color(Color.GREEN));
+            openPatrolPathsGUI(playerRef, store, citizen);
+        });
+
+        page.addEventListener("back-btn", CustomUIEventBindingType.Activating, event -> {
+            openPatrolPathsGUI(playerRef, store, citizen);
+        });
     }
 }
