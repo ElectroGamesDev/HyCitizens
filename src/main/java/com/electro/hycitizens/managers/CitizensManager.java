@@ -562,7 +562,6 @@ public class CitizensManager {
 
         // Load death config
         DeathConfig deathConfig = new DeathConfig();
-        deathConfig.setEnabled(config.getBoolean(basePath + ".death.enabled", false));
         deathConfig.setCommandSelectionMode(config.getString(basePath + ".death.command-mode", "ALL"));
         deathConfig.setMessageSelectionMode(config.getString(basePath + ".death.message-mode", "ALL"));
 
@@ -841,7 +840,6 @@ public class CitizensManager {
 
             // Save death config
             DeathConfig dc = citizen.getDeathConfig();
-            config.set(basePath + ".death.enabled", dc.isEnabled());
             config.set(basePath + ".death.command-mode", dc.getCommandSelectionMode());
             config.set(basePath + ".death.message-mode", dc.getMessageSelectionMode());
 

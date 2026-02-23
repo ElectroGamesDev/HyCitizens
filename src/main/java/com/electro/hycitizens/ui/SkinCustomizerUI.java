@@ -146,14 +146,6 @@ public class SkinCustomizerUI {
                                     %s
                                 </div>
 
-                                <!-- Custom Input -->
-                                <div class="custom-bar">
-                                    <input type="text" id="custom-input" class="custom-input" value="%s"
-                                           placeholder="Enter custom ID..." />
-                                    <div class="sp-h-xs"></div>
-                                    <button id="apply-custom-btn" class="btn-small-accent" style="anchor-width: 120;">Apply</button>
-                                </div>
-
                             </div>
 
                         </div>
@@ -319,18 +311,6 @@ public class SkinCustomizerUI {
         // Per-slot Clear
         page.addEventListener("slot-clear-btn", CustomUIEventBindingType.Activating, event -> {
             SkinUtilities.setSkinField(state.workingSkin, state.selectedSlot, null);
-            plugin.getCitizensManager().applySkinPreview(state.citizen, state.workingSkin);
-            buildAndOpen(playerRef, store, state);
-        });
-
-        // Custom input
-        page.addEventListener("custom-input", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
-            state.customInputValue = ctx.getValue("custom-input", String.class).orElse("");
-        });
-
-        page.addEventListener("apply-custom-btn", CustomUIEventBindingType.Activating, event -> {
-            String val = state.customInputValue.trim();
-            SkinUtilities.setSkinField(state.workingSkin, state.selectedSlot, val.isEmpty() ? null : val);
             plugin.getCitizensManager().applySkinPreview(state.citizen, state.workingSkin);
             buildAndOpen(playerRef, store, state);
         });

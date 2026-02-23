@@ -221,9 +221,13 @@ public class EntityDamageListener extends DamageEventSystem {
 
                         // Handle death config (drops, commands, messages)
                         DeathConfig dc = citizen.getDeathConfig();
-                        handleDeathDrops(citizen, dc);
                         handleDeathCommands(citizen, dc, attackerPlayerRef);
                         handleDeathMessages(citizen, dc, attackerPlayerRef);
+
+                        TransformComponent npcTransformComponent = citizen.getNpcRef().getStore().getComponent(citizen.getNpcRef(), TransformComponent.getComponentType());
+                        if (npcTransformComponent != null) {
+                            handleDeathDrops(citizen, dc, npcTransformComponent.getPosition());
+                        }
 
                         citizen.setLastDeathTime(now);
 
@@ -258,7 +262,7 @@ public class EntityDamageListener extends DamageEventSystem {
 
     private static final Random RANDOM = new Random();
 
-    private void handleDeathDrops(@Nonnull CitizenData citizen, @Nonnull DeathConfig dc) {
+    private void handleDeathDrops(@Nonnull CitizenData citizen, @Nonnull DeathConfig dc, Vector3d position) {
         List<DeathDropItem> drops = dc.getDropItems();
         if (drops.isEmpty()) {
             return;
@@ -271,13 +275,20 @@ public class EntityDamageListener extends DamageEventSystem {
 
         world.execute(() -> {
             ComponentAccessor<EntityStore> accessor = world.getEntityStore().getStore();
-            if (accessor == null) return;
+            if (accessor == null) {
+                return;
+            }
 
             for (DeathDropItem drop : drops) {
-                if (drop.getItemId().isEmpty()) continue;
+                if (drop.getItemId().isEmpty()) {
+                    continue;
+                }
+
                 ItemStack itemStack = new ItemStack(drop.getItemId(), drop.getQuantity());
+
                 Holder<EntityStore>[] entities = ItemComponent.generateItemDrops(
-                        accessor, new ArrayList<>(List.of(itemStack)), citizen.getPosition(), Vector3f.ZERO);
+                        accessor, new ArrayList<>(List.of(itemStack)), new Vector3d(position), Vector3f.ZERO);
+
                 accessor.addEntities(entities, AddReason.SPAWN);
             }
         });
