@@ -689,6 +689,57 @@ public class CitizensUI {
                         layout: left;
                         flex-weight: 0;
                     }
+                    
+                    .drop-item-row {
+                        layout: center;
+                        flex-weight: 0;
+                        background-color: #21262d;
+                        padding: 10;
+                        border-radius: 6;
+                    }
+                
+                    .drop-item-index {
+                        color: #6e7681;
+                        font-size: 11;
+                        font-weight: bold;
+                        anchor-width: 30;
+                        text-align: center;
+                    }
+                
+                    .slot-background {
+                        layout: top;
+                        flex-weight: 0;
+                        anchor-width: 64;
+                        anchor-height: 72;
+                        background-color: #0B0F14;
+                    }
+                
+                    .slot-container {
+                        layout: top;
+                        flex-weight: 0;
+                        anchor-width: 64;
+                        anchor-height: 72;
+                        background-color: #12161a;
+                        border-radius: 6;
+                        padding: 4;
+                        align-items: center;
+                    }
+                
+                    .slot-icon {
+                        anchor-width: 36;
+                        anchor-height: 36;
+                    }
+                
+                    .slot-label {
+                        color: #8b949e;
+                        font-size: 10;
+                        text-align: center;
+                        padding-top: 2;
+                    }
+                
+                    .slot-label-filled {
+                        color: #e6edf3;
+                    }
                 </style>
                 """;
     }
@@ -1886,7 +1937,7 @@ public class CitizensUI {
                             return;
                         }
 
-                        Vector3d tpPos = new Vector3d(citizen.getPosition());
+                        Vector3d tpPos = new Vector3d(citizen.getCurrentPosition());
 
                         // Try to teleport to the actual NPC's position
                         if (citizen.getNpcRef() != null && citizen.getNpcRef().isValid()) {
@@ -4130,6 +4181,12 @@ public class CitizensUI {
 
                         <!-- Body -->
                         <div class="body">
+                            <div>
+                                <p class="form-hint" style="text-align: center; color: #f85149;">Warning: Hytale has minimum and maximum values for all of these options. If you change something and the citizen disappears,</p>
+                            </div>
+                            <div>
+                                <p class="form-hint" style="text-align: center; color: #f85149;">check the console to see what the min and max value is.</p>
+                            </div>
 
                             <!-- Attack Settings -->
                             <div class="section">
@@ -4557,6 +4614,12 @@ public class CitizensUI {
 
                         <!-- Body -->
                         <div class="body">
+                            <div>
+                                <p class="form-hint" style="text-align: center; color: #f85149;">Warning: Hytale has minimum and maximum values for all of these options. If you change something and the citizen disappears,</p>
+                            </div>
+                            <div>
+                                <p class="form-hint" style="text-align: center; color: #f85149;">check the console to see what the min and max value is.</p>
+                            </div>
 
                             <!-- Primary Detection -->
                             <div class="section">
@@ -4775,12 +4838,17 @@ public class CitizensUI {
                         <div class="header">
                             <div class="header-content">
                                 <p class="header-title">Advanced Settings</p>
-                                <p class="header-subtitle">Extended Template_Citizen parameters</p>
                             </div>
                         </div>
 
                         <!-- Body -->
                         <div class="body">
+                            <div>
+                                <p class="form-hint" style="text-align: center; color: #f85149;">Warning: Hytale has minimum and maximum values for all of these options. If you change something and the citizen disappears,</p>
+                            </div>
+                            <div>
+                                <p class="form-hint" style="text-align: center; color: #f85149;">check the console to see what the min and max value is.</p>
+                            </div>
 
                             <!-- General -->
                             <div class="section">
@@ -4870,10 +4938,12 @@ public class CitizensUI {
                                         {{@numberField:id=nighttime-offhand,label=Nighttime OffHand Slot,value={{$nighttimeOffhandSlot}},placeholder=0,min=-1,max=8,step=1,decimals=0}}
                                     </div>
                                 </div>
+                                <!--
                                 <div class="spacer-xs"></div>
                                 {{@formField:id=weapons,label=Weapons (Hotbar Items),value={{$weapons}},placeholder=Weapon_Sword_Iron,hint=Comma-separated list of weapon/item identifiers}}
                                 <div class="spacer-xs"></div>
                                 {{@formField:id=offhand-items,label=OffHand Items,value={{$offHandItems}},placeholder=Furniture_Crude_Torch,hint=Comma-separated list of offhand item identifiers}}
+                                -->
                             </div>
 
                             <div class="spacer-md"></div>
@@ -5063,24 +5133,43 @@ public class CitizensUI {
         StringBuilder dropsHtml = new StringBuilder();
         for (int i = 0; i < drops.size(); i++) {
             DeathDropItem drop = drops.get(i);
+            String itemId = drop.getItemId() != null ? drop.getItemId() : "";
+            int qty = drop.getQuantity();
+
+            String itemContent = !itemId.isEmpty()
+                    ? "<span class=\"slot-icon item-icon\" data-hyui-item-id=\"" + itemId + "\"></span>"
+                    : "<span class=\"slot-icon item-icon\" data-hyui-item-id=\"\"></span>";
+
+            String labelContent = !itemId.isEmpty()
+                    ? "<p class=\"slot-label slot-label-filled\">" + qty + "x</p>"
+                    : "";
+
             dropsHtml.append("""
-                <div class="trade-row">
+                <div class="drop-item-row">
+                    <p class="drop-item-index">#%d</p>
+                    <div class="spacer-h-sm"></div>
                     <div class="slot-background">
-                        <button id="drop-item-%d" class="slot-container" style="layout: top; flex-direction: column;">
-                            <span class="slot-icon item-icon" data-hyui-item-id="%s"></span>
-                            <p class="slot-label slot-label-filled">%dx</p>
+                        <button id="drop-item-%d" class="raw-button"
+                                style="layout: top; flex-weight: 0; anchor-width: 64; anchor-height: 72;
+                                       background-color: #12161a; padding: 4;">
+                            %s
+                            %s
                         </button>
                     </div>
                     <div class="spacer-h-sm"></div>
                     <div class="list-item-content">
                         <p class="list-item-title">%s</p>
-                        <p class="list-item-subtitle">Quantity: %d</p>
+                        <p class="list-item-subtitle">Quantity: %d &middot; Click to change</p>
                     </div>
                     <button id="delete-drop-%d" class="btn-danger btn-small">Delete</button>
                 </div>
                 <div class="spacer-sm"></div>
-                """.formatted(i, drop.getItemId(), drop.getQuantity(),
-                    drop.getItemId(), drop.getQuantity(), i));
+                """.formatted(
+                    i + 1,
+                    i, itemContent, labelContent,
+                    itemId.isEmpty() ? "Empty Slot" : itemId,
+                    qty,
+                    i));
         }
 
         // Build commands HTML
@@ -5415,10 +5504,8 @@ public class CitizensUI {
 
                 itemsHtml.append("""
                     <div style="layout: top; flex-weight: 0; anchor-width: 90; anchor-height: 90; background-color: #535359;">
-                        <button id="pick-%d" style="layout: top; flex-weight: 0; anchor-width: 80; anchor-height: 80; background-color: #21262d; border-radius: 6; padding: 6;">
-                            <div style="layout: center; flex-weight: 0; anchor-height: 50; anchor-width: 50;">
-                                <span class="item-icon" data-hyui-item-id="%s" style="anchor-width: 36; anchor-height: 36;"></span>
-                            </div>
+                        <button id="pick-%d" style="layout: top; flex-weight: 0; anchor-width: 80; anchor-height: 80; background-color: #21262d; padding: 6;">
+                            <span class="item-icon" data-hyui-item-id="%s" style="anchor-width: 36; anchor-height: 36;"></span>
                             <p style="color: #e6edf3; font-size: 9; text-align: center;">%s</p>
                         </button>
                     </div>
