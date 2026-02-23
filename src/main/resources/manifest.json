@@ -1,7 +1,7 @@
 {
   "Group": "com.electro",
   "Name": "HyCitizens",
-  "Version": "1.4.1",
+  "Version": "1.5",
   "Description": "A citizens mod for Hytale",
   "Authors": [
     {
@@ -11,5 +11,9 @@
   ],
   "Website": "https://github.com/ElectroGamesDev",
   "Main": "com.electro.hycitizens.HyCitizensPlugin",
-  "IncludesAssetPack": true
+  "IncludesAssetPack": true,
+  "ServerVersion":"2026.02.19-1a311a592",
+  "OptionalDependencies": {
+    "electro:HyCitizensRoles": "*"
+  }
 }
