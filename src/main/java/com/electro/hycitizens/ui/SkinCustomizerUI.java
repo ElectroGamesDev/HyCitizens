@@ -98,58 +98,60 @@ public class SkinCustomizerUI {
         return new TemplateProcessor().process(getStyles() + """
                 <div class="overlay">
                     <div class="panel">
+                    
+                        <div class="panel-body">
 
-                        <!-- Header -->
-                        <div class="panel-header">
-                            <p class="title">Skin Customizer</p>
-                            <p class="subtitle">%s</p>
-                        </div>
-
-                        <!-- Action Bar -->
-                        <div class="action-bar">
-                            <button id="randomize-all-btn" class="btn-accent" style="anchor-width: 140;">Randomize All</button>
-                            <div style="flex-weight: 1;"></div>
-                            <button id="done-btn" class="btn-success" style="anchor-width: 120;">Done</button>
-                            <div class="sp-h-sm"></div>
-                            <button id="cancel-btn" class="btn-ghost" style="anchor-width: 125;">Cancel</button>
-                        </div>
-
-                        <!-- Content: Sidebar + Main -->
-                        <div class="content-row">
-
-                            <!-- Category Sidebar -->
-                            <div class="cat-sidebar">
-                                %s
+                            <!-- Header -->
+                            <div class="panel-header">
+                                <p class="title">Skin Customizer</p>
+                                <p class="subtitle">%s</p>
                             </div>
-
-                            <!-- Main Area -->
-                            <div class="main-area">
-
-                                <!-- Slot Tabs -->
-                                <div class="slot-tabs-row">
+                            
+                            <!-- Content: Sidebar + Main -->
+                            <div class="content-row">
+    
+                                <!-- Category Sidebar -->
+                                <div class="cat-sidebar">
                                     %s
                                 </div>
-
-                                <!-- Current Value Info -->
-                                <div class="info-bar">
-                                    <p class="info-label">%s:</p>
-                                    <div class="sp-h-xs"></div>
-                                    <p class="info-value">%s</p>
-                                    <div style="flex-weight: 1;"></div>
-                                    <button id="slot-random-btn" class="btn-small-accent" style="anchor-width: 140;">Random</button>
-                                    <div class="sp-h-xs"></div>
-                                    <button id="slot-clear-btn" class="btn-small-ghost" style="anchor-width: 120;">Clear</button>
+    
+                                <!-- Main Area -->
+                                <div class="main-area">
+    
+                                    <!-- Slot Tabs -->
+                                    <div class="slot-tabs-row">
+                                        %s
+                                    </div>
+    
+                                    <!-- Current Value Info -->
+                                    <div class="info-bar">
+                                        <p class="info-label">%s:</p>
+                                        <div class="sp-h-xs"></div>
+                                        <p class="info-value">%s</p>
+                                        <div style="flex-weight: 1;"></div>
+                                        <button id="slot-random-btn" class="btn-small-accent" style="anchor-width: 140;">Random</button>
+                                        <div class="sp-h-xs"></div>
+                                        <button id="slot-clear-btn" class="btn-small-ghost" style="anchor-width: 120;">Clear</button>
+                                    </div>
+    
+                                    <!-- Options Grid -->
+                                    <div class="grid-scroll">
+                                        %s
+                                    </div>
+    
                                 </div>
-
-                                <!-- Options Grid -->
-                                <div class="grid-scroll">
-                                    %s
-                                </div>
-
+    
                             </div>
-
+                            
+                            <!-- Action Bar -->
+                            <div class="action-bar">
+                                <button id="randomize-all-btn" class="btn-accent" style="anchor-width: 140;">Randomize</button>
+                                <div style="flex-weight: 1;"></div>
+                                <button id="done-btn" class="btn-success" style="anchor-width: 120;">Done</button>
+                                <div class="sp-h-sm"></div>
+                                <button id="cancel-btn" class="btn-ghost" style="anchor-width: 125;">Cancel</button>
+                            </div>
                         </div>
-
                     </div>
                 </div>
                 """.formatted(
@@ -212,14 +214,19 @@ public class SkinCustomizerUI {
 
         StringBuilder sb = new StringBuilder();
 
-        // "None" tile first
-        boolean noneSelected = (currentValue == null || currentValue.isEmpty());
-        String noneClass = noneSelected ? "tile tile-none tile-selected" : "tile tile-none";
-        // Start first row
-        sb.append("<div class=\"grid-row\">\n");
-        sb.append("<button id=\"opt-none\" class=\"%s\">None</button>\n".formatted(noneClass));
+        boolean isBodyType = state.selectedSlot.equalsIgnoreCase("body_type"); // adjust if your constant differs
 
-        int col = 1; // already placed "None"
+        sb.append("<div class=\"grid-row\">\n");
+
+        int col = 0;
+
+        if (!isBodyType) {
+            boolean noneSelected = (currentValue == null || currentValue.isEmpty());
+            String noneClass = noneSelected ? "tile tile-none tile-selected" : "tile tile-none";
+            sb.append("<button id=\"opt-none\" class=\"%s\">None</button>\n".formatted(noneClass));
+            col = 1;
+        }
+
         for (int i = 0; i < options.size(); i++) {
             if (col >= TILES_PER_ROW) {
                 sb.append("</div>\n<div class=\"sp-tile-row\"></div>\n<div class=\"grid-row\">\n");
@@ -283,6 +290,11 @@ public class SkinCustomizerUI {
 
         // "None" tile
         page.addEventListener("opt-none", CustomUIEventBindingType.Activating, event -> {
+
+            if (state.selectedSlot.equalsIgnoreCase("body_type")) {
+                return;
+            }
+
             SkinUtilities.setSkinField(state.workingSkin, state.selectedSlot, null);
             plugin.getCitizensManager().applySkinPreview(state.citizen, state.workingSkin);
             buildAndOpen(playerRef, store, state);
@@ -299,21 +311,36 @@ public class SkinCustomizerUI {
 
         // Per-slot Random
         page.addEventListener("slot-random-btn", CustomUIEventBindingType.Activating, event -> {
+
             List<String> slotOptions = cosmeticOptions.getOrDefault(state.selectedSlot, List.of());
-            if (!slotOptions.isEmpty()) {
-                String randomValue = slotOptions.get(RandomUtil.getSecureRandom().nextInt(slotOptions.size()));
+
+            List<String> valid = new ArrayList<>();
+            for (String opt : slotOptions) {
+                if (opt != null && !opt.isBlank()) {
+                    valid.add(opt);
+                }
+            }
+
+            if (!valid.isEmpty()) {
+                String randomValue = valid.get(RandomUtil.getSecureRandom().nextInt(valid.size()));
                 SkinUtilities.setSkinField(state.workingSkin, state.selectedSlot, randomValue);
                 plugin.getCitizensManager().applySkinPreview(state.citizen, state.workingSkin);
             }
+
             buildAndOpen(playerRef, store, state);
         });
 
         // Per-slot Clear
         page.addEventListener("slot-clear-btn", CustomUIEventBindingType.Activating, event -> {
+            if (state.selectedSlot.equalsIgnoreCase("body_type")) {
+                return;
+            }
+
             SkinUtilities.setSkinField(state.workingSkin, state.selectedSlot, null);
             plugin.getCitizensManager().applySkinPreview(state.citizen, state.workingSkin);
             buildAndOpen(playerRef, store, state);
         });
+
 
         // Randomize All
         page.addEventListener("randomize-all-btn", CustomUIEventBindingType.Activating, event -> {
@@ -424,6 +451,11 @@ public class SkinCustomizerUI {
                         background-color: #161b22;
                     }
 
+                    .panel-body {
+                        layout: top;
+                        flex-weight: 1;
+                    }
+                    
                     .content-row {
                         layout: left;
                         flex-weight: 1;
