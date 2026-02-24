@@ -39,6 +39,7 @@ public class CitizenData {
     private boolean hideNpc = false;
     private float nametagOffset;
     private boolean fKeyInteractionEnabled;
+    private boolean forceFKeyInteractionText;
 
     // Item-related fields
     private String npcHelmet;
@@ -425,12 +426,22 @@ public class CitizenData {
         this.createdAt = createdAt;
     }
 
+    @Deprecated
     public void setFKeyInteractionEnabled(boolean enabled) {
         this.fKeyInteractionEnabled = enabled;
     }
 
+    @Deprecated
     public boolean getFKeyInteractionEnabled() {
         return fKeyInteractionEnabled;
+    }
+
+    public void setForceFKeyInteractionText(boolean enabled) {
+        this.forceFKeyInteractionText = enabled;
+    }
+
+    public boolean getForceFKeyInteractionText() {
+        return forceFKeyInteractionText;
     }
 
     @Nonnull
