@@ -478,9 +478,11 @@ public class CitizensManager {
         citizenData.setHideNametag(config.getBoolean(basePath + ".hide-nametag", false));
         citizenData.setHideNpc(config.getBoolean(basePath + ".hide-npc", false));
         citizenData.setNametagOffset(config.getFloat(basePath + ".nametag-offset", 0));
-        // Load legacy field for migration purposes only (no longer shown in UI).
-        // Defaults to true so citizens without this key migrate to "BOTH".
+
+        // Backwards compatibility
         citizenData.setFKeyInteractionEnabled(config.getBoolean(basePath + ".f-key-interaction", true));
+
+        citizenData.setForceFKeyInteractionText(config.getBoolean(basePath + ".force-f-key-interaction-text", false));
 
         // Load animation behaviors
         List<AnimationBehavior> animBehaviors = new ArrayList<>();
@@ -778,6 +780,8 @@ public class CitizensManager {
                 config.set(commandPath + ".interaction-trigger",
                         action.getInteractionTrigger() != null ? action.getInteractionTrigger() : "BOTH");
             }
+
+            config.set(basePath + ".force-f-key-interaction-text", citizen.getForceFKeyInteractionText());
 
             // Misc
             config.set(basePath + ".hide-nametag", citizen.isHideNametag());
@@ -1417,14 +1421,13 @@ public class CitizensManager {
     }
 
     public void setInteractionComponent(Store<EntityStore> store, Ref<EntityStore> ref, CitizenData citizenData) {
-
         if (ref == null || !ref.isValid()) {
             HyCitizensPlugin.get().getLogger().atSevere().log("Unable to executes setInteractionComponent");
             return;
         }
 
         // Show the "Press F to interact" popup only when at least one action uses F key.
-        if (hasFKeyActions(citizenData)) {
+        if (citizenData.getForceFKeyInteractionText() || hasFKeyActions(citizenData)) {
             store.putComponent(ref, Interactable.getComponentType(), Interactable.INSTANCE);
         }
     }
@@ -1432,11 +1435,16 @@ public class CitizensManager {
     public boolean hasFKeyActions(@Nonnull CitizenData citizen) {
         for (CommandAction cmd : citizen.getCommandActions()) {
             String trigger = cmd.getInteractionTrigger();
-            if (trigger == null || "BOTH".equals(trigger) || "F_KEY".equals(trigger)) return true;
+            if (trigger == null || "BOTH".equals(trigger) || "F_KEY".equals(trigger)) {
+                return true;
+            }
         }
+
         for (CitizenMessage msg : citizen.getMessagesConfig().getMessages()) {
             String trigger = msg.getInteractionTrigger();
-            if (trigger == null || "BOTH".equals(trigger) || "F_KEY".equals(trigger)) return true;
+            if (trigger == null || "BOTH".equals(trigger) || "F_KEY".equals(trigger)) {
+                return true;
+            }
         }
         return false;
     }

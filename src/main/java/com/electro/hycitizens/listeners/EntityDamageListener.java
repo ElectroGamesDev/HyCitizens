@@ -102,7 +102,7 @@ public class EntityDamageListener extends DamageEventSystem {
                     continue;
                 }
 
-                if (citizen.getNpcRef().getIndex() != attackerEntityRef.getIndex()) {
+                if (!citizen.getNpcRef().equals(attackerEntityRef)) {
                     continue;
                 }
 

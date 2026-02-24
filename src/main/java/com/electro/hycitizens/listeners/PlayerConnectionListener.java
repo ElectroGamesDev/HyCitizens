@@ -114,6 +114,11 @@ public class PlayerConnectionListener {
 
                                         Message.raw(" | ").color(Color.DARK_GRAY),
 
+                                        Message.raw("Support (Click)").color(Color.PINK)
+                                                .link("https://ko-fi.com/electrogames"),
+
+                                        Message.raw(" | ").color(Color.DARK_GRAY),
+
                                         Message.raw("Discord (Click)").color(Color.CYAN)
                                                 .link("https://discord.gg/Snqz9E58Dr"),
 

@@ -142,8 +142,12 @@ public class CitizenInteraction {
 
     static public void handleInteraction(@Nonnull CitizenData citizen, @Nonnull PlayerRef playerRef,
                                          @Nonnull String interactionSource) {
-        // Gather matching messages and commands up front so we can do an early-exit
-        // if this citizen has no actions for the given interaction type.
+        CitizenInteractEvent interactEvent = new CitizenInteractEvent(citizen, playerRef);
+        HyCitizensPlugin.get().getCitizensManager().fireCitizenInteractEvent(interactEvent);
+
+        if (interactEvent.isCancelled())
+            return;
+
         MessagesConfig msgConfig = citizen.getMessagesConfig();
         List<CitizenMessage> allMessages = msgConfig.isEnabled() ? msgConfig.getMessages() : List.of();
         List<CitizenMessage> matchingMessages = allMessages.stream()
@@ -154,7 +158,7 @@ public class CitizenInteraction {
                 .filter(cmd -> cmd.isTriggeredBy(interactionSource))
                 .collect(Collectors.toList());
 
-        // Nothing to do for this interaction type — exit silently.
+        // Nothing to do for this interaction type, exit silently.
         if (matchingMessages.isEmpty() && matchingCommands.isEmpty()) {
             return;
         }
@@ -180,12 +184,6 @@ public class CitizenInteraction {
                 return;
             }
         }
-
-        CitizenInteractEvent interactEvent = new CitizenInteractEvent(citizen, playerRef);
-        HyCitizensPlugin.get().getCitizensManager().fireCitizenInteractEvent(interactEvent);
-
-        if (interactEvent.isCancelled())
-            return;
 
         // Trigger ON_INTERACT animations
         HyCitizensPlugin.get().getCitizensManager().triggerAnimations(citizen, "ON_INTERACT");

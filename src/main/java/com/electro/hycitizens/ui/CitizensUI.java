@@ -818,6 +818,7 @@ public class CitizensUI {
     public static class ListItem {
         private final boolean isGroup;
         private final String groupName;
+        private final String rawGroupName;
         private final String groupId;
         private final CitizenData rawCitizen;
         private final SafeCitizen citizen;
@@ -832,6 +833,7 @@ public class CitizensUI {
 
         private ListItem(boolean isGroup, String groupName, String groupId, CitizenData citizen) {
             this.isGroup = isGroup;
+            this.rawGroupName = groupName;
             this.groupName = escapeHtml(groupName);
             this.groupId = groupId;
             this.rawCitizen = citizen;
@@ -840,6 +842,7 @@ public class CitizensUI {
 
         public boolean isGroup() { return isGroup; }
         public String getGroupName() { return groupName; }
+        public String getRawGroupName() { return rawGroupName; }
         public String getGroupId() { return groupId; }
         public SafeCitizen getCitizen() { return citizen; }
         public CitizenData getRawCitizen() { return rawCitizen; }
@@ -1915,9 +1918,9 @@ public class CitizensUI {
                 if (item.isGroup()) {
                     // Group view listener - only if we're not already viewing a specific group
                     String groupId = item.getGroupId();
-                    String groupName = item.getGroupName();
+                    String rawGroupName = item.getRawGroupName();
                     page.addEventListener("view-group-" + groupId, CustomUIEventBindingType.Activating, event ->
-                            openCitizensGUI(playerRef, store, Tab.MANAGE, "", groupName));
+                            openCitizensGUI(playerRef, store, Tab.MANAGE, "", rawGroupName ));
                 } else {
                     // Citizen action listeners
                     CitizenData citizen = item.getRawCitizen();
@@ -3086,7 +3089,7 @@ public class CitizensUI {
                                 {{else}}
                                 <p style="color: #8b949e; font-size: 12; text-align: center;">No patrol paths exist yet.</p>
                                 <div class="spacer-xs"></div>
-                                <button id="manage-paths-from-behaviors-btn" class="btn-secondary" style="anchor-width: 130;">Create a Patrol Path</button>
+                                <button id="manage-paths-from-behaviors-btn" class="btn-secondary" style="anchor-width: 200;">Create a Patrol Path</button>
                                 {{/if}}
                                 {{/if}}
 
@@ -3306,16 +3309,19 @@ public class CitizensUI {
         });
 
         if ("PATROL".equals(moveType)) {
-            page.addEventListener("plugin-patrol-path-behavior", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
-                ctx.getValue("plugin-patrol-path-behavior", String.class).ifPresent(newPath -> {
-                    citizen.getPathConfig().setPluginPatrolPath(newPath);
-                    plugin.getCitizensManager().saveCitizen(citizen, true);
-                    plugin.getCitizensManager().stopCitizenPatrol(citizen.getId());
-                    if (!newPath.isEmpty()) {
-                        plugin.getCitizensManager().startCitizenPatrol(citizen.getId(), newPath);
-                    }
+            if (!plugin.getCitizensManager().getPatrolManager().getAllPathNames().isEmpty()) {
+                page.addEventListener("plugin-patrol-path-behavior", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
+                    ctx.getValue("plugin-patrol-path-behavior", String.class).ifPresent(newPath -> {
+                        citizen.getPathConfig().setPluginPatrolPath(newPath);
+                        plugin.getCitizensManager().saveCitizen(citizen, true);
+                        plugin.getCitizensManager().stopCitizenPatrol(citizen.getId());
+                        if (!newPath.isEmpty()) {
+                            plugin.getCitizensManager().startCitizenPatrol(citizen.getId(), newPath);
+                        }
+                    });
                 });
-            });
+            }
+
             page.addEventListener("manage-paths-from-behaviors-btn", CustomUIEventBindingType.Activating, event -> {
                 openPatrolPathsGUI(playerRef, store, citizen);
             });
@@ -4824,8 +4830,8 @@ public class CitizensUI {
                 .setVariable("defaultOffHandSlot", citizen.getDefaultOffHandSlot())
                 .setVariable("nighttimeOffhandSlot", citizen.getNighttimeOffhandSlot())
                 .setVariable("knockbackScale", citizen.getKnockbackScale())
-                .setVariable("weapons", escapeHtml(String.join(", ", citizen.getWeapons())))
-                .setVariable("offHandItems", escapeHtml(String.join(", ", citizen.getOffHandItems())))
+//                .setVariable("weapons", escapeHtml(String.join(", ", citizen.getWeapons())))
+//                .setVariable("offHandItems", escapeHtml(String.join(", ", citizen.getOffHandItems())))
                 .setVariable("combatMessageTargetGroups", escapeHtml(String.join(", ", citizen.getCombatMessageTargetGroups())))
                 .setVariable("flockArray", escapeHtml(String.join(", ", citizen.getFlockArray())))
                 .setVariable("disableDamageGroups", escapeHtml(String.join(", ", citizen.getDisableDamageGroups())));
@@ -4997,8 +5003,8 @@ public class CitizensUI {
         final int[] defaultOffHand = {citizen.getDefaultOffHandSlot()};
         final int[] nighttimeOffhand = {citizen.getNighttimeOffhandSlot()};
         final float[] knockbackScale = {citizen.getKnockbackScale()};
-        final String[] weaponsStr = {String.join(", ", citizen.getWeapons())};
-        final String[] offHandItemsStr = {String.join(", ", citizen.getOffHandItems())};
+//        final String[] weaponsStr = {String.join(", ", citizen.getWeapons())};
+//        final String[] offHandItemsStr = {String.join(", ", citizen.getOffHandItems())};
         final String[] combatMsgGroups = {String.join(", ", citizen.getCombatMessageTargetGroups())};
         final String[] flockArray = {String.join(", ", citizen.getFlockArray())};
         final String[] disableDmgGroups = {String.join(", ", citizen.getDisableDamageGroups())};
@@ -5025,12 +5031,12 @@ public class CitizensUI {
         page.addEventListener("flock-array", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
             flockArray[0] = ctx.getValue("flock-array", String.class).orElse("");
         });
-        page.addEventListener("weapons", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
-            weaponsStr[0] = ctx.getValue("weapons", String.class).orElse("Weapon_Sword_Iron");
-        });
-        page.addEventListener("offhand-items", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
-            offHandItemsStr[0] = ctx.getValue("offhand-items", String.class).orElse("Furniture_Crude_Torch");
-        });
+//        page.addEventListener("weapons", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
+//            weaponsStr[0] = ctx.getValue("weapons", String.class).orElse("Weapon_Sword_Iron");
+//        });
+//        page.addEventListener("offhand-items", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
+//            offHandItemsStr[0] = ctx.getValue("offhand-items", String.class).orElse("Furniture_Crude_Torch");
+//        });
         page.addEventListener("disable-damage-groups", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
             disableDmgGroups[0] = ctx.getValue("disable-damage-groups", String.class).orElse("Self");
         });
@@ -5090,8 +5096,8 @@ public class CitizensUI {
             citizen.setKnockbackScale(knockbackScale[0]);
 
             // Parse comma-separated lists
-            citizen.setWeapons(parseCommaSeparatedList(weaponsStr[0]));
-            citizen.setOffHandItems(parseCommaSeparatedList(offHandItemsStr[0]));
+//            citizen.setWeapons(parseCommaSeparatedList(weaponsStr[0]));
+//            citizen.setOffHandItems(parseCommaSeparatedList(offHandItemsStr[0]));
             citizen.setCombatMessageTargetGroups(parseCommaSeparatedList(combatMsgGroups[0]));
             citizen.setFlockArray(parseCommaSeparatedList(flockArray[0]));
             citizen.setDisableDamageGroups(parseCommaSeparatedList(disableDmgGroups[0]));
