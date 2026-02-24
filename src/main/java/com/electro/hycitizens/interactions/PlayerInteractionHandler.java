@@ -86,9 +86,6 @@ public class PlayerInteractionHandler implements PacketWatcher {
             return;
         }
 
-        // Map the raw interaction type to a semantic source constant.
-        // InteractionType.Use  = F key ("Use" / interact key)
-        // InteractionType.Primary = left click (primary attack/interact)
         String interactionSource = (type == InteractionType.Use)
                 ? CitizenInteraction.SOURCE_F_KEY
                 : CitizenInteraction.SOURCE_LEFT_CLICK;
@@ -104,7 +101,7 @@ public class PlayerInteractionHandler implements PacketWatcher {
             if (citizen.getNpcRef() == null || !citizen.getNpcRef().isValid())
                 continue;
 
-            if (citizen.getNpcRef().getIndex() != entity.getIndex()) {
+            if (!citizen.getNpcRef().equals(entity)) {
                 continue;
             }
 
