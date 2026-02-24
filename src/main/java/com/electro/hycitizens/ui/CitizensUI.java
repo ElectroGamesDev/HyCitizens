@@ -3013,7 +3013,7 @@ public class CitizensUI {
                                 <div class="spacer-xs"></div>
                                 {{#if overrideHealth}}
                                 <div class="form-row">
-                                    {{@numberField:id=health-amount,label=Max Health,value={{$healthAmount}},placeholder=100,min=1,max=10000,step=1,decimals=0}}
+                                    {{@numberField:id=health-amount,label=Max Health,value={{$healthAmount}},placeholder=100,min=1,max=1000000000,step=1,decimals=0}}
                                 </div>
                                 {{/if}}
                                 <p style="color: #8b949e; font-size: 12; text-align: center;">Override the citizen's max health.</p>
