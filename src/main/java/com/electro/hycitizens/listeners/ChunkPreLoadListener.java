@@ -22,6 +22,7 @@ import static com.hypixel.hytale.logger.HytaleLogger.getLogger;
 public class ChunkPreLoadListener {
     private final HyCitizensPlugin plugin;
     private final Set<String> citizensBeingProcessed = ConcurrentHashMap.newKeySet();
+    private final Set<String> citizensPendingNpcResolution = ConcurrentHashMap.newKeySet();
 
     public ChunkPreLoadListener(@Nonnull HyCitizensPlugin plugin) {
         this.plugin = plugin;
@@ -31,6 +32,9 @@ public class ChunkPreLoadListener {
         World world = event.getChunk().getWorld();
         long eventChunkIndex = event.getChunk().getIndex();
         UUID worldUUID = world.getWorldConfig().getUuid();
+
+        plugin.getCitizensManager().processPendingNpcRemovals(world, eventChunkIndex);
+        plugin.getCitizensManager().processPendingHologramRemovals(world, eventChunkIndex);
 
         // Collect citizens that belong to this chunk, then return from the event
         for (CitizenData citizen : plugin.getCitizensManager().getAllCitizens()) {
@@ -44,7 +48,7 @@ public class ChunkPreLoadListener {
             }
 
             // Check if the citizen is in the chunk
-            long citizenChunkIndex = ChunkUtil.indexChunkFromBlock((int)citizen.getCurrentPosition().x, (int)citizen.getCurrentPosition().z);
+            long citizenChunkIndex = ChunkUtil.indexChunkFromBlock(citizen.getCurrentPosition().x, citizen.getCurrentPosition().z);
             if (eventChunkIndex != citizenChunkIndex) {
                 continue;
             }
@@ -55,9 +59,8 @@ public class ChunkPreLoadListener {
             }
 
             // Hand off the heavy work to run outside the event
-            long chunkIndex = ChunkUtil.indexChunkFromBlock(citizen.getCurrentPosition().x, citizen.getCurrentPosition().z);
             HytaleServer.SCHEDULED_EXECUTOR.schedule(() -> {
-                processCitizenAsync(world, citizen, chunkIndex);
+                processCitizenAsync(world, citizen, citizenChunkIndex);
             }, 0, TimeUnit.MILLISECONDS);
         }
     }
@@ -73,23 +76,9 @@ public class ChunkPreLoadListener {
                 }
 
                 if (entityRef == null || !entityRef.isValid()) {
-                    plugin.getCitizensManager().spawnCitizenNPC(citizen, true);
+                    resolveOrSpawnCitizenNPC(world, citizen, true);
                 } else {
-                    // Entity exists, update skin
-                    if (citizen.isPlayerModel()) {
-                        plugin.getCitizensManager().updateCitizenSkin(citizen, true);
-                    }
-
-                    // Update NPC ref
-                    citizen.setNpcRef(entityRef);
-                    HyCitizensPlugin.get().getCitizensManager().setInteractionComponent(entityRef.getStore(), entityRef, citizen);
-
-                    // Start patrolling if it's set to patrol
-                    // Todo: Change this to make it so it starts at the closest waypoint
-                    String pluginPatrolPath = citizen.getPathConfig().getPluginPatrolPath();
-                    if (!pluginPatrolPath.isEmpty()) {
-                        plugin.getCitizensManager().getPatrolManager().startPatrol(citizen.getId(), pluginPatrolPath);
-                    }
+                    onCitizenEntityResolved(citizen, entityRef);
                 }
             });
 
@@ -137,24 +126,10 @@ public class ChunkPreLoadListener {
                         }
 
                         // If the chunk loads, try to spawn the citizen if it doesn't exist
-                        if (entityRef == null) {
-                            plugin.getCitizensManager().spawnCitizenNPC(citizen, true);
+                        if (entityRef == null || !entityRef .isValid()) {
+                            resolveOrSpawnCitizenNPC(world, citizen, true);
                         } else {
-                            // Entity exists, update skin
-                            if (citizen.isPlayerModel()) {
-                                plugin.getCitizensManager().updateCitizenSkin(citizen, true);
-                            }
-
-                            // Update NPC ref
-                            citizen.setNpcRef(entityRef);
-                            HyCitizensPlugin.get().getCitizensManager().setInteractionComponent(entityRef.getStore(), entityRef, citizen);
-
-                            // Start patrolling if it's set to patrol
-                            // Todo: Change this to make it so it starts at the closest waypoint
-                            String pluginPatrolPath = citizen.getPathConfig().getPluginPatrolPath();
-                            if (!pluginPatrolPath.isEmpty()) {
-                                plugin.getCitizensManager().getPatrolManager().startPatrol(citizen.getId(), pluginPatrolPath);
-                            }
+                            onCitizenEntityResolved(citizen, entityRef);
                         }
                     });
 
@@ -190,24 +165,10 @@ public class ChunkPreLoadListener {
                 }
 
                 // If the chunk is loaded, try to spawn the citizen if it doesn't exist
-                if (entityRef == null) {
-                    plugin.getCitizensManager().spawnCitizenNPC(citizen, true);
+                if (entityRef == null || !entityRef.isValid()) {
+                    resolveOrSpawnCitizenNPC(world, citizen, true);
                 } else {
-                    // Entity exists, update skin
-                    if (citizen.isPlayerModel()) {
-                        plugin.getCitizensManager().updateCitizenSkin(citizen, true);
-                    }
-
-                    // Update NPC ref
-                    citizen.setNpcRef(entityRef);
-                    HyCitizensPlugin.get().getCitizensManager().setInteractionComponent(entityRef.getStore(), entityRef, citizen);
-
-                    // Start patrolling if it's set to patrol
-                    // Todo: Change this to make it so it starts at the closest waypoint
-                    String pluginPatrolPath = citizen.getPathConfig().getPluginPatrolPath();
-                    if (!pluginPatrolPath.isEmpty()) {
-                        plugin.getCitizensManager().getPatrolManager().startPatrol(citizen.getId(), pluginPatrolPath);
-                    }
+                    onCitizenEntityResolved(citizen, entityRef);
                 }
 
                 // Schedule delayed hologram check after periodic spawn
@@ -218,6 +179,63 @@ public class ChunkPreLoadListener {
             });
 
         }, 0, 250, TimeUnit.MILLISECONDS);
+    }
+
+    private void resolveOrSpawnCitizenNPC(@Nonnull World world, @Nonnull CitizenData citizen, boolean save) {
+        UUID storedUuid = citizen.getSpawnedUUID();
+        if (storedUuid == null) {
+            plugin.getCitizensManager().spawnCitizenNPC(citizen, save);
+            return;
+        }
+
+        Ref<EntityStore> currentRef = world.getEntityRef(storedUuid);
+        if (currentRef != null && currentRef.isValid()) {
+            onCitizenEntityResolved(citizen, currentRef);
+            return;
+        }
+
+        // The chunk pre-load event can run before UUID-backed entities are fully reattached.
+        // Delay fallback spawning to avoid creating a second NPC while the original is still loading.
+        if (!citizensPendingNpcResolution.add(citizen.getId())) {
+            return;
+        }
+
+        HytaleServer.SCHEDULED_EXECUTOR.schedule(() -> world.execute(() -> {
+            citizensPendingNpcResolution.remove(citizen.getId());
+
+            UUID retryUuid = citizen.getSpawnedUUID();
+            if (retryUuid == null) {
+                plugin.getCitizensManager().spawnCitizenNPC(citizen, save);
+                return;
+            }
+
+            Ref<EntityStore> resolvedRef = world.getEntityRef(retryUuid);
+            if (resolvedRef != null && resolvedRef.isValid()) {
+                onCitizenEntityResolved(citizen, resolvedRef);
+                return;
+            }
+
+            // UUID is stale after waiting; allow a fresh spawn with a new UUID.
+            citizen.setSpawnedUUID(null);
+            citizen.setNpcRef(null);
+            plugin.getCitizensManager().spawnCitizenNPC(citizen, save);
+        }), 4, TimeUnit.SECONDS);
+    }
+
+    private void onCitizenEntityResolved(@Nonnull CitizenData citizen, @Nonnull Ref<EntityStore> entityRef) {
+        if (citizen.isPlayerModel()) {
+            plugin.getCitizensManager().updateCitizenSkin(citizen, true);
+        }
+
+        citizen.setNpcRef(entityRef);
+        HyCitizensPlugin.get().getCitizensManager().setInteractionComponent(entityRef.getStore(), entityRef, citizen);
+        HyCitizensPlugin.get().getCitizensManager().refreshNpcNameplate(citizen);
+
+        // Todo: Change this to make it so it starts at the closest waypoint
+        String pluginPatrolPath = citizen.getPathConfig().getPluginPatrolPath();
+        if (!pluginPatrolPath.isEmpty()) {
+            plugin.getCitizensManager().getPatrolManager().startPatrol(citizen.getId(), pluginPatrolPath);
+        }
     }
 
     private void scheduleHologramCheck(World world, CitizenData citizen, long chunkIndex) {
@@ -254,6 +272,11 @@ public class ChunkPreLoadListener {
                         return;
                     }
 
+                    if (!plugin.getCitizensManager().shouldUseSeparateNametagEntities(citizen)) {
+                        plugin.getCitizensManager().updateSpawnedCitizenHologram(citizen, true);
+                        return;
+                    }
+
                     boolean shouldSpawnHologram = citizen.getHologramLineUuids() == null || citizen.getHologramLineUuids().isEmpty();
                     if (!shouldSpawnHologram) {
                         for (UUID uuid : citizen.getHologramLineUuids()) {
@@ -276,6 +299,14 @@ public class ChunkPreLoadListener {
             world.execute(() -> {
                 WorldChunk chunk = world.getChunkIfLoaded(chunkIndex);
                 if (chunk == null) {
+                    return;
+                }
+
+                if (!plugin.getCitizensManager().shouldUseSeparateNametagEntities(citizen)) {
+                    plugin.getCitizensManager().updateSpawnedCitizenHologram(citizen, true);
+                    hologramChecked[0] = true;
+                    hologramFutureRef[0].cancel(false);
+                    citizensBeingProcessed.remove(citizen.getId());
                     return;
                 }
 

@@ -24,6 +24,7 @@ import com.hypixel.hytale.server.core.modules.entity.damage.DamageEventSystem;
 import com.hypixel.hytale.server.core.modules.entity.damage.DamageModule;
 import com.hypixel.hytale.server.core.modules.entity.item.ItemComponent;
 import com.hypixel.hytale.server.core.modules.entitystats.EntityStatMap;
+import com.hypixel.hytale.server.core.modules.entitystats.EntityStatValue;
 import com.hypixel.hytale.server.core.modules.entitystats.EntityStatsModule;
 import com.hypixel.hytale.server.core.modules.entitystats.asset.DefaultEntityStatTypes;
 import com.hypixel.hytale.server.core.universe.PlayerRef;
@@ -59,208 +60,223 @@ public class EntityDamageListener extends DamageEventSystem {
 
     @Override
     public void handle(int i, @Nonnull ArchetypeChunk<EntityStore> archetypeChunk, @Nonnull Store<EntityStore> store, @Nonnull CommandBuffer<EntityStore> commandBuffer, @Nonnull Damage event) {
-        Ref<EntityStore> targetRef = archetypeChunk.getReferenceTo(i);
-        UUIDComponent uuidComponent = store.getComponent(targetRef, UUIDComponent.getComponentType());
+        try {
+            Ref<EntityStore> targetRef = archetypeChunk.getReferenceTo(i);
+            UUIDComponent uuidComponent = store.getComponent(targetRef, UUIDComponent.getComponentType());
 
-        assert uuidComponent != null;
-        NPCEntity npcEntity = store.getComponent(targetRef, NPCEntity.getComponentType());
-        Damage.Source source = event.getSource();
+            assert uuidComponent != null;
+            NPCEntity npcEntity = store.getComponent(targetRef, NPCEntity.getComponentType());
+            Damage.Source source = event.getSource();
 
-        // Check if citizen is damaging a player
-        if (npcEntity == null)
-        {
-            PlayerRef playerRef = store.getComponent(targetRef, PlayerRef.getComponentType());
-            if (playerRef == null) {
+            // Check if citizen is damaging a player
+            if (npcEntity == null)
+            {
+                PlayerRef playerRef = store.getComponent(targetRef, PlayerRef.getComponentType());
+                if (playerRef == null) {
+                    return;
+                }
+
+                NPCEntity attackerNpc = null;
+                Ref<EntityStore> attackerEntityRef = null;
+
+                if (source instanceof Damage.ProjectileSource) {
+                    Damage.ProjectileSource projectileSource = (Damage.ProjectileSource) source;
+                    attackerEntityRef = projectileSource.getRef();
+
+                    if (attackerEntityRef != null) {
+                        attackerNpc = store.getComponent(attackerEntityRef, NPCEntity.getComponentType());
+                    }
+                }
+                else if (source instanceof Damage.EntitySource) {
+                    Damage.EntitySource entitySource = (Damage.EntitySource) source;
+                    attackerEntityRef = entitySource.getRef();
+                    attackerNpc = store.getComponent(attackerEntityRef, NPCEntity.getComponentType());
+                }
+
+                if (attackerNpc == null) {
+                    return;
+                }
+
+                // Check which citizen is attacking the player
+                List<CitizenData> citizens = HyCitizensPlugin.get().getCitizensManager().getAllCitizens();
+                for (CitizenData citizen : citizens) {
+                    if (citizen.getNpcRef() == null) {
+                        continue;
+                    }
+
+                    if (!citizen.getNpcRef().equals(attackerEntityRef)) {
+                        continue;
+                    }
+
+                    if (citizen.isOverrideDamage() && citizen.getDamageAmount() >= 0) {
+                        event.setAmount(citizen.getDamageAmount());
+                    }
+
+                    return;
+                }
+
                 return;
             }
 
-            NPCEntity attackerNpc = null;
-            Ref<EntityStore> attackerEntityRef = null;
+            // Something is damaging citizen
+            PlayerRef attackerPlayerRef;
 
             if (source instanceof Damage.ProjectileSource) {
                 Damage.ProjectileSource projectileSource = (Damage.ProjectileSource) source;
-                attackerEntityRef = projectileSource.getRef();
-
-                if (attackerEntityRef != null) {
-                    attackerNpc = store.getComponent(attackerEntityRef, NPCEntity.getComponentType());
+                Ref<EntityStore> shooterRef = projectileSource.getRef();
+                if (shooterRef != null) {
+                    attackerPlayerRef = store.getComponent(shooterRef, PlayerRef.getComponentType());
+                } else {
+                    attackerPlayerRef = null;
                 }
             }
             else if (source instanceof Damage.EntitySource) {
                 Damage.EntitySource entitySource = (Damage.EntitySource) source;
-                attackerEntityRef = entitySource.getRef();
-                attackerNpc = store.getComponent(attackerEntityRef, NPCEntity.getComponentType());
-            }
-
-            if (attackerNpc == null) {
-                return;
-            }
-
-            // Check which citizen is attacking the player
-            List<CitizenData> citizens = HyCitizensPlugin.get().getCitizensManager().getAllCitizens();
-            for (CitizenData citizen : citizens) {
-                if (citizen.getNpcRef() == null) {
-                    continue;
-                }
-
-                if (!citizen.getNpcRef().equals(attackerEntityRef)) {
-                    continue;
-                }
-
-                if (citizen.isOverrideDamage() && citizen.getDamageAmount() >= 0) {
-                    event.setAmount(citizen.getDamageAmount());
-                }
-
-                return;
-            }
-
-            return;
-        }
-
-        // Something is damaging citizen
-        PlayerRef attackerPlayerRef;
-
-        if (source instanceof Damage.ProjectileSource) {
-            Damage.ProjectileSource projectileSource = (Damage.ProjectileSource) source;
-            Ref<EntityStore> shooterRef = projectileSource.getRef();
-            if (shooterRef != null) {
-                attackerPlayerRef = store.getComponent(shooterRef, PlayerRef.getComponentType());
+                Ref<EntityStore> attackerRef = entitySource.getRef();
+                attackerPlayerRef = store.getComponent(attackerRef, PlayerRef.getComponentType());
             } else {
                 attackerPlayerRef = null;
             }
-        }
-        else if (source instanceof Damage.EntitySource) {
-            Damage.EntitySource entitySource = (Damage.EntitySource) source;
-            Ref<EntityStore> attackerRef = entitySource.getRef();
-            attackerPlayerRef = store.getComponent(attackerRef, PlayerRef.getComponentType());
-        } else {
-            attackerPlayerRef = null;
-        }
 
-        if (attackerPlayerRef == null)
-            return;
+            if (attackerPlayerRef == null)
+                return;
 
-        // Todo: It would be best to give the citizens a custom component. There may be compatibility issues if citizens already exist though
-        List<CitizenData> citizens = HyCitizensPlugin.get().getCitizensManager().getAllCitizens();
-        for (CitizenData citizen : citizens) {
-            if (citizen.getSpawnedUUID() == null) {
-                continue;
-            }
+            // Todo: It would be best to give the citizens a custom component. There may be compatibility issues if citizens already exist though
+            List<CitizenData> citizens = HyCitizensPlugin.get().getCitizensManager().getAllCitizens();
+            for (CitizenData citizen : citizens) {
+                if (citizen.getSpawnedUUID() == null) {
+                    continue;
+                }
 
-            if (!citizen.getSpawnedUUID().equals(uuidComponent.getUuid())) {
-                continue;
-            }
+                if (!citizen.getSpawnedUUID().equals(uuidComponent.getUuid())) {
+                    continue;
+                }
 
-            // Passive citizens always cancel damage - they never enter combat
-            boolean cancelDamage = !citizen.isTakesDamage() || "PASSIVE".equals(citizen.getAttitude());
+                // Passive citizens always cancel damage - they never enter combat
+                boolean cancelDamage = !citizen.isTakesDamage() || "PASSIVE".equals(citizen.getAttitude());
 
-            // Trigger ON_ATTACK animations regardless of damage setting
-            HyCitizensPlugin.get().getCitizensManager().triggerAnimations(citizen, "ON_ATTACK");
+                // Trigger ON_ATTACK animations regardless of damage setting
+                HyCitizensPlugin.get().getCitizensManager().triggerAnimations(citizen, "ON_ATTACK");
 
 //            CitizenInteraction.handleInteraction(citizen, attackerPlayerRef); // Handled by new interaction system
 
-            if (cancelDamage) {
-                // This is now handled by the Invulnerable component, but we are keeping it for backwards compatibility
-                Invulnerable invulnerable = store.getComponent(targetRef, Invulnerable.getComponentType());
+                if (cancelDamage) {
+                    // This is now handled by the Invulnerable component, but we are keeping it for backwards compatibility
+                    Invulnerable invulnerable = store.getComponent(targetRef, Invulnerable.getComponentType());
 
-                if (invulnerable == null) {
-                    event.setCancelled(true);
-                    event.setAmount(0);
-                    World world = Universe.get().getWorld(citizen.getWorldUUID());
-                    // Todo: This does not work
+                    if (invulnerable == null) {
+                        event.setCancelled(true);
+                        event.setAmount(0);
+                        World world = Universe.get().getWorld(citizen.getWorldUUID());
+                        // Todo: This does not work
 //                if (world != null) {
 //                    // Prevent knockback
 //                    world.execute(() -> {
 //                        store.removeComponentIfExists(targetRef, KnockbackComponent.getComponentType());
 //                    });
 //                }
-                    // Temporary solution to knockback
-                    TransformComponent transformComponent = store.getComponent(targetRef, TransformComponent.getComponentType());
-                    if (transformComponent != null && world != null) {
-                        Vector3d lockedPosition = new Vector3d(transformComponent.getPosition());
+                        // Temporary solution to knockback
+                        TransformComponent transformComponent = store.getComponent(targetRef, TransformComponent.getComponentType());
+                        if (transformComponent != null && world != null) {
+                            Vector3d lockedPosition = new Vector3d(transformComponent.getPosition());
 
-                        ScheduledFuture<?> lockTask = HytaleServer.SCHEDULED_EXECUTOR.scheduleAtFixedRate(() -> {
-                            if (!targetRef.isValid()) {
+                            ScheduledFuture<?> lockTask = HytaleServer.SCHEDULED_EXECUTOR.scheduleAtFixedRate(() -> {
+                                if (!targetRef.isValid()) {
+                                    return;
+                                }
+
+                                Vector3d currentPosition = transformComponent.getPosition();
+                                if (!currentPosition.equals(lockedPosition)) {
+                                    transformComponent.setPosition(lockedPosition);
+                                }
+                            }, 0, 20, TimeUnit.MILLISECONDS);
+
+                            HytaleServer.SCHEDULED_EXECUTOR.schedule(() -> {
+                                lockTask.cancel(false);
+                            }, 2000, TimeUnit.MILLISECONDS);
+                        }
+                    }
+                }
+                else {
+                    // Check if the citizen will die from this damage
+                    EntityStatMap statMap = store.getComponent(targetRef, EntityStatsModule.get().getEntityStatMapComponentType());
+                    if (statMap == null) {
+                        return;
+                    }
+
+                    EntityStatValue healthValue = statMap.get(DefaultEntityStatTypes.getHealth());
+                    if (healthValue == null) {
+                        return;
+                    }
+
+                    float currentHealth = healthValue.get();
+                    float damageAmount = event.getAmount();
+
+                    if (currentHealth - damageAmount <= 0) {
+                        long now = System.currentTimeMillis();
+
+                        if (!citizen.isAwaitingRespawn()) {
+                            // Fire death event
+                            CitizenDeathEvent deathEvent = new CitizenDeathEvent(citizen, attackerPlayerRef);
+                            plugin.getCitizensManager().fireCitizenDeathEvent(deathEvent);
+
+                            if (deathEvent.isCancelled()) {
+                                event.setCancelled(true);
+                                event.setAmount(0);
                                 return;
                             }
 
-                            Vector3d currentPosition = transformComponent.getPosition();
-                            if (!currentPosition.equals(lockedPosition)) {
-                                transformComponent.setPosition(lockedPosition);
+                            // Handle death config (drops, commands, messages)
+                            DeathConfig dc = citizen.getDeathConfig();
+                            handleDeathCommands(citizen, dc, attackerPlayerRef);
+                            handleDeathMessages(citizen, dc, attackerPlayerRef);
+
+                            Ref<EntityStore> deathNpcRef = citizen.getNpcRef();
+                            if (deathNpcRef != null && deathNpcRef.isValid()) {
+                                TransformComponent npcTransformComponent = deathNpcRef.getStore().getComponent(deathNpcRef, TransformComponent.getComponentType());
+                                if (npcTransformComponent != null) {
+                                    handleDeathDrops(citizen, dc, npcTransformComponent.getPosition());
+                                }
                             }
-                        }, 0, 20, TimeUnit.MILLISECONDS);
 
-                        HytaleServer.SCHEDULED_EXECUTOR.schedule(() -> {
-                            lockTask.cancel(false);
-                        }, 2000, TimeUnit.MILLISECONDS);
-                    }
-                }
-            }
-            else {
-                // Check if the citizen will die from this damage
-                EntityStatMap statMap = store.getComponent(targetRef, EntityStatsModule.get().getEntityStatMapComponentType());
-                if (statMap == null) {
-                    return;
-                }
+                            citizen.setLastDeathTime(now);
 
-                float currentHealth = statMap.get(DefaultEntityStatTypes.getHealth()).get();
-                float damageAmount = event.getAmount();
+                            // Despawn nametag
+                            plugin.getCitizensManager().despawnCitizenHologram(citizen);
 
-                if (currentHealth - damageAmount <= 0) {
-                    long now = System.currentTimeMillis();
+                            citizen.setSpawnedUUID(null);
+                            citizen.setNpcRef(null);
 
-                    if (!citizen.isAwaitingRespawn()) {
-                        // Fire death event
-                        CitizenDeathEvent deathEvent = new CitizenDeathEvent(citizen, attackerPlayerRef);
-                        plugin.getCitizensManager().fireCitizenDeathEvent(deathEvent);
+                            // Mark for respawn
+                            if (citizen.isRespawnOnDeath()) {
+                                citizen.setAwaitingRespawn(true);
 
-                        if (deathEvent.isCancelled()) {
-                            event.setCancelled(true);
-                            event.setAmount(0);
-                            return;
-                        }
+                                HytaleServer.SCHEDULED_EXECUTOR.schedule(() -> {
+                                    World world = Universe.get().getWorld(citizen.getWorldUUID());
+                                    if (world == null)
+                                        return;
 
-                        // Handle death config (drops, commands, messages)
-                        DeathConfig dc = citizen.getDeathConfig();
-                        handleDeathCommands(citizen, dc, attackerPlayerRef);
-                        handleDeathMessages(citizen, dc, attackerPlayerRef);
-
-                        TransformComponent npcTransformComponent = citizen.getNpcRef().getStore().getComponent(citizen.getNpcRef(), TransformComponent.getComponentType());
-                        if (npcTransformComponent != null) {
-                            handleDeathDrops(citizen, dc, npcTransformComponent.getPosition());
-                        }
-
-                        citizen.setLastDeathTime(now);
-
-                        // Despawn nametag
-                        plugin.getCitizensManager().despawnCitizenHologram(citizen);
-
-                        citizen.setSpawnedUUID(null);
-                        citizen.setNpcRef(null);
-
-                        // Mark for respawn
-                        if (citizen.isRespawnOnDeath()) {
-                            citizen.setAwaitingRespawn(true);
-
-                            HytaleServer.SCHEDULED_EXECUTOR.schedule(() -> {
-                                World world = Universe.get().getWorld(citizen.getWorldUUID());
-                                if (world == null)
-                                    return;
-
-                                citizen.setAwaitingRespawn(false);
-                                world.execute(() -> {
-                                    plugin.getCitizensManager().spawnCitizen(citizen, true);
-                                });
-                            }, (long)(citizen.getRespawnDelaySeconds() * 1000), TimeUnit.MILLISECONDS);
+                                    citizen.setAwaitingRespawn(false);
+                                    world.execute(() -> {
+                                        plugin.getCitizensManager().spawnCitizen(citizen, true);
+                                    });
+                                }, (long)(citizen.getRespawnDelaySeconds() * 1000), TimeUnit.MILLISECONDS);
+                            }
                         }
                     }
                 }
+
+                break;
             }
 
-            break;
+        } catch (Exception e) {
+            getLogger().atWarning().log("[HyCitizens] Error in damage handler: " + e.getMessage());
         }
     }
 
     private static final Random RANDOM = new Random();
+    private static final Pattern PLAYER_NAME_PATTERN = Pattern.compile("\\{PlayerName}", Pattern.CASE_INSENSITIVE);
+    private static final Pattern CITIZEN_NAME_PATTERN = Pattern.compile("\\{CitizenName}", Pattern.CASE_INSENSITIVE);
 
     private void handleDeathDrops(@Nonnull CitizenData citizen, @Nonnull DeathConfig dc, Vector3d position) {
         List<DeathDropItem> drops = dc.getDropItems();
@@ -303,7 +319,12 @@ public class EntityDamageListener extends DamageEventSystem {
 
         // Todo: Make it possible for commands to run even if a player doesn't kill the citizen
 
-        Player player = attackerPlayerRef.getReference().getStore().getComponent(attackerPlayerRef.getReference(), Player.getComponentType());
+        Ref<EntityStore> attackerRef = attackerPlayerRef.getReference();
+        Player player = null;
+        if (attackerRef != null && attackerRef.isValid()) {
+            player = attackerRef.getStore().getComponent(attackerRef, Player.getComponentType());
+        }
+        final Player commandPlayer = player;
 
         List<CommandAction> toRun;
         if ("RANDOM".equals(dc.getCommandSelectionMode())) {
@@ -324,10 +345,12 @@ public class EntityDamageListener extends DamageEventSystem {
                 return CompletableFuture.completedFuture(null);
             }).thenCompose(v -> {
                 String command = cmd.getCommand();
-                command = Pattern.compile("\\{PlayerName}", Pattern.CASE_INSENSITIVE)
-                        .matcher(command).replaceAll(attackerPlayerRef.getUsername());
-                command = Pattern.compile("\\{CitizenName}", Pattern.CASE_INSENSITIVE)
-                        .matcher(command).replaceAll(citizen.getName());
+                command = PLAYER_NAME_PATTERN
+                        .matcher(command)
+                        .replaceAll(Matcher.quoteReplacement(attackerPlayerRef.getUsername()));
+                command = CITIZEN_NAME_PATTERN
+                        .matcher(command)
+                        .replaceAll(Matcher.quoteReplacement(citizen.getName()));
 
                 if (command.startsWith("{SendMessage}")) {
                     String messageContent = command.substring("{SendMessage}".length()).trim();
@@ -340,7 +363,11 @@ public class EntityDamageListener extends DamageEventSystem {
                     if (cmd.isRunAsServer()) {
                         return CommandManager.get().handleCommand(ConsoleSender.INSTANCE, command);
                     } else {
-                        return CommandManager.get().handleCommand(player, command);
+                        if (commandPlayer == null) {
+                            getLogger().atWarning().log("[HyCitizens] Skipping death command as player: attacker entity is unavailable.");
+                            return CompletableFuture.completedFuture(null);
+                        }
+                        return CommandManager.get().handleCommand(commandPlayer, command);
                     }
                 }
             });
@@ -379,10 +406,12 @@ public class EntityDamageListener extends DamageEventSystem {
     private void dispatchDeathMessage(@Nonnull CitizenData citizen, @Nonnull PlayerRef playerRef,
                                       @Nonnull CitizenMessage cm) {
         String text = cm.getMessage();
-        text = Pattern.compile("\\{PlayerName}", Pattern.CASE_INSENSITIVE)
-                .matcher(text).replaceAll(playerRef.getUsername());
-        text = Pattern.compile("\\{CitizenName}", Pattern.CASE_INSENSITIVE)
-                .matcher(text).replaceAll(citizen.getName());
+        text = PLAYER_NAME_PATTERN
+                .matcher(text)
+                .replaceAll(Matcher.quoteReplacement(playerRef.getUsername()));
+        text = CITIZEN_NAME_PATTERN
+                .matcher(text)
+                .replaceAll(Matcher.quoteReplacement(citizen.getName()));
 
         Message parsed = CitizenInteraction.parseColoredMessage(text);
         if (parsed == null) {

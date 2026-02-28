@@ -4,6 +4,7 @@ import au.ellie.hyui.builders.PageBuilder;
 import au.ellie.hyui.html.TemplateProcessor;
 import com.electro.hycitizens.HyCitizensPlugin;
 import com.electro.hycitizens.models.*;
+import com.hypixel.hytale.codec.Codec;
 import com.hypixel.hytale.common.util.RandomUtil;
 import com.hypixel.hytale.component.Ref;
 import com.hypixel.hytale.component.Store;
@@ -17,6 +18,7 @@ import com.hypixel.hytale.server.core.asset.type.item.config.Item;
 import com.hypixel.hytale.server.core.asset.type.model.config.ModelAsset;
 import com.hypixel.hytale.server.core.cosmetics.CosmeticsModule;
 import com.hypixel.hytale.server.core.entity.entities.Player;
+import com.hypixel.hytale.server.core.inventory.ItemStack;
 import com.hypixel.hytale.server.core.modules.entity.component.TransformComponent;
 import com.hypixel.hytale.server.core.modules.entity.teleport.Teleport;
 import com.hypixel.hytale.server.core.universe.PlayerRef;
@@ -2591,9 +2593,7 @@ public class CitizensUI {
                 }
             }
 
-            if (!citizen.getModelId().equals(modelId)) {
-                plugin.getCitizensManager().autoResolveAttackType(citizen);
-            }
+            boolean modelChanged = !citizen.getModelId().equals(modelId);
 
             if (skinUsername[0].isEmpty()) {
                 skinUsername[0] = playerRef.getUsername();
@@ -2603,6 +2603,9 @@ public class CitizensUI {
 
             citizen.setName(name);
             citizen.setModelId(modelId);
+            if (modelChanged) {
+                plugin.getCitizensManager().autoResolveAttackType(citizen);
+            }
             citizen.setScale(currentScale[0]);
             citizen.setRequiredPermission(currentPermission[0].trim());
             citizen.setNoPermissionMessage(currentPermMessage[0].trim());
@@ -3013,7 +3016,7 @@ public class CitizensUI {
                                 <div class="spacer-xs"></div>
                                 {{#if overrideHealth}}
                                 <div class="form-row">
-                                    {{@numberField:id=health-amount,label=Max Health,value={{$healthAmount}},placeholder=100,min=1,max=1000000000,step=1,decimals=0}}
+                                    {{@numberField:id=health-amount,label=Max Health,value={{$healthAmount}},placeholder=100,min=1,max=1000000,step=1,decimals=0}}
                                 </div>
                                 {{/if}}
                                 <p style="color: #8b949e; font-size: 12; text-align: center;">Override the citizen's max health.</p>
@@ -5929,8 +5932,32 @@ public class CitizensUI {
         List<PatrolPath> allPaths = new ArrayList<>(plugin.getCitizensManager().getPatrolManager().getAllPaths());
         allPaths.sort(Comparator.comparing(PatrolPath::getName));
 
+        StringBuilder pathsHtml = new StringBuilder();
+        for (int i = 0; i < allPaths.size(); i++) {
+            PatrolPath path = allPaths.get(i);
+            pathsHtml.append("""
+                                    <div class="list-item">
+                                        <div style="flex-weight: 1;">
+                                            <p style="font-size: 14; font-weight: bold;">%s</p>
+                                            <div>
+                                                <p style="font-size: 12; color: #888888;">%s | %d waypoints</p>
+                                            </div>
+                                        </div>
+                                        <button id="edit-path-%d" class="btn-secondary" style="anchor-width: 100;">Edit</button>
+                                        <div class="spacer-h-xs"></div>
+                                        <button id="delete-path-%d" class="btn-danger" style="anchor-width: 120;">Delete</button>
+                                    </div>
+                                    <div class="spacer-xs"></div>
+                                    """.formatted(
+                    escapeHtml(path.getName()),
+                    escapeHtml(path.getLoopMode().name()),
+                    path.getWaypoints().size(),
+                    i,
+                    i
+            ));
+        }
+
         TemplateProcessor template = createBaseTemplate()
-                .setVariable("paths", allPaths)
                 .setVariable("hasPaths", !allPaths.isEmpty());
 
         String html = template.process(getSharedStyles() + """
@@ -5964,18 +5991,9 @@ public class CitizensUI {
                             <div class="section">
                                 {{@sectionHeader:title=Existing Paths,description=Edit or delete patrol paths}}
                                 {{#if hasPaths}}
-                                {{#each paths}}
-                                <div class="list-item">
-                                    <div style="flex-weight: 1;">
-                                        <p style="font-size: 14; font-weight: bold;">{{$name}}</p>
-                                        <p style="font-size: 12; color: #888888;">{{$loopMode}} | {{$waypoints.size}} waypoints</p>
-                                    </div>
-                                    <button id="edit-path-{{$name}}" class="btn-secondary" style="anchor-width: 100;">Edit</button>
-                                    <div class="spacer-h-xs"></div>
-                                    <button id="delete-path-{{$name}}" class="btn-danger" style="anchor-width: 120;">Delete</button>
+                                <div class="list-container" style="anchor-height: 350;" data-hyui-scrollbar-style='"Common.ui" "DefaultScrollbarStyle"'>
+                """ + pathsHtml + """
                                 </div>
-                                <div class="spacer-xs"></div>
-                                {{/each}}
                                 {{else}}
                                 <p style="color: #888888; font-size: 13;">No patrol paths created yet.</p>
                                 {{/if}}
@@ -6024,12 +6042,13 @@ public class CitizensUI {
             openPatrolPathEditorGUI(playerRef, store, citizen, name);
         });
 
-        for (PatrolPath path : paths) {
-            String name = path.getName();
-            page.addEventListener("edit-path-" + name, CustomUIEventBindingType.Activating, event -> {
+        for (int i = 0; i < paths.size(); i++) {
+            final int index = i;
+            String name = paths.get(i).getName();
+            page.addEventListener("edit-path-" + index, CustomUIEventBindingType.Activating, event -> {
                 openPatrolPathEditorGUI(playerRef, store, citizen, name);
             });
-            page.addEventListener("delete-path-" + name, CustomUIEventBindingType.Activating, event -> {
+            page.addEventListener("delete-path-" + index, CustomUIEventBindingType.Activating, event -> {
                 plugin.getCitizensManager().stopCitizenPatrol(citizen.getId());
                 plugin.getCitizensManager().getPatrolManager().deletePath(name);
                 String current = citizen.getPathConfig().getPluginPatrolPath();
@@ -6070,7 +6089,7 @@ public class CitizensUI {
 
         String html = template.process(getSharedStyles() + """
                 <div class="page-overlay">
-                    <div class="main-container" style="anchor-width: 750; anchor-height: 700;">
+                    <div class="main-container" style="anchor-width: 900; anchor-height: 700;">
 
                         <div class="header">
                             <div class="header-content">
@@ -6097,24 +6116,33 @@ public class CitizensUI {
                             <div class="section">
                                 {{@sectionHeader:title=Waypoints ({{$waypointCount}}),description=Waypoints the citizen follows in order}}
                                 {{#if hasWaypoints}}
-                                {{#each waypoints}}
-                                <div class="list-item">
-                                    <div style="flex-weight: 1;">
-                                        <p style="font-size: 13; font-weight: bold;">#{{$index}}: X:{{$displayX}} Y:{{$displayY}} Z:{{$displayZ}}</p>
+                                <div class="list-container" style="anchor-height: 350;" data-hyui-scrollbar-style='"Common.ui" "DefaultScrollbarStyle"'>
+                                    {{#each waypoints}}
+                                    <div class="list-item">
+                                        <div style="flex-weight: 1;">
+                                            <p style="font-size: 13; font-weight: bold;">#{{$index}}: X:{{$displayX}} Y:{{$displayY}} Z:{{$displayZ}}</p>
+                                        </div>
+                                        <div style="anchor-width: 110; flex-weight: 0;">
+                                            {{@numberField:id=pause-{{$index}},label=Pause (s),value={{$pauseSeconds}},min=0,max=300,step=0.5,decimals=1}}
+                                        </div>
+                                        <div class="spacer-h-xs"></div>
+                                        <button id="move-up-{{$index}}" class="btn-secondary" style="anchor-width: 80; flex-weight: 0;">Up</button>
+                                        <div class="spacer-h-xs"></div>
+                                        <button id="move-down-{{$index}}" class="btn-secondary" style="anchor-width: 100; flex-weight: 0;">Down</button>
+                                        <div class="spacer-h-xs"></div>
+                                        <button id="tp-wp-{{$index}}" class="btn-ghost" style="anchor-width: 80; flex-weight: 0;">TP</button>
+                                        <div class="spacer-h-xs"></div>
+                                        <button id="delete-wp-{{$index}}" class="btn-danger" style="anchor-width: 110; flex-weight: 0;">Delete</button>
                                     </div>
-                                    <div style="anchor-width: 110; flex-weight: 0;">
-                                        {{@numberField:id=pause-{{$index}},label=Pause (s),value={{$pauseSeconds}},min=0,max=300,step=0.5,decimals=1}}
-                                    </div>
-                                    <div class="spacer-h-xs"></div>
-                                    <button id="delete-wp-{{$index}}" class="btn-danger" style="anchor-width: 110; flex-weight: 0;">Delete</button>
+                                    <div class="spacer-xs"></div>
+                                    {{/each}}
                                 </div>
-                                <div class="spacer-xs"></div>
-                                {{/each}}
                                 {{else}}
                                 <p style="color: #888888; font-size: 13;">No waypoints yet. Stand where you want a waypoint and click Add.</p>
                                 {{/if}}
                                 <div class="spacer-sm"></div>
                                 <button id="add-waypoint-btn" class="btn-secondary" style="anchor-width: 250;">Add Waypoint at my position</button>
+                                <button id="get-waypoint-item-btn" class="btn-secondary" style="anchor-width: 225;">Get Waypoint item</button>
                             </div>
 
                         </div>
@@ -6166,9 +6194,94 @@ public class CitizensUI {
             page.addEventListener("pause-" + i, CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
                 ctx.getValue("pause-" + idx, Double.class).ifPresent(v -> pauseValues[idx] = v.floatValue());
             });
+
+            page.addEventListener("move-up-" + i, CustomUIEventBindingType.Activating, event -> {
+                if (idx <= 0) {
+                    return;
+                }
+
+                List<PatrolWaypoint> wps = path.getWaypoints();
+                PatrolWaypoint current = wps.get(idx);
+                wps.set(idx, wps.get(idx - 1));
+                wps.set(idx - 1, current);
+                plugin.getCitizensManager().getPatrolManager().savePath(path);
+                openPatrolPathEditorGUI(playerRef, store, citizen, path.getName());
+            });
+
+            page.addEventListener("move-down-" + i, CustomUIEventBindingType.Activating, event -> {
+                List<PatrolWaypoint> wps = path.getWaypoints();
+                if (idx >= wps.size() - 1) {
+                    return;
+                }
+
+                PatrolWaypoint current = wps.get(idx);
+                wps.set(idx, wps.get(idx + 1));
+                wps.set(idx + 1, current);
+                plugin.getCitizensManager().getPatrolManager().savePath(path);
+                openPatrolPathEditorGUI(playerRef, store, citizen, path.getName());
+            });
+
+            page.addEventListener("tp-wp-" + i, CustomUIEventBindingType.Activating, event -> {
+                CitizenData foundCitizen = null;
+
+                for (CitizenData c : plugin.getCitizensManager().getAllCitizens()) {
+
+                    if (c.getPathConfig().getPluginPatrolPath().equals(path.getName())) {
+                        foundCitizen = c;
+                        break;
+                    }
+                }
+
+                if (foundCitizen == null) {
+                    playerRef.sendMessage(Message.raw("Failed to teleport. A citizen must use this path to teleport to it!").color(Color.RED));
+                    return;
+                }
+
+                UUID citizenWorldUUID = foundCitizen.getWorldUUID();
+
+                if (citizenWorldUUID == null) {
+                    playerRef.sendMessage(Message.raw("Failed to teleport. Could not find the world!").color(Color.RED));
+                    return;
+                }
+
+                World world = Universe.get().getWorld(citizenWorldUUID);
+                if (world == null) {
+                    playerRef.sendMessage(Message.raw("Failed to teleport. Could not find the world!").color(Color.RED));
+                    return;
+                }
+
+                PatrolWaypoint wp = path.getWaypoints().get(indexedWaypoints.get(idx).getIndex());
+                if (wp == null) {
+                    playerRef.sendMessage(Message.raw("Failed to teleport. Could not find waypoint!").color(Color.RED));
+                    return;
+                }
+
+                Vector3d tpPos = new Vector3d(wp.getX(), wp.getY(), wp.getZ());
+
+                Ref<EntityStore> ref = playerRef.getReference();
+                if (ref == null || !ref.isValid()) {
+                    playerRef.sendMessage(Message.raw("Failed to teleport.").color(Color.RED));
+                    return;
+                }
+
+                ref.getStore().addComponent(ref, Teleport.getComponentType(), new Teleport(world, tpPos, new Vector3f(0, 0, 0)));
+
+                playerRef.sendMessage(Message.raw("Teleported to waypoint!").color(Color.GREEN));
+            });
+
             page.addEventListener("delete-wp-" + i, CustomUIEventBindingType.Activating, event -> {
                 plugin.getCitizensManager().getPatrolManager().removeWaypoint(path.getName(), idx);
                 openPatrolPathEditorGUI(playerRef, store, citizen, path.getName());
+
+                // Update each citizen with this path
+                for (CitizenData patrolCitizen : plugin.getCitizensManager().getAllCitizens()) {
+                    String patrolPath = patrolCitizen.getPathConfig().getPluginPatrolPath();
+                    if (patrolPath.isEmpty() || !patrolPath.equals(path.getName())) {
+                        continue;
+                    }
+
+                    plugin.getCitizensManager().startCitizenPatrol(patrolCitizen.getId(), patrolPath);
+                }
             });
         }
 
@@ -6182,6 +6295,58 @@ public class CitizensUI {
             plugin.getCitizensManager().getPatrolManager().addWaypoint(
                     path.getName(), new PatrolWaypoint(pos.x, pos.y, pos.z, 0f));
             openPatrolPathEditorGUI(playerRef, store, citizen, path.getName());
+
+            // Update each citizen with this path
+            for (CitizenData patrolCitizen : plugin.getCitizensManager().getAllCitizens()) {
+                String patrolPath = patrolCitizen.getPathConfig().getPluginPatrolPath();
+                if (patrolPath.isEmpty() || !patrolPath.equals(path.getName())) {
+                    continue;
+                }
+
+                plugin.getCitizensManager().startCitizenPatrol(patrolCitizen.getId(), patrolPath);
+            }
+        });
+
+        page.addEventListener("get-waypoint-item-btn", CustomUIEventBindingType.Activating, (event, ctx) -> {
+            Ref<EntityStore> ref = playerRef.getReference();
+            if (ref == null || !ref.isValid()) {
+                playerRef.sendMessage(Message.raw("An error occurred.").color(Color.RED));
+                return;
+            }
+
+            UUID worldUUID = playerRef.getWorldUuid();
+            if (worldUUID == null) {
+                playerRef.sendMessage(Message.raw("Could not determine your world.").color(Color.RED));
+                return;
+            }
+
+            Player player = ref.getStore().getComponent(ref, Player.getComponentType());
+            if (player == null) {
+                playerRef.sendMessage(Message.raw("An error occurred.").color(Color.RED));
+                return;
+            }
+
+            ItemStack stack = new ItemStack("PatrolStick");
+
+            ItemStack waypointItemStack = stack.withMetadata(
+                    "HyCitizensPatrolStick",
+                    Codec.STRING,
+                    path.getName()
+            );
+
+            if (player.getInventory().getHotbar().canAddItemStack(waypointItemStack)) {
+                player.getInventory().getHotbar().addItemStack(waypointItemStack);
+                playerRef.sendMessage(Message.raw("You have received a patrol waypoint stick. Use LEFT click to open the waypoint menu, RIGHT click will add a waypoint to your position.").color(Color.GREEN));
+            }
+            else if (player.getInventory().getStorage().canAddItemStack(waypointItemStack)) {
+                player.getInventory().getStorage().addItemStack(waypointItemStack);
+                playerRef.sendMessage(Message.raw("You have received a patrol waypoint stick. Use LEFT click to open the waypoint menu, RIGHT click will add a waypoint to your position.").color(Color.GREEN));
+            }
+            else {
+                playerRef.sendMessage(Message.raw("Your inventory is full.").color(Color.RED));
+            }
+
+            ctx.getPage().ifPresent(newPage -> newPage.close());
         });
 
         page.addEventListener("save-btn", CustomUIEventBindingType.Activating, event -> {

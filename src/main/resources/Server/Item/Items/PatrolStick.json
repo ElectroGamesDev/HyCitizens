@@ -1,0 +1,86 @@
+
+{
+  "TranslationProperties": {
+    "Name": "server.items.PatrolStick.name",
+    "Description": "server.items.PatrolStick.description"
+  },
+  "ItemLevel": 2,
+  "PlayerAnimationsId": {
+    "Parent": "Item",
+    "Animations": {}
+  },
+  "Categories": [
+    "Items.Utilities"
+  ],
+  "Icon": "Icons/ItemsGenerated/Ingredient_Stick.png",
+  "IconProperties": {
+    "Rotation": [
+      67,
+      330,
+      0
+    ],
+    "Scale": 1.21,
+    "Translation": [
+      1.3,
+      -1
+    ]
+  },
+  "InteractionVars": {},
+  "Utility": {
+    "Compatible": false
+  },
+  "BlockType": {
+    "BlockParticleSetId": "Wood",
+    "BlockSoundSetId": "Wood",
+    "CustomModel": "Items/Ingredients/Stick.blockymodel",
+    "CustomModelTexture": [
+      {
+        "Texture": "Items/Ingredients/Stick_Texture.png",
+        "Weight": 1
+      }
+    ],
+    "CustomModelScale": 1,
+    "DrawType": "Model",
+    "Flags": {
+      "IsUsable": true
+    },
+    "Gathering": {
+      "Harvest": {},
+      "Soft": {}
+    },
+    "HitboxType": "Potion",
+    "Material": "Solid",
+    "RandomRotation": "YawStep1",
+    "Opacity": "Transparent",
+    "Support": {
+      "Down": [
+        {
+          "FaceType": "Full"
+        }
+      ]
+    },
+    "ParticleColor": "#7efff1",
+    "Light": {
+      "Color": "#255"
+    }
+  },
+  "Consumable": false,
+  "Tags": {
+    "Type": [
+      "Utility"
+    ]
+  },
+  "Scale": 1,
+  "MaxStack": 1,
+  "DropOnDeath": false,
+  "Quality": "Rare",
+  "Interactions": {
+    "Secondary": {
+      "Interactions": [
+        {
+          "Type": "PatrolStick"
+        }
+      ]
+    }
+  }
+}

@@ -134,10 +134,13 @@ public class PlayerConnectionListener {
     }
 
     public void onPlayerDisconnect(@Nonnull PlayerDisconnectEvent event) {
+        UUID playerUuid = event.getPlayerRef().getUuid();
         List<CitizenData> citizens = plugin.getCitizensManager().getAllCitizens();
 
         for (CitizenData citizen : citizens) {
-            citizen.lastLookDirections.remove(event.getPlayerRef().getUuid());
+            citizen.lastLookDirections.remove(playerUuid);
+            citizen.getSequentialMessageIndex().remove(playerUuid);
+            citizen.getPlayersInProximity().remove(playerUuid);
         }
     }
 }

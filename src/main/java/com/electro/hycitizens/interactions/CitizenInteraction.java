@@ -85,6 +85,8 @@ public class CitizenInteraction {
     );
 
     private static final Pattern COLOR_PATTERN = Pattern.compile("(\\{[A-Za-z]+})|(\\{#[0-9A-Fa-f]{6}})|([^\\{]+)");
+    private static final Pattern PLAYER_NAME_PATTERN = Pattern.compile("\\{PlayerName}", Pattern.CASE_INSENSITIVE);
+    private static final Pattern CITIZEN_NAME_PATTERN = Pattern.compile("\\{CitizenName}", Pattern.CASE_INSENSITIVE);
     private static final Random RANDOM = new Random();
 
     @Nullable
@@ -214,13 +216,13 @@ public class CitizenInteraction {
             }).thenCompose(v -> {
                 String command = commandAction.getCommand();
 
-                command = Pattern.compile("\\{PlayerName}", Pattern.CASE_INSENSITIVE)
+                command = PLAYER_NAME_PATTERN
                         .matcher(command)
-                        .replaceAll(playerRef.getUsername());
+                        .replaceAll(Matcher.quoteReplacement(playerRef.getUsername()));
 
-                command = Pattern.compile("\\{CitizenName}", Pattern.CASE_INSENSITIVE)
+                command = CITIZEN_NAME_PATTERN
                         .matcher(command)
-                        .replaceAll(citizen.getName());
+                        .replaceAll(Matcher.quoteReplacement(citizen.getName()));
 
                 if (command.startsWith("{SendMessage}")) {
                     String messageContent = command.substring("{SendMessage}".length()).trim();
@@ -302,12 +304,12 @@ public class CitizenInteraction {
 
     private static String replacePlaceholders(@Nonnull String text, @Nonnull PlayerRef playerRef,
                                               @Nonnull CitizenData citizen) {
-        text = Pattern.compile("\\{PlayerName}", Pattern.CASE_INSENSITIVE)
+        text = PLAYER_NAME_PATTERN
                 .matcher(text)
-                .replaceAll(playerRef.getUsername());
-        text = Pattern.compile("\\{CitizenName}", Pattern.CASE_INSENSITIVE)
+                .replaceAll(Matcher.quoteReplacement(playerRef.getUsername()));
+        text = CITIZEN_NAME_PATTERN
                 .matcher(text)
-                .replaceAll(citizen.getName());
+                .replaceAll(Matcher.quoteReplacement(citizen.getName()));
         return text;
     }
 }

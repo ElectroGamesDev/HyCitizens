@@ -41,19 +41,22 @@ public class SkinUtilities {
 
     @Nullable
     private static PlayerSkin getOnlinePlayerSkin(@Nonnull String username) {
-        PlayerRef playerRef = Universe.get().getPlayer(username, NameMatching.EXACT_IGNORE_CASE);
-        if (playerRef == null) {
+        try {
+            PlayerRef playerRef = Universe.get().getPlayer(username, NameMatching.EXACT_IGNORE_CASE);
+            if (playerRef == null) {
+                return null;
+            }
+
+            Ref<EntityStore> ref = playerRef.getReference();
+            if (ref != null && ref.isValid()) {
+                PlayerSkinComponent skinComponent = ref.getStore().getComponent(ref, PlayerSkinComponent.getComponentType());
+                if (skinComponent != null) {
+                    return skinComponent.getPlayerSkin();
+                }
+            }
+        } catch (Exception e) {
             return null;
         }
-
-        Ref<EntityStore> ref = playerRef.getReference();
-        if (ref != null && ref.isValid()) {
-            PlayerSkinComponent skinComponent = ref.getStore().getComponent(ref, PlayerSkinComponent.getComponentType());
-            if (skinComponent != null) {
-                return skinComponent.getPlayerSkin();
-            }
-        }
-
 
         return null;
     }

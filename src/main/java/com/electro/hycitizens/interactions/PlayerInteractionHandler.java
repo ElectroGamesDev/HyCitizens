@@ -35,6 +35,16 @@ public class PlayerInteractionHandler implements PacketWatcher {
         PacketAdapters.registerInbound(this);
     }
 
+    public void unregister() {
+        try {
+            PacketAdapters.class.getMethod("unregisterInbound", PacketWatcher.class).invoke(null, this);
+        } catch (NoSuchMethodException ignored) {
+            // Older API versions may not expose explicit unregistration.
+        } catch (Exception e) {
+            getLogger().atWarning().withCause(e).log("Failed to unregister interaction packet watcher.");
+        }
+    }
+
     @Override
     public void accept(PacketHandler packetHandler, Packet packet) {
         if (!(packet instanceof SyncInteractionChains interactionChains)) {
