@@ -147,7 +147,7 @@ public class CitizenData {
         this.noPermissionMessage = noPermissionMessage;
         this.commandActions = new ArrayList<>(commandActions);
         this.spawnedUUID = npcUUID;
-        this.hologramLineUuids = hologramLineUuids;
+        this.hologramLineUuids = hologramLineUuids != null ? new ArrayList<>(hologramLineUuids) : new ArrayList<>();
         this.isPlayerModel = isPlayerModel;
         this.useLiveSkin = useLiveSkin;
         this.skinUsername = skinUsername != null ? skinUsername : "";
@@ -272,12 +272,16 @@ public class CitizenData {
         return spawnedUUID;
     }
 
+    @Nonnull
     public List<UUID> getHologramLineUuids() {
+        if (hologramLineUuids == null) {
+            hologramLineUuids = new ArrayList<>();
+        }
         return hologramLineUuids;
     }
 
     public void setHologramLineUuids(@Nullable List<UUID> hologramLineUuids) {
-        this.hologramLineUuids = hologramLineUuids;
+        this.hologramLineUuids = hologramLineUuids != null ? new ArrayList<>(hologramLineUuids) : new ArrayList<>();
     }
 
     public boolean requiresPermission() {

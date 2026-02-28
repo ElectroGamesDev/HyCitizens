@@ -1,5 +1,9 @@
 package com.electro.hycitizens.util;
 
+import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 import com.hypixel.hytale.server.core.HytaleServer;
 
 import java.io.IOException;
@@ -14,9 +18,34 @@ public class RoleAssetPackManager {
     public static void setup() {
         Path rolesPath = Paths.get("mods", "HyCitizensRoles", "Server", "NPC", "Roles");
         Path manifestPath = Paths.get("mods", "HyCitizensRoles", "manifest.json");
+        Path configPath = Paths.get("config.json");
 
         try {
             Files.createDirectories(rolesPath);
+
+            // Check config.json and ensure the mod is registered if DefaultModsEnabled is false
+            if (Files.exists(configPath)) {
+                String configContent = new String(Files.readAllBytes(configPath), StandardCharsets.UTF_8);
+                JsonObject config = JsonParser.parseString(configContent).getAsJsonObject();
+
+                boolean defaultModsEnabled = config.has("DefaultModsEnabled") && config.get("DefaultModsEnabled").getAsBoolean();
+
+                if (!defaultModsEnabled) {
+                    JsonObject mods = config.has("Mods") ? config.getAsJsonObject("Mods") : new JsonObject();
+
+                    if (!mods.has("electro:HyCitizensRoles")) {
+                        JsonObject modEntry = new JsonObject();
+                        modEntry.addProperty("Enabled", true);
+                        mods.add("electro:HyCitizensRoles", modEntry);
+                        config.add("Mods", mods);
+
+                        Gson gson = new GsonBuilder().setPrettyPrinting().create();
+                        Files.write(configPath, gson.toJson(config).getBytes(StandardCharsets.UTF_8));
+                    }
+                }
+            } else {
+                getLogger().atWarning().log("config.json not found, skipping mod registration check.");
+            }
 
             if (!Files.exists(manifestPath)) {
                 String manifestContent = "{\n" +
@@ -54,7 +83,6 @@ public class RoleAssetPackManager {
                 getLogger().atWarning().log("    Simply start the server again after shutdown completes.                    ");
                 getLogger().atWarning().log("                                                                                ");
                 getLogger().atWarning().log("================================================================================");
-
 
                 HytaleServer.get().shutdownServer();
             }

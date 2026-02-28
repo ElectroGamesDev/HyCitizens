@@ -6,6 +6,7 @@ import com.electro.hycitizens.interactions.PlayerInteractionHandler;
 import com.electro.hycitizens.listeners.ChunkPreLoadListener;
 import com.electro.hycitizens.listeners.EntityDamageListener;
 import com.electro.hycitizens.listeners.PlayerConnectionListener;
+import com.electro.hycitizens.listeners.PlayerItemInteractionHandler;
 import com.electro.hycitizens.managers.CitizensManager;
 import com.electro.hycitizens.models.CitizenData;
 import com.electro.hycitizens.ui.CitizensUI;
@@ -41,6 +42,7 @@ public class HyCitizensPlugin extends JavaPlugin {
     private PlayerConnectionListener connectionListener;
 
     private PlayerInteractionHandler interactionHandler;
+    private PlayerItemInteractionHandler itemInteractionHandler;
 
     public HyCitizensPlugin(@Nonnull JavaPluginInit init) {
         super(init);
@@ -72,6 +74,9 @@ public class HyCitizensPlugin extends JavaPlugin {
 
         this.interactionHandler = new PlayerInteractionHandler();
         this.interactionHandler.register();
+
+        this.itemInteractionHandler = new PlayerItemInteractionHandler(this);
+        this.itemInteractionHandler.register();
     }
 
     @Override
@@ -86,6 +91,14 @@ public class HyCitizensPlugin extends JavaPlugin {
 
     @Override
     protected void shutdown() {
+        if (interactionHandler != null) {
+            interactionHandler.unregister();
+        }
+
+        if (itemInteractionHandler != null) {
+            itemInteractionHandler.unregister();
+        }
+
         if (citizensManager != null) {
             citizensManager.shutdown();
         }

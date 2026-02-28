@@ -377,7 +377,22 @@ public class PatrolManager {
 
     public void onCitizenDespawned(@Nonnull String citizenId) {
         activeSessions.remove(citizenId);
-        moveTargets.remove(citizenId);
+        Ref<EntityStore> targetRef = moveTargets.remove(citizenId);
+        if (targetRef == null || !targetRef.isValid()) return;
+
+        CitizenData citizen = citizensManager.getCitizen(citizenId);
+        if (citizen == null) return;
+
+        World world = Universe.get().getWorld(citizen.getWorldUUID());
+        if (world == null) return;
+
+        world.execute(() -> {
+            try {
+                if (targetRef.isValid()) {
+                    world.getEntityStore().getStore().removeEntity(targetRef, RemoveReason.REMOVE);
+                }
+            } catch (Exception ignored) {}
+        });
     }
 
     public void shutdown() {

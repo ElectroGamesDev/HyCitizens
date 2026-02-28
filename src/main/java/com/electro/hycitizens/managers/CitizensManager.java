@@ -9,11 +9,6 @@ import com.electro.hycitizens.models.*;
 import com.electro.hycitizens.roles.RoleGenerator;
 import com.electro.hycitizens.util.ConfigManager;
 import com.electro.hycitizens.util.SkinUtilities;
-import com.hypixel.hytale.assetstore.AssetLoadResult;
-import com.hypixel.hytale.assetstore.AssetRegistry;
-import com.hypixel.hytale.assetstore.map.DefaultAssetMap;
-import com.hypixel.hytale.assetstore.map.IndexedLookupTableAssetMap;
-import com.hypixel.hytale.common.util.RandomUtil;
 import com.hypixel.hytale.component.*;
 import com.hypixel.hytale.math.util.ChunkUtil;
 import com.hypixel.hytale.math.vector.Vector3d;
@@ -21,14 +16,10 @@ import com.hypixel.hytale.math.vector.Vector3f;
 import com.hypixel.hytale.protocol.*;
 import com.hypixel.hytale.protocol.packets.entities.EntityUpdates;
 import com.hypixel.hytale.server.core.HytaleServer;
-import com.hypixel.hytale.server.core.Message;
-import com.hypixel.hytale.server.core.asset.HytaleAssetStore;
 import com.hypixel.hytale.server.core.asset.type.model.config.Model;
-import com.hypixel.hytale.server.core.asset.type.model.config.ModelAsset;
 import com.hypixel.hytale.server.core.cosmetics.CosmeticsModule;
 import com.hypixel.hytale.server.core.entity.AnimationUtils;
 import com.hypixel.hytale.server.core.entity.UUIDComponent;
-import com.hypixel.hytale.server.core.entity.entities.Player;
 import com.hypixel.hytale.server.core.entity.entities.ProjectileComponent;
 import com.hypixel.hytale.server.core.entity.nameplate.Nameplate;
 import com.hypixel.hytale.server.core.inventory.ItemStack;
@@ -41,8 +32,6 @@ import com.hypixel.hytale.server.core.modules.entitystats.EntityStatsModule;
 import com.hypixel.hytale.server.core.modules.entitystats.asset.DefaultEntityStatTypes;
 import com.hypixel.hytale.server.core.modules.entitystats.modifier.Modifier;
 import com.hypixel.hytale.server.core.modules.entitystats.modifier.StaticModifier;
-import com.hypixel.hytale.server.core.modules.interaction.Interactions;
-import com.hypixel.hytale.server.core.modules.interaction.interaction.config.RootInteraction;
 import com.hypixel.hytale.server.core.universe.PlayerRef;
 import com.hypixel.hytale.server.core.universe.Universe;
 import com.hypixel.hytale.server.core.universe.world.World;
@@ -55,7 +44,6 @@ import it.unimi.dsi.fastutil.Pair;
 
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
-import java.lang.reflect.Field;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ScheduledFuture;
@@ -65,6 +53,30 @@ import java.util.stream.Collectors;
 import static com.hypixel.hytale.logger.HytaleLogger.getLogger;
 
 public class CitizensManager {
+    private static final int MAX_PENDING_HOLOGRAM_REMOVAL_ATTEMPTS = 20;
+    private static final int MAX_PENDING_NPC_REMOVAL_ATTEMPTS = 24;
+    private static final float NAMETAG_OFFSET_EPSILON = 0.0001f;
+
+    private static final class PendingHologramRemoval {
+        private final long chunkIndex;
+        private int attempts;
+
+        private PendingHologramRemoval(long chunkIndex) {
+            this.chunkIndex = chunkIndex;
+            this.attempts = 0;
+        }
+    }
+
+    private static final class PendingNpcRemoval {
+        private final long chunkIndex;
+        private int attempts;
+
+        private PendingNpcRemoval(long chunkIndex) {
+            this.chunkIndex = chunkIndex;
+            this.attempts = 0;
+        }
+    }
+
     private final HyCitizensPlugin plugin;
     private final ConfigManager config;
     private final Map<String, CitizenData> citizens;
@@ -81,6 +93,9 @@ public class CitizensManager {
     private ScheduledFuture<?> positionSaveTask;
     private final Set<String> citizensCurrentlySpawning = ConcurrentHashMap.newKeySet();
     private final Set<String> hologramsCurrentlySpawning = ConcurrentHashMap.newKeySet();
+    private final Map<UUID, Map<UUID, PendingHologramRemoval>> pendingHologramRemovals = new ConcurrentHashMap<>();
+    private final Map<UUID, Map<UUID, PendingNpcRemoval>> pendingNpcRemovals = new ConcurrentHashMap<>();
+    private final Set<String> pendingNpcRemovalTasks = ConcurrentHashMap.newKeySet();
     private PatrolManager patrolManager;
 
     public CitizensManager(@Nonnull HyCitizensPlugin plugin) {
@@ -107,6 +122,10 @@ public class CitizensManager {
             for (CitizenData citizen : citizens.values()) {
                 if (citizen.isPlayerModel() && citizen.isUseLiveSkin() && !citizen.getSkinUsername().isEmpty()) {
                     long timeSinceLastUpdate = currentTime - citizen.getLastSkinUpdate();
+
+                    if (citizen.getSkinUsername().startsWith("random_") || citizen.getSkinUsername().startsWith("custom_")) {
+                        continue;
+                    }
 
                     if (timeSinceLastUpdate >= thirtyMinutes) {
                         updateCitizenSkin(citizen, true);
@@ -238,7 +257,7 @@ public class CitizensManager {
 
                         int totalLines = citizen.getHologramLineUuids().size();
                         if (totalLines == 0) {
-                            return;
+                            continue;
                         }
 
                         // Calculate the same offsets as in spawn
@@ -285,8 +304,13 @@ public class CitizensManager {
             Map<UUID, List<CitizenData>> tmp = new HashMap<>();
 
             for (CitizenData citizen : citizens.values()) {
-                if (citizen.getSpawnedUUID() == null || citizen.getNpcRef() == null || !citizen.getNpcRef().isValid())
+                if (citizen.getSpawnedUUID() == null) {
                     continue;
+                }
+
+                if (citizen.getNpcRef() == null || !citizen.getNpcRef().isValid()) {
+                    continue;
+                }
 
                 UUID worldUUID = citizen.getWorldUUID();
                 tmp.computeIfAbsent(worldUUID, k -> new ArrayList<>()).add(citizen);
@@ -348,6 +372,10 @@ public class CitizensManager {
         for (CitizenData citizen : citizens.values()) {
             saveCitizen(citizen);
         }
+
+        pendingHologramRemovals.clear();
+        pendingNpcRemovals.clear();
+        pendingNpcRemovalTasks.clear();
     }
 
     private void loadAllCitizens() {
@@ -1106,16 +1134,24 @@ public class CitizensManager {
             npcEntity.getInventory().getArmor().setItemStackForSlot((short) 3, new ItemStack(citizen.getNpcLeggings()));
         }
 
-        // Update health after applying armor
-        if (npcEntity.getReference() != null && statMap != null) {
-            EntityStatValue healthValue = statMap.get(DefaultEntityStatTypes.getHealth());
-            if (healthValue != null) {
-                float healthDifference = healthValue.getMax() - maxHealth;
-                statMap.setStatValue(DefaultEntityStatTypes.getHealth(), healthValue.get() + healthDifference);
+        EntityStatMap finalStatMap = statMap;
+        float finalMaxHealth = maxHealth;
 
-                statMap.setStatValue(DefaultEntityStatTypes.getHealth(), healthValue.get() + healthDifference);
+        HytaleServer.SCHEDULED_EXECUTOR.schedule(() -> {
+            World world = Universe.get().getWorld(citizen.getWorldUUID());
+            if (world == null) {
+                return;
             }
-        }
+
+            // Update health after applying armor
+            if (npcEntity.getReference() != null && finalStatMap != null) {
+                EntityStatValue healthValue = finalStatMap.get(DefaultEntityStatTypes.getHealth());
+                if (healthValue != null) {
+                    float healthDifference = healthValue.getMax() - finalMaxHealth;
+                    finalStatMap.setStatValue(DefaultEntityStatTypes.getHealth(), healthValue.get() + healthDifference);
+                }
+            }
+        }, 200, TimeUnit.MILLISECONDS);
     }
 
     public void removeCitizen(@Nonnull String citizenId) {
@@ -1125,7 +1161,16 @@ public class CitizensManager {
 
         roleGenerator.deleteRoleFile(citizenId);
 
-        despawnCitizen(citizen);
+        if (citizen == null) {
+            return;
+        }
+
+        despawnCitizenForDeletion(citizen);
+    }
+
+    private void despawnCitizenForDeletion(@Nonnull CitizenData citizen) {
+        despawnCitizenNPCForDeletion(citizen);
+        despawnCitizenHologram(citizen);
     }
     public void spawnCitizen(CitizenData citizen, boolean save) {
         World world = Universe.get().getWorld(citizen.getWorldUUID());
@@ -1183,7 +1228,7 @@ public class CitizensManager {
                 if (!citizen.isHideNpc()) {
                     spawnCitizenNPC(citizen, save);
                 }
-                spawnCitizenHologram(citizen, save);
+                updateSpawnedCitizenHologram(citizen, save);
             });
 
         }, 0, 250, TimeUnit.MILLISECONDS);
@@ -1281,6 +1326,7 @@ public class CitizensManager {
         applyHealthOverride(ref, citizen);
 
         setInteractionComponent(store, ref, citizen);
+        applyNpcNameplateComponent(store, ref, citizen);
         updateCitizenNPCItems(citizen);
         triggerAnimations(citizen, "DEFAULT");
         String pluginPatrolPath = citizen.getPathConfig().getPluginPatrolPath();
@@ -1380,6 +1426,7 @@ public class CitizensManager {
         applyHealthOverride(ref, citizen);
 
         setInteractionComponent(store, ref, citizen);
+        applyNpcNameplateComponent(store, ref, citizen);
         updateCitizenNPCItems(citizen);
         triggerAnimations(citizen, "DEFAULT");
         String pluginPatrolPath = citizen.getPathConfig().getPluginPatrolPath();
@@ -1426,9 +1473,11 @@ public class CitizensManager {
             return;
         }
 
-        // Show the "Press F to interact" popup only when at least one action uses F key.
-        if (citizenData.getForceFKeyInteractionText() || hasFKeyActions(citizenData)) {
+        boolean shouldBeInteractable = citizenData.getForceFKeyInteractionText() || hasFKeyActions(citizenData);
+        if (shouldBeInteractable) {
             store.putComponent(ref, Interactable.getComponentType(), Interactable.INSTANCE);
+        } else {
+            store.removeComponentIfExists(ref, Interactable.getComponentType());
         }
     }
 
@@ -1447,6 +1496,93 @@ public class CitizensManager {
             }
         }
         return false;
+    }
+
+    @Nonnull
+    private List<String> getNonEmptyNametagLines(@Nonnull CitizenData citizen) {
+        String name = citizen.getName();
+        if (name == null || name.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        String[] lines = name.replace("\\n", "\n").split("\\r?\\n");
+        List<String> nonEmptyLines = new ArrayList<>();
+        for (String line : lines) {
+            String trimmed = line.trim();
+            if (!trimmed.isEmpty()) {
+                nonEmptyLines.add(trimmed);
+            }
+        }
+
+        return nonEmptyLines;
+    }
+
+    @Nullable
+    private String getInlineNametagText(@Nonnull CitizenData citizen) {
+        List<String> lines = getNonEmptyNametagLines(citizen);
+        if (lines.size() != 1) {
+            return null;
+        }
+        return lines.get(0);
+    }
+
+    public boolean shouldUseSeparateNametagEntities(@Nonnull CitizenData citizen) {
+        if (citizen.isHideNametag()) {
+            return false;
+        }
+
+        List<String> lines = getNonEmptyNametagLines(citizen);
+        if (lines.isEmpty()) {
+            return false;
+        }
+
+        if (citizen.isHideNpc()) {
+            return true;
+        }
+
+        if (Math.abs(citizen.getNametagOffset()) > NAMETAG_OFFSET_EPSILON) {
+            return true;
+        }
+
+        return lines.size() > 1;
+    }
+
+    private boolean shouldUseInlineNpcNameplate(@Nonnull CitizenData citizen) {
+        if (citizen.isHideNametag() || citizen.isHideNpc()) {
+            return false;
+        }
+
+        if (Math.abs(citizen.getNametagOffset()) > NAMETAG_OFFSET_EPSILON) {
+            return false;
+        }
+
+        return getInlineNametagText(citizen) != null;
+    }
+
+    private void applyNpcNameplateComponent(@Nonnull Store<EntityStore> store, @Nonnull Ref<EntityStore> ref, @Nonnull CitizenData citizen) {
+        String inlineText = shouldUseInlineNpcNameplate(citizen) ? getInlineNametagText(citizen) : null;
+        if (inlineText == null) {
+            store.removeComponentIfExists(ref, Nameplate.getComponentType());
+            return;
+        }
+
+        store.putComponent(ref, Nameplate.getComponentType(), new Nameplate(inlineText));
+    }
+
+    public void refreshNpcNameplate(@Nonnull CitizenData citizen) {
+        World world = Universe.get().getWorld(citizen.getWorldUUID());
+        if (world == null) {
+            return;
+        }
+
+        world.execute(() -> {
+            Ref<EntityStore> npcRef = citizen.getNpcRef();
+            if (npcRef == null || !npcRef.isValid()) {
+                return;
+            }
+
+            applyNpcNameplateComponent(npcRef.getStore(), npcRef, citizen);
+        });
     }
 
     public PlayerSkin determineSkin(CitizenData citizen) {
@@ -1493,13 +1629,15 @@ public class CitizensManager {
                                 }
 
                                 PersistentModel persistentModel = npcRef.getStore().getComponent(npcRef, PersistentModel.getComponentType());
-                                if (persistentModel != null) {
+                                if (persistentModel != null && newModel != null) {
                                     persistentModel.setModelReference(new Model.ModelReference(
                                             newModel.getModelAssetId(),
                                             newModel.getScale(),
                                             newModel.getRandomAttachmentIds(),
                                             newModel.getAnimationSetMap() == null
                                     ));
+                                } else if (newModel == null) {
+                                    getLogger().atWarning().log("Failed to create skin model while updating skin for citizen '" + citizen.getId() + "'.");
                                 }
                             });
                         }
@@ -1528,13 +1666,15 @@ public class CitizensManager {
                             }
 
                             PersistentModel persistentModel = npcRef.getStore().getComponent(npcRef, PersistentModel.getComponentType());
-                            if (persistentModel != null) {
+                            if (persistentModel != null && newModel != null) {
                                 persistentModel.setModelReference(new Model.ModelReference(
                                         newModel.getModelAssetId(),
                                         newModel.getScale(),
                                         newModel.getRandomAttachmentIds(),
                                         newModel.getAnimationSetMap() == null
                                 ));
+                            } else if (newModel == null) {
+                                getLogger().atWarning().log("Failed to create skin model while applying cached skin for citizen '" + citizen.getId() + "'.");
                             }
                         });
                     }
@@ -1561,13 +1701,15 @@ public class CitizensManager {
                         }
 
                         PersistentModel persistentModel = npcRef.getStore().getComponent(npcRef, PersistentModel.getComponentType());
-                        if (persistentModel != null) {
+                        if (persistentModel != null && newModel != null) {
                             persistentModel.setModelReference(new Model.ModelReference(
                                     newModel.getModelAssetId(),
                                     newModel.getScale(),
                                     newModel.getRandomAttachmentIds(),
                                     newModel.getAnimationSetMap() == null
                             ));
+                        } else if (newModel == null) {
+                            getLogger().atWarning().log("Failed to create skin model while previewing skin for citizen '" + citizen.getId() + "'.");
                         }
                     });
                 }
@@ -1601,17 +1743,43 @@ public class CitizensManager {
     }
 
     public void spawnCitizenHologram(CitizenData citizen, boolean save) {
+        if (citizen.isHideNametag()) {
+            refreshNpcNameplate(citizen);
+            despawnCitizenHologram(citizen);
+            if (save) {
+                saveCitizen(citizen);
+            }
+            return;
+        }
+
+        if (!shouldUseSeparateNametagEntities(citizen)) {
+            despawnCitizenHologram(citizen);
+            refreshNpcNameplate(citizen);
+            if (save) {
+                saveCitizen(citizen);
+            }
+            return;
+        }
+
+        List<String> nametagLines = getNonEmptyNametagLines(citizen);
+        if (nametagLines.isEmpty()) {
+            refreshNpcNameplate(citizen);
+            despawnCitizenHologram(citizen);
+            if (save) {
+                saveCitizen(citizen);
+            }
+            return;
+        }
+
+        // Separate nametag mode should never leave an NPC Nameplate component active.
+        refreshNpcNameplate(citizen);
+
         if (!hologramsCurrentlySpawning.add(citizen.getId())) {
             return;
         }
 
         if (!citizen.getHologramLineUuids().isEmpty()) {
             despawnCitizenHologram(citizen);
-        }
-
-        if (citizen.isHideNametag()) {
-            hologramsCurrentlySpawning.remove(citizen.getId());
-            return;
         }
 
         World world = Universe.get().getWorld(citizen.getWorldUUID());
@@ -1652,16 +1820,6 @@ public class CitizensManager {
                     spawned[0] = true;
                     futureRef[0].cancel(false);
 
-                    // Actual spawning logic
-                    String name = citizen.getName();
-                    if (name == null || name.isEmpty()) {
-                        return;
-                    }
-
-                    name = name.replace("\\n", "\n");
-
-                    String[] lines = name.split("\\r?\\n");
-
                     double scale = Math.max(0.01, citizen.getScale() + citizen.getNametagOffset());
 
                     double baseOffset = 1.65;
@@ -1680,15 +1838,11 @@ public class CitizensManager {
                     // Controls spacing between each nameplate line
                     double lineSpacing = 0.25;
 
-                    for (int i = 0; i < lines.length; ++i) {
-                        String lineText = lines[i].trim();
-                        if (lineText.isEmpty()) {
-                            continue;
-                        }
-
+                    for (int i = 0; i < nametagLines.size(); ++i) {
+                        String lineText = nametagLines.get(i);
                         Vector3d linePos = new Vector3d(
                                 baseHologramPos.x,
-                                baseHologramPos.y + ((lines.length - 1 - i) * lineSpacing),
+                                baseHologramPos.y + ((nametagLines.size() - 1 - i) * lineSpacing),
                                 baseHologramPos.z
                         );
 
@@ -1772,42 +1926,247 @@ public class CitizensManager {
 
                         world.getEntityStore().getStore().removeEntity(npc, RemoveReason.REMOVE);
                     });
-
-                    citizen.setSpawnedUUID(null);
-                    citizen.setNpcRef(null);
                 }
+
+                citizen.setSpawnedUUID(null);
+                citizen.setNpcRef(null);
             }
+        }
+    }
+
+    private void despawnCitizenNPCForDeletion(@Nonnull CitizenData citizen) {
+        if (patrolManager != null) {
+            patrolManager.onCitizenDespawned(citizen.getId());
+        }
+        citizensCurrentlySpawning.remove(citizen.getId());
+        citizen.setAwaitingRespawn(false);
+
+        UUID npcUUID = citizen.getSpawnedUUID();
+        Ref<EntityStore> npcRef = citizen.getNpcRef();
+        World world = Universe.get().getWorld(citizen.getWorldUUID());
+
+        if (world == null) {
+            if (npcUUID != null) {
+                queuePendingNpcRemoval(citizen, npcUUID);
+            }
+            citizen.setSpawnedUUID(null);
+            citizen.setNpcRef(null);
+            return;
+        }
+
+        if (npcRef != null && npcRef.isValid()) {
+            world.execute(() -> world.getEntityStore().getStore().removeEntity(npcRef, RemoveReason.REMOVE));
+            citizen.setSpawnedUUID(null);
+            citizen.setNpcRef(null);
+            return;
+        }
+
+        if (npcUUID != null) {
+            Ref<EntityStore> resolvedNpcRef = world.getEntityRef(npcUUID);
+            if (resolvedNpcRef != null && resolvedNpcRef.isValid()) {
+                world.execute(() -> world.getEntityStore().getStore().removeEntity(resolvedNpcRef, RemoveReason.REMOVE));
+            } else {
+                queuePendingNpcRemoval(citizen, npcUUID);
+            }
+
+            citizen.setSpawnedUUID(null);
+            citizen.setNpcRef(null);
         }
     }
 
     public void despawnCitizenHologram(CitizenData citizen) {
         hologramsCurrentlySpawning.remove(citizen.getId());
-        World world = Universe.get().getWorld(citizen.getWorldUUID());
-        if (world == null) {
-            return;
-        }
-
         if (citizen.getHologramLineUuids() == null || citizen.getHologramLineUuids().isEmpty()) {
             return;
         }
 
         List<UUID> hologramUuids = new ArrayList<>(citizen.getHologramLineUuids());
-
         citizen.getHologramLineUuids().clear();
 
+        World world = Universe.get().getWorld(citizen.getWorldUUID());
+        if (world == null) {
+            queuePendingHologramRemovals(citizen, hologramUuids);
+            return;
+        }
+
         world.execute(() -> {
+            List<UUID> unresolvedUuids = new ArrayList<>();
             for (UUID uuid : hologramUuids) {
+                if (uuid == null) {
+                    continue;
+                }
+
                 try {
                     Ref<EntityStore> hologram = world.getEntityRef(uuid);
-                    if (hologram == null) {
+                    if (hologram == null || !hologram.isValid()) {
+                        unresolvedUuids.add(uuid);
                         continue;
                     }
 
                     world.getEntityStore().getStore().removeEntity(hologram, RemoveReason.REMOVE);
                 } catch (Exception ignored) {
+                    unresolvedUuids.add(uuid);
                 }
             }
+
+            if (!unresolvedUuids.isEmpty()) {
+                queuePendingHologramRemovals(citizen, unresolvedUuids);
+            }
         });
+    }
+
+    private long getCitizenChunkIndex(@Nonnull CitizenData citizen) {
+        Vector3d chunkPosition = citizen.getCurrentPosition() != null ? citizen.getCurrentPosition() : citizen.getPosition();
+        return ChunkUtil.indexChunkFromBlock(chunkPosition.x, chunkPosition.z);
+    }
+
+    private void queuePendingNpcRemoval(@Nonnull CitizenData citizen, @Nonnull UUID npcUuid) {
+        UUID worldUUID = citizen.getWorldUUID();
+        long chunkIndex = getCitizenChunkIndex(citizen);
+
+        Map<UUID, PendingNpcRemoval> worldPending = pendingNpcRemovals.computeIfAbsent(worldUUID, ignored -> new ConcurrentHashMap<>());
+        worldPending.put(npcUuid, new PendingNpcRemoval(chunkIndex));
+    }
+
+    private void queuePendingHologramRemovals(@Nonnull CitizenData citizen, @Nonnull Collection<UUID> hologramUuids) {
+        if (hologramUuids.isEmpty()) {
+            return;
+        }
+
+        UUID worldUUID = citizen.getWorldUUID();
+        long chunkIndex = getCitizenChunkIndex(citizen);
+
+        Map<UUID, PendingHologramRemoval> worldPending = pendingHologramRemovals.computeIfAbsent(worldUUID, ignored -> new ConcurrentHashMap<>());
+        for (UUID uuid : hologramUuids) {
+            if (uuid == null) {
+                continue;
+            }
+            worldPending.put(uuid, new PendingHologramRemoval(chunkIndex));
+        }
+    }
+
+    public void processPendingHologramRemovals(@Nonnull World world, long chunkIndex) {
+        UUID worldUUID = world.getWorldConfig().getUuid();
+        Map<UUID, PendingHologramRemoval> worldPending = pendingHologramRemovals.get(worldUUID);
+        if (worldPending == null || worldPending.isEmpty()) {
+            return;
+        }
+
+        List<UUID> uuidsInChunk = new ArrayList<>();
+        for (Map.Entry<UUID, PendingHologramRemoval> entry : worldPending.entrySet()) {
+            PendingHologramRemoval pendingRemoval = entry.getValue();
+            if (pendingRemoval != null && pendingRemoval.chunkIndex == chunkIndex) {
+                uuidsInChunk.add(entry.getKey());
+            }
+        }
+
+        if (uuidsInChunk.isEmpty()) {
+            return;
+        }
+
+        HytaleServer.SCHEDULED_EXECUTOR.schedule(() -> world.execute(() -> {
+            Map<UUID, PendingHologramRemoval> currentWorldPending = pendingHologramRemovals.get(worldUUID);
+            if (currentWorldPending == null || currentWorldPending.isEmpty()) {
+                return;
+            }
+
+            for (UUID uuid : uuidsInChunk) {
+                PendingHologramRemoval pendingRemoval = currentWorldPending.get(uuid);
+                if (pendingRemoval == null || pendingRemoval.chunkIndex != chunkIndex) {
+                    continue;
+                }
+
+                boolean removed = false;
+                try {
+                    Ref<EntityStore> hologram = world.getEntityRef(uuid);
+                    if (hologram != null && hologram.isValid()) {
+                        world.getEntityStore().getStore().removeEntity(hologram, RemoveReason.REMOVE);
+                        removed = true;
+                    }
+                } catch (Exception ignored) {
+                }
+
+                if (removed) {
+                    currentWorldPending.remove(uuid);
+                    continue;
+                }
+
+                pendingRemoval.attempts++;
+                if (pendingRemoval.attempts >= MAX_PENDING_HOLOGRAM_REMOVAL_ATTEMPTS) {
+                    currentWorldPending.remove(uuid);
+                    getLogger().atWarning().log("Dropped pending hologram removal UUID '" + uuid + "' in world '" + worldUUID + "' after " + MAX_PENDING_HOLOGRAM_REMOVAL_ATTEMPTS + " attempts.");
+                }
+            }
+
+            if (currentWorldPending.isEmpty()) {
+                pendingHologramRemovals.remove(worldUUID);
+            }
+        }), 200, TimeUnit.MILLISECONDS);
+    }
+
+    public void processPendingNpcRemovals(@Nonnull World world, long chunkIndex) {
+        UUID worldUUID = world.getWorldConfig().getUuid();
+        Map<UUID, PendingNpcRemoval> worldPending = pendingNpcRemovals.get(worldUUID);
+        if (worldPending == null || worldPending.isEmpty()) {
+            return;
+        }
+
+        for (Map.Entry<UUID, PendingNpcRemoval> entry : worldPending.entrySet()) {
+            PendingNpcRemoval pendingRemoval = entry.getValue();
+            if (pendingRemoval == null || pendingRemoval.chunkIndex != chunkIndex) {
+                continue;
+            }
+
+            UUID npcUuid = entry.getKey();
+            String taskKey = worldUUID + ":" + npcUuid;
+            if (!pendingNpcRemovalTasks.add(taskKey)) {
+                continue;
+            }
+
+            final ScheduledFuture<?>[] futureRef = new ScheduledFuture<?>[1];
+            futureRef[0] = HytaleServer.SCHEDULED_EXECUTOR.scheduleAtFixedRate(() -> world.execute(() -> {
+                Map<UUID, PendingNpcRemoval> currentWorldPending = pendingNpcRemovals.get(worldUUID);
+                PendingNpcRemoval currentPending = currentWorldPending != null ? currentWorldPending.get(npcUuid) : null;
+                if (currentPending == null || currentPending.chunkIndex != chunkIndex) {
+                    if (futureRef[0] != null) {
+                        futureRef[0].cancel(false);
+                    }
+                    pendingNpcRemovalTasks.remove(taskKey);
+                    return;
+                }
+
+                boolean done = false;
+                try {
+                    Ref<EntityStore> npcRef = world.getEntityRef(npcUuid);
+                    if (npcRef != null && npcRef.isValid()) {
+                        world.getEntityStore().getStore().removeEntity(npcRef, RemoveReason.REMOVE);
+                        done = true;
+                    }
+                } catch (Exception ignored) {
+                }
+
+                if (!done) {
+                    currentPending.attempts++;
+                    if (currentPending.attempts >= MAX_PENDING_NPC_REMOVAL_ATTEMPTS) {
+                        done = true;
+                    }
+                }
+
+                if (done) {
+                    if (currentWorldPending != null) {
+                        currentWorldPending.remove(npcUuid);
+                        if (currentWorldPending.isEmpty()) {
+                            pendingNpcRemovals.remove(worldUUID);
+                        }
+                    }
+
+                    if (futureRef[0] != null) {
+                        futureRef[0].cancel(false);
+                    }
+                    pendingNpcRemovalTasks.remove(taskKey);
+                }
+            }), 100, 250, TimeUnit.MILLISECONDS);
+        }
     }
 
     public void updateSpawnedCitizen(CitizenData citizen, boolean save) {
@@ -1821,16 +2180,26 @@ public class CitizensManager {
     }
 
     public void updateSpawnedCitizenHologram(CitizenData citizen, boolean save) {
-        //despawnCitizenHologram(citizen);
-        //spawnCitizenHologram(citizen, save);
-
         if (citizen.isHideNametag()) {
+            refreshNpcNameplate(citizen);
             despawnCitizenHologram(citizen);
             if (save) {
                 saveCitizen(citizen);
             }
             return;
         }
+
+        if (!shouldUseSeparateNametagEntities(citizen)) {
+            despawnCitizenHologram(citizen);
+            refreshNpcNameplate(citizen);
+            if (save) {
+                saveCitizen(citizen);
+            }
+            return;
+        }
+
+        // Separate nametag mode should never leave an NPC Nameplate component active.
+        refreshNpcNameplate(citizen);
 
         World world = Universe.get().getWorld(citizen.getWorldUUID());
         if (world == null) {
@@ -1841,25 +2210,13 @@ public class CitizensManager {
             return;
         }
 
-        String name = citizen.getName();
-        if (name == null || name.isEmpty()) {
+        List<String> nonEmptyLines = getNonEmptyNametagLines(citizen);
+        if (nonEmptyLines.isEmpty()) {
             despawnCitizenHologram(citizen);
             if (save) {
                 saveCitizen(citizen);
             }
             return;
-        }
-
-        name = name.replace("\\n", "\n");
-        String[] lines = name.split("\\r?\\n");
-
-        // Filter out empty lines
-        List<String> nonEmptyLines = new ArrayList<>();
-        for (String line : lines) {
-            String trimmed = line.trim();
-            if (!trimmed.isEmpty()) {
-                nonEmptyLines.add(trimmed);
-            }
         }
 
         List<UUID> existingUuids = citizen.getHologramLineUuids();
@@ -2309,55 +2666,9 @@ public class CitizensManager {
                 }
 
                 world.execute(() -> {
-                    try {
-                        NPCEntity npcEntity = citizen.getNpcRef().getStore().getComponent(
-                                citizen.getNpcRef(), NPCEntity.getComponentType());
-                        if (npcEntity != null) {
-                            int newRoleIndex = NPCPlugin.get().getIndex(generatedRoleName);
-                            npcEntity.setRoleIndex(newRoleIndex);
-                            npcEntity.setRoleName(generatedRoleName);
-
-                            // When the role updates, Hytale respawns the NPC, which means the citizen's npcRef needs to be updated
-
-                            long start = System.currentTimeMillis();
-                            final ScheduledFuture<?>[] futureRef = new ScheduledFuture<?>[1];
-
-                            futureRef[0] = HytaleServer.SCHEDULED_EXECUTOR.scheduleAtFixedRate(() -> {
-                                long elapsedMs = System.currentTimeMillis() - start;
-                                if (elapsedMs >= 10_000) {
-                                    futureRef[0].cancel(false);
-                                    return;
-                                }
-
-                                if (citizen.getNpcRef() != null && citizen.getNpcRef().isValid()) {
-                                    return;
-                                }
-
-                                futureRef[0].cancel(false);
-
-                                // npcRef is invalid, which means the role likely updated. Try to update it.
-                                HytaleServer.SCHEDULED_EXECUTOR.schedule(() -> {
-                                    if (citizen.getSpawnedUUID() == null) {
-                                        return;
-                                    }
-
-                                    if (world == null) {
-                                        return;
-                                    }
-
-                                    world.execute(() -> {
-                                        citizen.setNpcRef(world.getEntityRef(citizen.getSpawnedUUID()));
-                                    });
-
-                                }, 250, TimeUnit.MILLISECONDS);
-
-                            }, 100, 250, TimeUnit.MILLISECONDS);
-
-                            getLogger().atInfo().log("Successfully applied generated role '" + generatedRoleName + "' to citizen '" + citizen.getName() + "'.");
-                        }
-                    } catch (Exception e) {
-                        getLogger().atWarning().log("Failed to apply role '" + generatedRoleName + "' to citizen '" + citizen.getName() + "': " + e.getMessage());
-                    }
+                    despawnCitizenNPC(citizen);
+                    spawnCitizenNPC(citizen, false);
+                    getLogger().atInfo().log("Successfully applied generated role '" + generatedRoleName + "' to citizen '" + citizen.getName() + "'.");
                 });
             } catch (Exception e) {
                 getLogger().atWarning().log("Error during role retry for '" + generatedRoleName + "': " + e.getMessage());
@@ -2455,10 +2766,10 @@ public class CitizensManager {
         }
     }
 
-    public void reload() {
-        config.reload();
-        loadAllCitizens();
-    }
+//    public void reload() {
+//        config.reload();
+//        loadAllCitizens();
+//    }
 
     private void saveGroups() {
         List<String> groupList = new ArrayList<>(groups);

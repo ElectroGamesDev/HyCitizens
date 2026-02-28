@@ -158,7 +158,6 @@ public class RoleGenerator {
     @Nonnull
     public String getFallbackRoleName(@Nonnull CitizenData citizen) {
         String moveType = citizen.getMovementBehavior().getType();
-        // Use hasFKeyActions so the role reflects whether the F key popup should be shown.
         boolean interactable = HyCitizensPlugin.get().getCitizensManager().hasFKeyActions(citizen);
         String attitude = citizen.getAttitude();
         boolean isWander = "WANDER".equals(moveType) || "WANDER_CIRCLE".equals(moveType) || "WANDER_RECT".equals(moveType);

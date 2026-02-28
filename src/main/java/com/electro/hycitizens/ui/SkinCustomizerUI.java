@@ -214,7 +214,7 @@ public class SkinCustomizerUI {
 
         StringBuilder sb = new StringBuilder();
 
-        boolean isBodyType = state.selectedSlot.equalsIgnoreCase("body_type"); // adjust if your constant differs
+        boolean isBodyType = state.selectedSlot.equalsIgnoreCase("bodyCharacteristic");
 
         sb.append("<div class=\"grid-row\">\n");
 
@@ -289,16 +289,18 @@ public class SkinCustomizerUI {
         }
 
         // "None" tile
-        page.addEventListener("opt-none", CustomUIEventBindingType.Activating, event -> {
+        boolean isBodyType = state.selectedSlot.equalsIgnoreCase("bodyCharacteristic");
+        if (!isBodyType) {
+            page.addEventListener("opt-none", CustomUIEventBindingType.Activating, event -> {
+                if (state.selectedSlot.equalsIgnoreCase("bodyCharacteristic")) {
+                    return;
+                }
 
-            if (state.selectedSlot.equalsIgnoreCase("body_type")) {
-                return;
-            }
-
-            SkinUtilities.setSkinField(state.workingSkin, state.selectedSlot, null);
-            plugin.getCitizensManager().applySkinPreview(state.citizen, state.workingSkin);
-            buildAndOpen(playerRef, store, state);
-        });
+                SkinUtilities.setSkinField(state.workingSkin, state.selectedSlot, null);
+                plugin.getCitizensManager().applySkinPreview(state.citizen, state.workingSkin);
+                buildAndOpen(playerRef, store, state);
+            });
+        }
 
         for (int i = 0; i < options.size(); i++) {
             final String value = options.get(i);
@@ -332,7 +334,7 @@ public class SkinCustomizerUI {
 
         // Per-slot Clear
         page.addEventListener("slot-clear-btn", CustomUIEventBindingType.Activating, event -> {
-            if (state.selectedSlot.equalsIgnoreCase("body_type")) {
+            if (state.selectedSlot.equalsIgnoreCase("bodyCharacteristic")) {
                 return;
             }
 
