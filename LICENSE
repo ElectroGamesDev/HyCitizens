@@ -6,10 +6,12 @@ Permission is granted to view, fork, and modify this software for personal,
 educational, or server use.
 
 You MAY:
-- Fork this project on GitHub
+- Fork this project on GitHub, provided that any fork retains this license
+  and the original copyright notice
 - Modify the code for your own use
 - Submit pull requests or improvements
-- Distribute modified versions privately (e.g., direct sharing between individuals)
+- Distribute modified versions privately (e.g., direct sharing between individuals),
+  provided that this license and the original copyright notice are preserved
 
 You MAY NOT:
 - Redistribute this software or derivative works on plugin marketplaces
@@ -17,7 +19,8 @@ You MAY NOT:
   without explicit written permission from the copyright holder
 - Sell, sublicense, or commercially distribute this software or derivative works
 
-Any redistribution outside of GitHub forks or private, direct sharing
-requires explicit written permission from the copyright holder.
+Any redistribution, including forks, must retain this license and attribution.
+Redistribution outside of GitHub forks or private, direct sharing requires
+explicit written permission from the copyright holder.
 
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND.
