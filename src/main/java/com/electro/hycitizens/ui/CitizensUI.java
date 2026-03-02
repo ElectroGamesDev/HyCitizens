@@ -167,59 +167,77 @@ public class CitizensUI {
     private String getSharedStyles() {
         return """
                 <style>
+                    .page-overlay {
+                        layout: center;
+                        flex-weight: 1;
+                        padding: 20;
+                    }
+
                     .main-container {
+                    }
+
+                    .container-title {
                         layout: top;
-                        background-color: #0d1117(0.98);
-                        border-radius: 12;
+                        flex-weight: 0;
+                    }
+
+                    .container-contents {
+                        layout: top;
+                        flex-weight: 1;
                     }
                 
                     .header {
-                        layout: center;
+                        layout: top;
                         flex-weight: 0;
-                        background-color: #161b22;
-                        padding: 20;
-                        border-radius: 12 12 0 0;
+                        padding: 18 18 12 18;
                     }
                 
                     .header-content {
                         layout: top;
                         flex-weight: 0;
+                        anchor-width: 100%;
                     }
                 
                     .header-title {
-                        color: #e6edf3;
-                        font-size: 24;
+                        color: #f3f7ff;
+                        font-size: 26;
                         font-weight: bold;
                         text-align: center;
                     }
                 
                     .header-subtitle {
-                        color: #8b949e;
+                        color: #91a5bf;
                         font-size: 12;
-                        padding-top: 4;
+                        padding-top: 6;
                         text-align: center;
+                        anchor-width: 100%;
+                    }
+
+                    .page-description {
+                        color: #91a5bf;
+                        font-size: 12;
+                        text-align: center;
+                        anchor-width: 100%;
                     }
                 
                     .body {
                         layout: top;
                         flex-weight: 1;
-                        padding: 20;
+                        padding: 18 20 18 20;
                     }
                 
                     .footer {
                         layout: center;
                         flex-weight: 0;
-                        background-color: #161b22;
                         padding: 16;
-                        border-radius: 0 0 12 12;
                     }
                 
                     .card {
                         layout: top;
                         flex-weight: 0;
-                        background-color: #161b22;
-                        padding: 16;
-                        border-radius: 8;
+                        background-color: #182231;
+                        padding: 16 16 14 16;
+                        border-radius: 10;
                     }
                 
                     .card-header {
@@ -229,7 +247,7 @@ public class CitizensUI {
                     }
                 
                     .card-title {
-                        color: #e6edf3;
+                        color: #eaf1ff;
                         font-size: 14;
                         font-weight: bold;
                         flex-weight: 1;
@@ -243,9 +261,9 @@ public class CitizensUI {
                     .section {
                         layout: top;
                         flex-weight: 0;
-                        background-color: #21262d(0.5);
+                        background-color: #1b2737(0.88);
                         padding: 16;
-                        border-radius: 8;
+                        border-radius: 10;
                     }
                 
                     .section-header {
@@ -261,22 +279,22 @@ public class CitizensUI {
                     }
                 
                     .section-title {
-                        color: #e6edf3;
-                        font-size: 13;
+                        color: #f2f6ff;
+                        font-size: 14;
                         font-weight: bold;
                     }
                 
                     .section-description {
-                        color: #8b949e;
+                        color: #92a6c0;
                         font-size: 12;
-                        padding-top: 4;
+                        padding-top: 6;
                         padding-bottom: 12;
                     }
                 
                     .form-group {
                         layout: top;
                         flex-weight: 0;
-                        padding-bottom: 6;
+                        padding-bottom: 8;
                     }
                 
                     .form-row {
@@ -295,14 +313,14 @@ public class CitizensUI {
                     }
                 
                     .form-label {
-                        color: #e6edf3;
+                        color: #dde8f7;
                         font-size: 12;
                         font-weight: bold;
                         padding-bottom: 6;
                     }
                 
                     .form-label-optional {
-                        color: #6e7681;
+                        color: #758aa6;
                         font-size: 12;
                         padding-left: 6;
                     }
@@ -310,26 +328,28 @@ public class CitizensUI {
                     .form-input {
                         flex-weight: 0;
                         anchor-height: 38;
-                        background-color: #21262d;
-                        border-radius: 6;
+                        background-color: #111926;
+                        border-radius: 8;
+                        color: #ecf4ff;
                     }
                 
                     .form-input-small {
                         flex-weight: 0;
                         anchor-height: 38;
                         anchor-width: 120;
-                        background-color: #21262d;
-                        border-radius: 6;
+                        background-color: #111926;
+                        border-radius: 8;
+                        color: #ecf4ff;
                     }
                 
                     .form-hint {
-                        color: #6e7681;
+                        color: #7f93ac;
                         font-size: 12;
                         padding-top: 4;
                     }
                 
                     .form-hint-highlight {
-                        color: #58a6ff;
+                        color: #7ec0ff;
                         font-size: 12;
                         padding-top: 4;
                     }
@@ -337,20 +357,21 @@ public class CitizensUI {
                     .checkbox-row {
                         layout: center;
                         flex-weight: 0;
-                        padding-top: 8;
-                        padding-bottom: 4;
+                        padding: 10 12 8 12;
+                        border-radius: 8;
+                        background-color: #111926(0.9);
                     }
                 
                     .checkbox-label {
-                        color: #e6edf3;
+                        color: #eaf2ff;
                         font-size: 12;
-                        padding-left: -30;
+                        padding-left: -24;
                     }
                 
                     .checkbox-description {
-                        color: #8b949e;
+                        color: #91a7c3;
                         font-size: 12;
-                        padding-left: -30;
+                        padding-left: -24;
                     }
                 
                     .btn-row {
@@ -367,52 +388,23 @@ public class CitizensUI {
                         layout: right;
                         flex-weight: 0;
                     }
-                
-                    .btn-primary {
+
+                    .button-selected {
+                        font-weight: bold;
+                    }
+
+                    .secondary-button {
                         flex-weight: 0;
                         anchor-height: 40;
                         anchor-width: 140;
-                        border-radius: 6;
+                        border-radius: 8;
                     }
-                
-                    .btn-secondary {
+
+                    .small-secondary-button {
                         flex-weight: 0;
-                        anchor-height: 40;
-                        anchor-width: 140;
-                        border-radius: 6;
-                    }
-                
-                    .btn-danger {
-                        flex-weight: 0;
-                        anchor-height: 40;
-                        anchor-width: 140;
-                        border-radius: 6;
-                    }
-                
-                    .btn-warning {
-                        flex-weight: 0;
-                        anchor-height: 40;
-                        anchor-width: 140;
-                        border-radius: 6;
-                    }
-                
-                    .btn-info {
-                        flex-weight: 0;
-                        anchor-height: 40;
-                        anchor-width: 140;
-                        border-radius: 6;
-                    }
-                
-                    .btn-ghost {
-                        flex-weight: 0;
-                        anchor-height: 40;
-                        anchor-width: 140;
-                        border-radius: 6;
-                    }
-                
-                    .btn-small {
-                        anchor-height: 32;
+                        anchor-height: 33;
                         anchor-width: 100;
+                        border-radius: 8;
                     }
                 
                     .btn-wide {
@@ -425,37 +417,30 @@ public class CitizensUI {
                     }
                 
                     .tab-container {
-                        layout: left;
+                        layout: center;
                         flex-weight: 0;
-                        padding: 4;
-                        border-radius: 8;
-                    }
-                
-                    .tab-btn {
-                        flex-weight: 1;
-                        anchor-height: 36;
-                        border-radius: 6;
-                    }
-                
-                    .tab-active {
+                        padding: 5;
+                        border-radius: 10;
                     }
                 
                     .list-container {
                         layout-mode: TopScrolling;
                         flex-weight: 1;
                         padding: 4 16 4 16;
+                        background-color: #0f1722(0.6);
+                        border-radius: 10;
                     }
                 
                     .list-item {
                         layout: left;
                         flex-weight: 0;
-                        background-color: #21262d;
+                        background-color: #162232;
                         padding: 14;
-                        border-radius: 8;
+                        border-radius: 10;
                     }
                 
                     .list-item-hover {
-                        background-color: #30363d;
+                        background-color: #21324a;
                     }
                 
                     .list-item-content {
@@ -466,19 +451,19 @@ public class CitizensUI {
                     }
                 
                     .list-item-title {
-                        color: #e6edf3;
+                        color: #edf4ff;
                         font-size: 14;
                         font-weight: bold;
                     }
                 
                     .list-item-subtitle {
-                        color: #8b949e;
+                        color: #8ea4c0;
                         font-size: 12;
-                        padding-top: 2;
+                        padding-top: 4;
                     }
                 
                     .list-item-meta {
-                        color: #6e7681;
+                        color: #7088a6;
                         font-size: 12;
                         padding-top: 4;
                     }
@@ -496,30 +481,30 @@ public class CitizensUI {
                     .stat-card {
                         layout: top;
                         flex-weight: 1;
-                        background-color: #21262d;
+                        background-color: #142131;
                         padding: 14;
-                        border-radius: 8;
+                        border-radius: 10;
                     }
                 
                     .stat-value {
-                        color: #e6edf3;
+                        color: #eff6ff;
                         font-size: 24;
                         font-weight: bold;
                     }
                 
                     .stat-label {
-                        color: #8b949e;
+                        color: #9cb2cc;
                         font-size: 12;
                         padding-top: 2;
                     }
                 
                     .stat-change-positive {
-                        color: #3fb950;
+                        color: #4fc86e;
                         font-size: 12;
                     }
                 
                     .stat-change-negative {
-                        color: #f85149;
+                        color: #ff6b75;
                         font-size: 12;
                     }
                 
@@ -535,29 +520,29 @@ public class CitizensUI {
                     }
                 
                     .empty-state-title {
-                        color: #8b949e;
+                        color: #a7bdd7;
                         font-size: 16;
                         text-align: center;
                         padding-top: 16;
                     }
                 
                     .empty-state-description {
-                        color: #6e7681;
+                        color: #8197b2;
                         font-size: 12;
                         text-align: center;
-                        padding-top: 8;
+                        padding-top: 6;
                     }
                 
                     .info-box {
                         layout: left;
                         flex-weight: 0;
-                        background-color: #1f6feb(0.1);
+                        background-color: #1e4871(0.36);
                         padding: 12;
-                        border-radius: 6;
+                        border-radius: 8;
                     }
                 
                     .info-box-text {
-                        color: #8b949e;
+                        color: #c5daf6;
                         font-size: 12;
                         flex-weight: 1;
                         text-align: center;
@@ -566,13 +551,13 @@ public class CitizensUI {
                     .divider {
                         flex-weight: 0;
                         anchor-height: 1;
-                        background-color: #30363d;
+                        background-color: #2a3a4e;
                     }
                 
                     .divider-vertical {
                         flex-weight: 0;
                         anchor-width: 1;
-                        background-color: #30363d;
+                        background-color: #2a3a4e;
                     }
                 
                     .spacer-xs {
@@ -618,28 +603,32 @@ public class CitizensUI {
                     .toggle-group {
                         layout: center;
                         flex-weight: 0;
-                        padding: 4;
-                        border-radius: 8;
+                        anchor-width: 760;
+                        padding: 5;
+                        border-radius: 10;
                         gap: 8;
                     }
                 
                     .toggle-btn {
-                        anchor-height: 36;
+                        flex-weight: 1;
+                        anchor-width: 0;
+                        anchor-height: 46;
                         padding-left: 12;
                         padding-right: 12;
-                        border-radius: 6;
+                        border-radius: 8;
                     }
                 
                 
                     .toggle-active {
+                        font-weight: bold;
                     }
                 
                     .command-item {
                         layout: left;
                         flex-weight: 0;
-                        background-color: #21262d;
+                        background-color: #162232;
                         padding: 12;
-                        border-radius: 6;
+                        border-radius: 8;
                     }
                 
                     .command-icon {
@@ -647,13 +636,16 @@ public class CitizensUI {
                         flex-weight: 0;
                         anchor-width: 32;
                         anchor-height: 32;
-                        border-radius: 6;
+                        border-radius: 8;
+                        background-color: #0f1724;
                     }
                 
                     .command-icon-server {
+                        background-color: #3f315d(0.85);
                     }
                 
                     .command-icon-player {
+                        background-color: #1f4f70(0.85);
                     }
                 
                     .command-icon-text {
@@ -661,11 +653,11 @@ public class CitizensUI {
                     }
                 
                     .command-icon-text-server {
-                        color: #a371f7;
+                        color: #e3d0ff;
                     }
                 
                     .command-icon-text-player {
-                        color: #58a6ff;
+                        color: #d9ecff;
                     }
                 
                     .command-content {
@@ -676,13 +668,13 @@ public class CitizensUI {
                     }
                 
                     .command-text {
-                        color: #3fb950;
+                        color: #76dd97;
                         font-size: 12;
                         font-weight: bold;
                     }
                 
                     .command-type {
-                        color: #8b949e;
+                        color: #8ba3bf;
                         font-size: 12;
                         padding-top: 2;
                     }
@@ -695,13 +687,13 @@ public class CitizensUI {
                     .drop-item-row {
                         layout: center;
                         flex-weight: 0;
-                        background-color: #21262d;
+                        background-color: #162232;
                         padding: 10;
-                        border-radius: 6;
+                        border-radius: 8;
                     }
                 
                     .drop-item-index {
-                        color: #6e7681;
+                        color: #7e95b1;
                         font-size: 11;
                         font-weight: bold;
                         anchor-width: 30;
@@ -713,7 +705,8 @@ public class CitizensUI {
                         flex-weight: 0;
                         anchor-width: 64;
                         anchor-height: 72;
-                        background-color: #0B0F14;
+                        background-color: #0e131c;
+                        border-radius: 8;
                     }
                 
                     .slot-container {
@@ -721,8 +714,8 @@ public class CitizensUI {
                         flex-weight: 0;
                         anchor-width: 64;
                         anchor-height: 72;
-                        background-color: #12161a;
-                        border-radius: 6;
+                        background-color: #131b28;
+                        border-radius: 8;
                         padding: 4;
                         align-items: center;
                     }
@@ -733,14 +726,25 @@ public class CitizensUI {
                     }
                 
                     .slot-label {
-                        color: #8b949e;
+                        color: #96acc7;
                         font-size: 10;
                         text-align: center;
                         padding-top: 2;
                     }
                 
                     .slot-label-filled {
-                        color: #e6edf3;
+                        color: #e7f2ff;
+                    }
+
+                    .button-group {
+                        layout: left;
+                        flex-weight: 0;
+                    }
+
+                    .raw-button {
+                        anchor-width: 56;
+                        anchor-height: 56;
+                        border-radius: 8;
                     }
                 </style>
                 """;
@@ -940,18 +944,20 @@ public class CitizensUI {
 
         String html = template.process(getSharedStyles() + """
             <div class="page-overlay">
-                <div class="main-container" style="anchor-width: 960; anchor-height: 900;">
+                <div class="main-container decorated-container" style="anchor-width: 960; anchor-height: 900;">
             
                     <!-- Header -->
-                    <div class="header">
+                    <div class="header container-title">
                         <div class="header-content">
                             <p class="header-title">Citizens Manager</p>
-                            <p class="header-subtitle">Create and manage interactive NPCs for your server</p>
                         </div>
                     </div>
             
                     <!-- Body -->
                     <div class="body">
+
+                        <p class="page-description">Create and manage interactive NPCs for your server</p>
+                        <div class="spacer-sm"></div>
             
                         <!-- Stats Row -->
                         <div class="stats-row">
@@ -962,8 +968,9 @@ public class CitizensUI {
             
                         <!-- Tabs -->
                         <div class="tab-container">
-                            <button id="tab-create" class="tab-btn{{#if isCreateTab}} tab-active{{/if}}">Create</button>
-                            <button id="tab-manage" class="tab-btn{{#if isManageTab}} tab-active{{/if}}">Manage</button>
+                            <button id="tab-create" class="secondary-button{{#if isCreateTab}} button-selected{{/if}}" style="anchor-width: 180;">Create</button>
+                            <div class="spacer-h-sm"></div>
+                            <button id="tab-manage" class="secondary-button{{#if isManageTab}} button-selected{{/if}}" style="anchor-width: 180;">Manage</button>
                         </div>
             
                         <div class="spacer-md"></div>
@@ -979,7 +986,7 @@ public class CitizensUI {
                                     <p class="empty-state-description">display custom messages, and bring your server to life.</p>
                                     <div class="spacer-lg"></div>
                                     <div class="btn-row">
-                                        <button id="start-create" class="btn-primary" style="anchor-width: 220;">Start Creating</button>
+                                        <button id="start-create" class="secondary-button" style="anchor-width: 220;">Start Creating</button>
                                     </div>
                                 </div>
                             </div>
@@ -994,7 +1001,7 @@ public class CitizensUI {
                             </div>
                             <div class="spacer-h-sm"></div>
                             <div style="layout: center; flex-weight: 0;">
-                                <button id="search-btn" class="btn-primary" style="anchor-width: 150; anchor-height: 40;">Search</button>
+                                <button id="search-btn" class="secondary-button" style="anchor-width: 150; anchor-height: 40;">Search</button>
                             </div>
                         </div>
                         
@@ -1003,7 +1010,7 @@ public class CitizensUI {
                         {{#if isViewingGroup}}
                         <!-- Viewing Specific Group -->
                         <div class="form-row">
-                            <button id="back-to-all" class="btn-secondary" style="anchor-width: 120;">Back</button>
+                            <button id="back-to-all" class="secondary-button" style="anchor-width: 120;">Back</button>
                             <div style="flex-weight: 1; layout: center;">
                                 <p style="font-size: 18px; font-weight: bold; color: #FFFFFF;">Group: {{$viewingGroup}}</p>
                             </div>
@@ -1013,7 +1020,7 @@ public class CitizensUI {
                         
                         {{#if hasCitizens}}
                         <!-- Unified List -->
-                        <div class="list-container" style="anchor-height: 640;">
+                        <div class="list-container" data-hyui-scrollbar-style='"Common.ui" "DefaultScrollbarStyle"'>
                         {{#each unifiedList}}
                         {{#if !isGroup}}
                         <!-- Citizen Item -->
@@ -1024,13 +1031,13 @@ public class CitizensUI {
                                     <p class="list-item-meta">ID: {{$citizen.id}}{{#if $citizen.group}} | Group: {{$citizen.group}}{{/if}}</p>
                                 </div>
                                 <div class="list-item-actions">
-                                    <button id="tp-{{$citizen.id}}" class="btn-info btn-small" style="anchor-width: 110;">TP</button>
+                                    <button id="tp-{{$citizen.id}}" class="secondary-button small-secondary-button" style="anchor-width: 110;">TP</button>
                                     <div class="spacer-h-sm"></div>
-                                    <button id="edit-{{$citizen.id}}" class="btn-info btn-small" style="anchor-width: 110;">Edit</button>
+                                    <button id="edit-{{$citizen.id}}" class="secondary-button small-secondary-button" style="anchor-width: 110;">Edit</button>
                                     <div class="spacer-h-sm"></div>
-                                    <button id="clone-{{$citizen.id}}" class="btn-secondary btn-small" style="anchor-width: 120;">Clone</button>
+                                    <button id="clone-{{$citizen.id}}" class="secondary-button small-secondary-button" style="anchor-width: 120;">Clone</button>
                                     <div class="spacer-h-sm"></div>
-                                    <button id="remove-{{$citizen.id}}" class="btn-danger btn-small" style="anchor-width: 140;">Remove</button>
+                                    <button id="remove-{{$citizen.id}}" class="secondary-button small-secondary-button" style="anchor-width: 140;">Remove</button>
                                 </div>
                             </div>
                             {{else}}
@@ -1041,7 +1048,7 @@ public class CitizensUI {
                                     <p class="list-item-subtitle">Click to view citizens in this group</p>
                                 </div>
                                 <div class="list-item-actions">
-                                    <button id="view-group-{{$groupId}}" class="btn-primary btn-small" style="anchor-width: 110;">View</button>
+                                    <button id="view-group-{{$groupId}}" class="secondary-button small-secondary-button" style="anchor-width: 110;">View</button>
                                 </div>
                             </div>
                             {{/if}}
@@ -1105,18 +1112,20 @@ public class CitizensUI {
 
         String html = template.process(getSharedStyles() + """
                 <div class="page-overlay">
-                    <div class="main-container" style="anchor-width: 900; anchor-height: 820;">
+                    <div class="main-container decorated-container" style="anchor-width: 900; anchor-height: 820;">
                 
                         <!-- Header -->
-                        <div class="header">
+                        <div class="header container-title">
                             <div class="header-content">
                                 <p class="header-title">Create New Citizen</p>
-                                <p class="header-subtitle">Configure your new NPC's appearance and behavior</p>
                             </div>
                         </div>
                 
                         <!-- Body -->
-                        <div class="body" style="layout-mode: TopScrolling;">
+                        <div class="body" data-hyui-scrollbar-style='"Common.ui" "DefaultScrollbarStyle"' style="layout-mode: TopScrolling;">
+
+                            <p class="page-description">Configure your new NPC's appearance and behavior</p>
+                            <div class="spacer-sm"></div>
                 
                             <!-- Info Box -->
                             {{@infoBox:text=The citizen will spawn at your current position and rotation}}
@@ -1205,8 +1214,8 @@ public class CitizensUI {
                                 {{@sectionHeader:title=Entity Type,description=Choose whether this citizen uses a player model or another entity}}
                 
                                 <div class="toggle-group">
-                                    <button id="type-player" class="toggle-btn{{#if isPlayerModel}} toggle-active{{/if}}">Player Model</button>
-                                    <button id="type-entity" class="toggle-btn{{#if !isPlayerModel}} toggle-active{{/if}}">Other Entity</button>
+                                    <button id="type-player" class="secondary-button toggle-btn{{#if isPlayerModel}} toggle-active{{/if}}" style="anchor-width: 360; anchor-height: 48;">Player Model</button>
+                                    <button id="type-entity" class="secondary-button toggle-btn{{#if !isPlayerModel}} toggle-active{{/if}}" style="anchor-width: 360; anchor-height: 48;">Other Entities</button>
                                 </div>
                 
                                 <div class="spacer-md"></div>
@@ -1224,7 +1233,7 @@ public class CitizensUI {
                                                 <input type="text" id="skin-username" class="form-input" value="{{$skinUsername}}"
                                                        placeholder="Enter username" style="anchor-width: 250;" />
                                                 <div class="spacer-h-sm"></div>
-                                                <button id="get-player-skin-btn" class="btn-secondary btn-small" style="anchor-width: 160;">Use My Skin</button>
+                                                <button id="get-player-skin-btn" class="secondary-button small-secondary-button" style="anchor-width: 160;">Use My Skin</button>
                                             </div>
                                             <p class="form-hint" style="text-align: center;">Leave empty to use your current skin</p>
                                         </div>
@@ -1232,7 +1241,7 @@ public class CitizensUI {
                                         <div class="spacer-sm"></div>
 
                                         <div class="form-group">
-                                            <button id="random-skin-btn" class="btn-primary" style="anchor-width: 225;">Random Skin</button>
+                                            <button id="random-skin-btn" class="secondary-button" style="anchor-width: 225;">Random Skin</button>
                                             <p class="form-hint" style="text-align: center;">Generate a random skin for this citizen</p>
                                         </div>
 
@@ -1348,9 +1357,9 @@ public class CitizensUI {
                 
                         <!-- Footer -->
                         <div class="footer">
-                            <button id="cancel-btn" class="btn-ghost">Cancel</button>
+                            <button id="cancel-btn" class="secondary-button">Cancel</button>
                             <div class="spacer-h-md"></div>
-                            <button id="create-btn" class="btn-primary btn-wide">Create</button>
+                            <button id="create-btn" class="secondary-button btn-wide">Create</button>
                         </div>
                 
                     </div>
@@ -1383,18 +1392,20 @@ public class CitizensUI {
 
         String html = template.process(getSharedStyles() + """
                 <div class="page-overlay">
-                    <div class="main-container" style="anchor-width: 900; anchor-height: 850;">
+                    <div class="main-container decorated-container" style="anchor-width: 900; anchor-height: 850;">
                 
                         <!-- Header -->
-                        <div class="header">
+                        <div class="header container-title">
                             <div class="header-content">
                                 <p class="header-title">Edit Citizen</p>
-                                <p class="header-subtitle">ID: {{$citizen.id}}</p>
                             </div>
                         </div>
                 
                         <!-- Body -->
-                        <div class="body" style="layout-mode: TopScrolling;">
+                        <div class="body" data-hyui-scrollbar-style='"Common.ui" "DefaultScrollbarStyle"' style="layout-mode: TopScrolling;">
+
+                            <p class="page-description">ID: {{$citizen.id}}</p>
+                            <div class="spacer-sm"></div>
                 
                             <!-- Basic Information Section -->
                             <div class="section">
@@ -1478,8 +1489,8 @@ public class CitizensUI {
                                 {{@sectionHeader:title=Entity Type,description=Choose whether this citizen uses a player model or another entity}}
                 
                                 <div class="toggle-group">
-                                    <button id="type-player" class="toggle-btn{{#if isPlayerModel}} toggle-active{{/if}}">Player Model</button>
-                                    <button id="type-entity" class="toggle-btn{{#if !isPlayerModel}} toggle-active{{/if}}">Other Entity</button>
+                                    <button id="type-player" class="secondary-button toggle-btn{{#if isPlayerModel}} toggle-active{{/if}}" style="anchor-width: 360; anchor-height: 48;">Player Model</button>
+                                    <button id="type-entity" class="secondary-button toggle-btn{{#if !isPlayerModel}} toggle-active{{/if}}" style="anchor-width: 360; anchor-height: 48;">Other Entities</button>
                                 </div>
                 
                                 <div class="spacer-md"></div>
@@ -1497,7 +1508,7 @@ public class CitizensUI {
                                                 <input type="text" id="skin-username" class="form-input" value="{{$citizen.skinUsername}}"
                                                        placeholder="Enter username" style="anchor-width: 250;" />
                                                 <div class="spacer-h-sm"></div>
-                                                <button id="get-player-skin-btn" class="btn-secondary btn-small" style="anchor-width: 160;">Use My Skin</button>
+                                                <button id="get-player-skin-btn" class="secondary-button small-secondary-button" style="anchor-width: 160;">Use My Skin</button>
                                             </div>
                                             <p class="form-hint" style="text-align: center;">Leave empty to use your current skin</p>
                                         </div>
@@ -1505,14 +1516,14 @@ public class CitizensUI {
                                         <div class="spacer-sm"></div>
 
                                         <div class="form-group">
-                                            <button id="random-skin-btn" class="btn-primary" style="anchor-width: 225;">Random Skin</button>
+                                            <button id="random-skin-btn" class="secondary-button" style="anchor-width: 225;">Random Skin</button>
                                             <p class="form-hint" style="text-align: center;">Generate a random skin for this citizen</p>
                                         </div>
 
                                         <div class="spacer-sm"></div>
 
                                         <div class="form-group">
-                                            <button id="customize-skin-btn" class="btn-info" style="anchor-width: 225;">Customize Skin</button>
+                                            <button id="customize-skin-btn" class="secondary-button" style="anchor-width: 225;">Customize Skin</button>
                                             <p class="form-hint" style="text-align: center;">Edit individual cosmetic slots</p>
                                         </div>
 
@@ -1628,17 +1639,17 @@ public class CitizensUI {
                                 {{@sectionHeader:title=Quick Actions,description= }}
                 
                                 <div class="form-row">
-                                    <button id="edit-commands-btn" class="btn-info" style="anchor-width: 200; anchor-height: 44;">Edit Commands</button>
+                                    <button id="edit-commands-btn" class="secondary-button" style="anchor-width: 200; anchor-height: 44;">Edit Commands</button>
                                     <div class="spacer-h-sm"></div>
-                                    <button id="set-items-btn" class="btn-warning" style="anchor-width: 200; anchor-height: 44;">Set Items</button>
+                                    <button id="set-items-btn" class="secondary-button" style="anchor-width: 200; anchor-height: 44;">Set Items</button>
                                     <div class="spacer-h-sm"></div>
-                                    <button id="change-position-btn" class="btn-secondary" style="anchor-width: 210; anchor-height: 44;">Update Position</button>
+                                    <button id="change-position-btn" class="secondary-button" style="anchor-width: 210; anchor-height: 44;">Update Position</button>
                                 </div>
                                 <div class="spacer-sm"></div>
                                 <div class="form-row">
-                                    <button id="behaviors-btn" class="btn-info" style="anchor-width: 200; anchor-height: 44;">Behaviors</button>
+                                    <button id="behaviors-btn" class="secondary-button" style="anchor-width: 200; anchor-height: 44;">Behaviors</button>
                                     <div class="spacer-h-sm"></div>
-                                    <button id="messages-btn" class="btn-info" style="anchor-width: 200; anchor-height: 44;">Messages</button>
+                                    <button id="messages-btn" class="secondary-button" style="anchor-width: 200; anchor-height: 44;">Messages</button>
                                 </div>
                             </div>
                 
@@ -1648,9 +1659,9 @@ public class CitizensUI {
                 
                         <!-- Footer -->
                         <div class="footer">
-                            <button id="cancel-btn" class="btn-ghost">Cancel</button>
+                            <button id="cancel-btn" class="secondary-button">Cancel</button>
                             <div class="spacer-h-md"></div>
-                            <button id="save-btn" class="btn-primary" style="anchor-width: 220;">Save Changes</button>
+                            <button id="save-btn" class="secondary-button" style="anchor-width: 220;">Save Changes</button>
                         </div>
                 
                     </div>
@@ -1803,25 +1814,27 @@ public class CitizensUI {
 
         String html = template.process(getSharedStyles() + """
                 <div class="page-overlay">
-                    <div class="main-container" style="anchor-width: 900; anchor-height: 720;">
+                    <div class="main-container decorated-container" style="anchor-width: 900; anchor-height: 900;">
 
                         <!-- Header -->
-                        <div class="header">
+                        <div class="header container-title">
                             <div class="header-content">
                                 <p class="header-title">Command Actions</p>
-                                <p class="header-subtitle">Configure commands that execute when players interact ({{$actionCount}} commands)</p>
                             </div>
                         </div>
 
                         <!-- Body -->
                         <div class="body">
 
+                            <p class="page-description">Configure commands that execute when players interact ({{$actionCount}} commands)</p>
+                            <div class="spacer-sm"></div>
+
                             <!-- Info + Add Section -->
                             <div class="section">
                                 {{@sectionHeader:title=Commands}}
 
                                 <div style="layout: center;">
-                                    <button id="add-command-btn" class="btn-primary" style="anchor-width: 200; anchor-height: 38;">Add Command</button>
+                                    <button id="add-command-btn" class="secondary-button" style="anchor-width: 200; anchor-height: 38;">Add Command</button>
                                 </div>
                                 
                                 <div class="spacer-sm"></div>
@@ -1839,7 +1852,7 @@ public class CitizensUI {
 
                             <!-- Commands List -->
                             {{#if hasActions}}
-                            <div class="list-container" style="anchor-height: 360;">
+                            <div class="list-container" data-hyui-scrollbar-style='"Common.ui" "DefaultScrollbarStyle"' style="anchor-height: 360;">
                                 {{#each actions}}
                                 <div class="command-item">
                                     <div class="command-icon {{#if runAsServer}}command-icon-server{{else}}command-icon-player{{/if}}">
@@ -1850,9 +1863,9 @@ public class CitizensUI {
                                         <p class="command-type">{{$triggerLabel}}{{#if hasDelay}} | Delay: {{$delaySeconds}}s{{/if}}</p>
                                     </div>
                                     <div class="command-actions">
-                                        <button id="edit-cmd-{{$index}}" class="btn-info btn-small">Edit</button>
+                                        <button id="edit-cmd-{{$index}}" class="secondary-button small-secondary-button">Edit</button>
                                         <div class="spacer-h-sm"></div>
-                                        <button id="delete-{{$index}}" class="btn-danger btn-small">Delete</button>
+                                        <button id="delete-{{$index}}" class="secondary-button small-secondary-button">Delete</button>
                                     </div>
                                 </div>
                                 <div class="spacer-sm"></div>
@@ -1871,9 +1884,9 @@ public class CitizensUI {
 
                         <!-- Footer -->
                         <div class="footer">
-                            <button id="cancel-btn" class="btn-ghost">Cancel</button>
+                            <button id="cancel-btn" class="secondary-button">Cancel</button>
                             <div class="spacer-h-md"></div>
-                            <button id="done-btn" class="btn-primary">Done</button>
+                            <button id="done-btn" class="secondary-button">Done</button>
                         </div>
 
                     </div>
@@ -2737,18 +2750,20 @@ public class CitizensUI {
 
         String html = template.process(getSharedStyles() + """
                 <div class="page-overlay">
-                    <div class="main-container" style="anchor-width: 680; anchor-height: 580;">
+                    <div class="main-container decorated-container" style="anchor-width: 680; anchor-height: 700;">
 
                         <!-- Header -->
-                        <div class="header">
+                        <div class="header container-title">
                             <div class="header-content">
                                 <p class="header-title">{{#if isNew}}Add Command{{else}}Edit Command{{/if}}</p>
-                                <p class="header-subtitle">{{#if isNew}}Configure a new command to execute on interaction{{else}}Modify the command that executes on interaction{{/if}}</p>
                             </div>
                         </div>
 
                         <!-- Body -->
                         <div class="body">
+
+                            <p class="page-description">{{#if isNew}}Configure a new command to execute on interaction{{else}}Modify the command that executes on interaction{{/if}}</p>
+                            <div class="spacer-sm"></div>
 
                             <!-- Command Input -->
                             <div class="section">
@@ -2764,11 +2779,11 @@ public class CitizensUI {
                             <div class="section">
                                 {{@sectionHeader:title=Interaction Trigger,description=Which player action triggers this command}}
                                 <div class="form-row">
-                                    <button id="trigger-left-click" class="{{#if isLeftClick}}btn-primary{{else}}btn-secondary{{/if}}" style="flex-weight: 1; anchor-height: 38;">Left Click</button>
+                                    <button id="trigger-left-click" class="{{#if isLeftClick}}secondary-button{{else}}secondary-button{{/if}}" style="flex-weight: 1; anchor-height: 38;">Left Click</button>
                                     <div class="spacer-h-sm"></div>
-                                    <button id="trigger-f-key" class="{{#if isFKey}}btn-primary{{else}}btn-secondary{{/if}}" style="flex-weight: 1; anchor-height: 38;">F Key</button>
+                                    <button id="trigger-f-key" class="{{#if isFKey}}secondary-button{{else}}secondary-button{{/if}}" style="flex-weight: 1; anchor-height: 38;">F Key</button>
                                     <div class="spacer-h-sm"></div>
-                                    <button id="trigger-both" class="{{#if isBoth}}btn-primary{{else}}btn-secondary{{/if}}" style="flex-weight: 1; anchor-height: 38;">Both</button>
+                                    <button id="trigger-both" class="{{#if isBoth}}secondary-button{{else}}secondary-button{{/if}}" style="flex-weight: 1; anchor-height: 38;">Both</button>
                                 </div>
                                 <div class="spacer-xs"></div>
                                 {{#if isLeftClick}}
@@ -2808,9 +2823,9 @@ public class CitizensUI {
 
                         <!-- Footer -->
                         <div class="footer">
-                            <button id="cancel-btn" class="btn-ghost">Cancel</button>
+                            <button id="cancel-btn" class="secondary-button">Cancel</button>
                             <div class="spacer-h-md"></div>
-                            <button id="save-cmd-btn" class="btn-primary" style="anchor-width: 200;">{{#if isNew}}Add Command{{else}}Save Changes{{/if}}</button>
+                            <button id="save-cmd-btn" class="secondary-button" style="anchor-width: 200;">{{#if isNew}}Add Command{{else}}Save Changes{{/if}}</button>
                         </div>
 
                     </div>
@@ -2938,29 +2953,31 @@ public class CitizensUI {
 
         String html = template.process(getSharedStyles() + """
                 <div class="page-overlay">
-                    <div class="main-container" style="layout-mode: TopScrolling; anchor-width: 950; anchor-height: 1000;">
+                    <div class="main-container decorated-container" style="anchor-width: 950; anchor-height: 1000;">
                 
                         <!-- Header -->
-                        <div class="header">
+                        <div class="header container-title">
                             <div class="header-content">
                                 <p class="header-title">Behaviors</p>
-                                <p class="header-subtitle">Configure movement and animations for this citizen</p>
                             </div>
                         </div>
                 
                         <!-- Body -->
-                        <div class="body">
+                        <div class="body" data-hyui-scrollbar-style='"Common.ui" "DefaultScrollbarStyle"' style="layout-mode: TopScrolling;">
+
+                            <p class="page-description">Configure movement and animations for this citizen</p>
+                            <div class="spacer-sm"></div>
                 
                             <!-- Attitude Section -->
                             <div class="section">
                                 {{@sectionHeader:title=Attitude,description=How the citizen reacts to players}}
                 
                                 <div class="form-row">
-                                    <button id="att-passive" class="{{#if isPassive}}btn-primary{{else}}btn-secondary{{/if}}" style="anchor-width: 180; anchor-height: 38;">Passive</button>
+                                    <button id="att-passive" class="{{#if isPassive}}secondary-button{{else}}secondary-button{{/if}}" style="anchor-width: 180; anchor-height: 38;">Passive</button>
                                     <div class="spacer-h-sm"></div>
-                                    <button id="att-neutral" class="{{#if isNeutral}}btn-primary{{else}}btn-secondary{{/if}}" style="anchor-width: 180; anchor-height: 38;">Neutral</button>
+                                    <button id="att-neutral" class="{{#if isNeutral}}secondary-button{{else}}secondary-button{{/if}}" style="anchor-width: 180; anchor-height: 38;">Neutral</button>
                                     <div class="spacer-h-sm"></div>
-                                    <button id="att-aggressive" class="{{#if isAggressive}}btn-primary{{else}}btn-secondary{{/if}}" style="anchor-width: 180; anchor-height: 38;">Aggressive</button>
+                                    <button id="att-aggressive" class="{{#if isAggressive}}secondary-button{{else}}secondary-button{{/if}}" style="anchor-width: 180; anchor-height: 38;">Aggressive</button>
                                 </div>
                 
                                 <div class="spacer-sm"></div>
@@ -2998,7 +3015,7 @@ public class CitizensUI {
                                 <p style="color: #c9d1d9; font-size: 12; font-weight: bold; text-align: center;">Takes Damage</p>
                                 <div class="spacer-xs"></div>
                                 <div style="layout: center;">
-                                    <button id="toggle-damage" class="{{#if takesDamage}}btn-primary{{else}}btn-secondary{{/if}}" style="anchor-width: 140; anchor-height: 40;">{{#if takesDamage}}Enabled{{else}}Disabled{{/if}}</button>
+                                    <button id="toggle-damage" class="{{#if takesDamage}}secondary-button{{else}}secondary-button{{/if}}" style="anchor-width: 140; anchor-height: 40;">{{#if takesDamage}}Enabled{{else}}Disabled{{/if}}</button>
                                 </div>
                                 <div class="spacer-xs"></div>
                                 <p style="color: #8b949e; font-size: 12; text-align: center;">When enabled, the citizen can take damage and be killed by players.</p>
@@ -3011,12 +3028,22 @@ public class CitizensUI {
                                 <p style="color: #c9d1d9; font-size: 12; font-weight: bold; text-align: center;">Override Health</p>
                                 <div class="spacer-xs"></div>
                                 <div style="layout: center;">
-                                    <button id="toggle-override-health" class="{{#if overrideHealth}}btn-primary{{else}}btn-secondary{{/if}}" style="anchor-width: 140; anchor-height: 40;">{{#if overrideHealth}}Enabled{{else}}Disabled{{/if}}</button>
+                                    <button id="toggle-override-health" class="{{#if overrideHealth}}secondary-button{{else}}secondary-button{{/if}}" style="anchor-width: 140; anchor-height: 40;">{{#if overrideHealth}}Enabled{{else}}Disabled{{/if}}</button>
                                 </div>
                                 <div class="spacer-xs"></div>
                                 {{#if overrideHealth}}
                                 <div class="form-row">
-                                    {{@numberField:id=health-amount,label=Max Health,value={{$healthAmount}},placeholder=100,min=1,max=1000000,step=1,decimals=0}}
+                                    <div style="layout: top; flex-weight: 0; anchor-width: 260;">
+                                        <p class="form-label" style="text-align: center;">Max Health</p>
+                                        <input type="number" id="health-amount" class="form-input"
+                                               value="{{$healthAmount}}"
+                                               placeholder="100"
+                                               min="1"
+                                               max="1000000"
+                                               step="1"
+                                               data-hyui-max-decimal-places="0"
+                                               style="text-align: center;" />
+                                    </div>
                                 </div>
                                 {{/if}}
                                 <p style="color: #8b949e; font-size: 12; text-align: center;">Override the citizen's max health.</p>
@@ -3029,7 +3056,7 @@ public class CitizensUI {
                                 <p style="color: #c9d1d9; font-size: 12; font-weight: bold; text-align: center;">Override Damage</p>
                                 <div class="spacer-xs"></div>
                                 <div style="layout: center;">
-                                    <button id="toggle-override-damage" class="{{#if overrideDamage}}btn-primary{{else}}btn-secondary{{/if}}" style="anchor-width: 140; anchor-height: 40;">{{#if overrideDamage}}Enabled{{else}}Disabled{{/if}}</button>
+                                    <button id="toggle-override-damage" class="{{#if overrideDamage}}secondary-button{{else}}secondary-button{{/if}}" style="anchor-width: 140; anchor-height: 40;">{{#if overrideDamage}}Enabled{{else}}Disabled{{/if}}</button>
                                 </div>
                                 <div class="spacer-xs"></div>
                                 {{#if overrideDamage}}
@@ -3047,7 +3074,7 @@ public class CitizensUI {
                                 <p style="color: #c9d1d9; font-size: 12; font-weight: bold; text-align: center;">Respawn on Death</p>
                                 <div class="spacer-xs"></div>
                                 <div style="layout: center;">
-                                    <button id="toggle-respawn" class="{{#if respawnOnDeath}}btn-primary{{else}}btn-secondary{{/if}}" style="anchor-width: 140; anchor-height: 40;">{{#if respawnOnDeath}}Enabled{{else}}Disabled{{/if}}</button>
+                                    <button id="toggle-respawn" class="{{#if respawnOnDeath}}secondary-button{{else}}secondary-button{{/if}}" style="anchor-width: 140; anchor-height: 40;">{{#if respawnOnDeath}}Enabled{{else}}Disabled{{/if}}</button>
                                 </div>
                                 <div class="spacer-xs"></div>
                                 {{#if respawnOnDeath}}
@@ -3065,11 +3092,11 @@ public class CitizensUI {
                                 {{@sectionHeader:title=Movement Type}}
                 
                                 <div class="form-row">
-                                    <button id="move-idle" class="{{#if isIdle}}btn-primary{{else}}btn-secondary{{/if}}" style="anchor-width: 130; anchor-height: 38;">Idle</button>
+                                    <button id="move-idle" class="{{#if isIdle}}secondary-button{{else}}secondary-button{{/if}}" style="anchor-width: 130; anchor-height: 38;">Idle</button>
                                     <div class="spacer-h-sm"></div>
-                                    <button id="move-wander" class="{{#if isWander}}btn-primary{{else}}btn-secondary{{/if}}" style="anchor-width: 130; anchor-height: 38;">Wander</button>
+                                    <button id="move-wander" class="{{#if isWander}}secondary-button{{else}}secondary-button{{/if}}" style="anchor-width: 130; anchor-height: 38;">Wander</button>
                                     <div class="spacer-h-sm"></div>
-                                    <button id="move-patrol" class="{{#if isPatrol}}btn-primary{{else}}btn-secondary{{/if}}" style="anchor-width: 130; anchor-height: 38;">Patrol</button>
+                                    <button id="move-patrol" class="{{#if isPatrol}}secondary-button{{else}}secondary-button{{/if}}" style="anchor-width: 130; anchor-height: 38;">Patrol</button>
                                 </div>
 
                                 <div class="spacer-sm"></div>
@@ -3088,11 +3115,11 @@ public class CitizensUI {
                                     {{{$patrolPathOptions}}}
                                 </select>
                                 <div class="spacer-xs"></div>
-                                <button id="manage-paths-from-behaviors-btn" class="btn-secondary" style="anchor-width: 200;">Manage Patrol Paths</button>
+                                <button id="manage-paths-from-behaviors-btn" class="secondary-button" style="anchor-width: 200;">Manage Patrol Paths</button>
                                 {{else}}
                                 <p style="color: #8b949e; font-size: 12; text-align: center;">No patrol paths exist yet.</p>
                                 <div class="spacer-xs"></div>
-                                <button id="manage-paths-from-behaviors-btn" class="btn-secondary" style="anchor-width: 200;">Create a Patrol Path</button>
+                                <button id="manage-paths-from-behaviors-btn" class="secondary-button" style="anchor-width: 200;">Create a Patrol Path</button>
                                 {{/if}}
                                 {{/if}}
 
@@ -3113,13 +3140,15 @@ public class CitizensUI {
                             <!-- Animations Section -->
                             <div class="section">
                                 {{@sectionHeader:title=Animations,description=Configure animations that play on various triggers}}
-                
-                                <button id="add-animation-btn" class="btn-primary" style="anchor-width: 250; anchor-height: 45;">Add Animation</button>
+
+                                <div class="form-row">
+                                    <button id="add-animation-btn" class="secondary-button" style="anchor-width: 250; anchor-height: 45;">Add Animation</button>
+                                </div>
                 
                                 <div class="spacer-sm"></div>
                 
                                 {{#if hasAnimations}}
-                                <div class="list-container" style="anchor-height: 220;">
+                                <div class="list-container" data-hyui-scrollbar-style='"Common.ui" "DefaultScrollbarStyle"' style="anchor-height: 220;">
                                     {{#each animations}}
                                     <div class="command-item">
                                         <div class="command-icon command-icon-server">
@@ -3130,9 +3159,9 @@ public class CitizensUI {
                                             <p class="command-type">{{$type}}{{#if isTimed}} - every {{$intervalSeconds}}s{{/if}}{{#if isProximity}} - {{$proximityRange}} blocks{{/if}}</p>
                                         </div>
                                         <div class="command-actions">
-                                            <button id="edit-anim-{{$index}}" class="btn-secondary btn-small">Edit</button>
+                                            <button id="edit-anim-{{$index}}" class="secondary-button small-secondary-button">Edit</button>
                                             <div class="spacer-h-sm"></div>
-                                            <button id="delete-anim-{{$index}}" class="btn-danger btn-small">Delete</button>
+                                            <button id="delete-anim-{{$index}}" class="secondary-button small-secondary-button">Delete</button>
                                         </div>
                                     </div>
                                     <div class="spacer-sm"></div>
@@ -3155,15 +3184,15 @@ public class CitizensUI {
                                 {{@sectionHeader:title=Advanced Configuration,description=Configure combat&#44; detection&#44; pathing&#44; and other advanced behavior parameters}}
 
                                 <div class="form-row">
-                                    <button id="combat-config-btn" class="btn-info" style="anchor-width: 200; anchor-height: 44;">Combat Config</button>
+                                    <button id="combat-config-btn" class="secondary-button" style="anchor-width: 200; anchor-height: 44;">Combat Config</button>
                                     <div class="spacer-h-sm"></div>
-                                    <button id="detection-config-btn" class="btn-info" style="anchor-width: 225; anchor-height: 44;">Detection Config</button>
+                                    <button id="detection-config-btn" class="secondary-button" style="anchor-width: 225; anchor-height: 44;">Detection Config</button>
                                     <div class="spacer-h-sm"></div>
-                                    <button id="advanced-settings-btn" class="btn-info" style="anchor-width: 240; anchor-height: 44;">Advanced Settings</button>
+                                    <button id="advanced-settings-btn" class="secondary-button" style="anchor-width: 240; anchor-height: 44;">Advanced Settings</button>
                                 </div>
                                 <div class="spacer-sm"></div>
                                 <div class="form-row">
-                                    <button id="death-config-btn" class="btn-info" style="anchor-width: 200; anchor-height: 44;">Death Config</button>
+                                    <button id="death-config-btn" class="secondary-button" style="anchor-width: 200; anchor-height: 44;">Death Config</button>
                                 </div>
                             </div>
 
@@ -3173,9 +3202,9 @@ public class CitizensUI {
 
                         <!-- Footer -->
                         <div class="footer">
-                            <button id="cancel-btn" class="btn-ghost">Cancel</button>
+                            <button id="cancel-btn" class="secondary-button">Cancel</button>
                             <div class="spacer-h-md"></div>
-                            <button id="done-btn" class="btn-primary" style="anchor-width: 160;">Done</button>
+                            <button id="done-btn" class="secondary-button" style="anchor-width: 160;">Done</button>
                         </div>
 
                     </div>
@@ -3457,18 +3486,20 @@ public class CitizensUI {
 
         String html = template.process(getSharedStyles() + """
                 <div class="page-overlay">
-                    <div class="main-container" style="anchor-width: 750; anchor-height: 900;">
+                    <div class="main-container decorated-container" style="anchor-width: 750; anchor-height: 900;">
 
                         <!-- Header -->
-                        <div class="header">
+                        <div class="header container-title">
                             <div class="header-content">
                                 <p class="header-title">{{#if isEditing}}Edit Animation{{else}}Add Animation{{/if}}</p>
-                                <p class="header-subtitle">Configure when and how an animation plays</p>
                             </div>
                         </div>
                 
                         <!-- Body -->
                         <div class="body">
+
+                            <p class="page-description">Configure when and how an animation plays</p>
+                            <div class="spacer-sm"></div>
                 
                             <!-- Trigger Type -->
                             <div class="section">
@@ -3477,19 +3508,19 @@ public class CitizensUI {
                                     Selected: {{#if isDefault}}Default{{/if}}{{#if isOnInteract}}On Interact{{/if}}{{#if isOnAttack}}On Attack{{/if}}{{#if isProxEnter}}Proximity Enter{{/if}}{{#if isProxExit}}Proximity Exit{{/if}}{{#if isTimed}}Timed{{/if}}
                                 </p>
                                 <div class="form-row">
-                                    <button id="type-default" class="{{#if isDefault}}btn-primary{{else}}btn-secondary{{/if}}" style="anchor-width: 150; anchor-height: 45;">Default</button>
+                                    <button id="type-default" class="{{#if isDefault}}secondary-button{{else}}secondary-button{{/if}}" style="anchor-width: 150; anchor-height: 45;">Default</button>
                                     <div class="spacer-h-sm"></div>
-                                    <button id="type-interact" class="{{#if isOnInteract}}btn-primary{{else}}btn-secondary{{/if}}" style="anchor-width: 200; anchor-height: 45;">On Interact</button>
+                                    <button id="type-interact" class="{{#if isOnInteract}}secondary-button{{else}}secondary-button{{/if}}" style="anchor-width: 200; anchor-height: 45;">On Interact</button>
                                     <div class="spacer-h-sm"></div>
-                                    <button id="type-attack" class="{{#if isOnAttack}}btn-primary{{else}}btn-secondary{{/if}}" style="anchor-width: 150; anchor-height: 45;">On Attack</button>
+                                    <button id="type-attack" class="{{#if isOnAttack}}secondary-button{{else}}secondary-button{{/if}}" style="anchor-width: 150; anchor-height: 45;">On Attack</button>
                                 </div>
                                 <div class="spacer-sm"></div>
                                 <div class="form-row">
-                                    <button id="type-prox-enter" class="{{#if isProxEnter}}btn-primary{{else}}btn-secondary{{/if}}" style="anchor-width: 215; anchor-height: 45;">Proximity Enter</button>
+                                    <button id="type-prox-enter" class="{{#if isProxEnter}}secondary-button{{else}}secondary-button{{/if}}" style="anchor-width: 215; anchor-height: 45;">Proximity Enter</button>
                                     <div class="spacer-h-sm"></div>
-                                    <button id="type-prox-exit" class="{{#if isProxExit}}btn-primary{{else}}btn-secondary{{/if}}" style="anchor-width: 215; anchor-height: 45;">Proximity Exit</button>
+                                    <button id="type-prox-exit" class="{{#if isProxExit}}secondary-button{{else}}secondary-button{{/if}}" style="anchor-width: 215; anchor-height: 45;">Proximity Exit</button>
                                     <div class="spacer-h-sm"></div>
-                                    <button id="type-timed" class="{{#if isTimed}}btn-primary{{else}}btn-secondary{{/if}}" style="anchor-width: 150; anchor-height: 45;">Timed</button>
+                                    <button id="type-timed" class="{{#if isTimed}}secondary-button{{else}}secondary-button{{/if}}" style="anchor-width: 150; anchor-height: 45;">Timed</button>
                                 </div>
                             </div>
                 
@@ -3516,15 +3547,15 @@ public class CitizensUI {
                                     Selected: {{#if isSlot0}}Movement{{/if}}{{#if isSlot1}}Status{{/if}}{{#if isSlot2}}Action{{/if}}{{#if isSlot3}}Face{{/if}}{{#if isSlot4}}Emote{{/if}}
                                 </p>
                                 <div class="form-row">
-                                    <button id="slot-0" class="{{#if isSlot0}}btn-primary{{else}}btn-secondary{{/if}}" style="anchor-width: 150; anchor-height: 45;">Movement</button>
+                                    <button id="slot-0" class="{{#if isSlot0}}secondary-button{{else}}secondary-button{{/if}}" style="anchor-width: 150; anchor-height: 45;">Movement</button>
                                     <div class="spacer-h-sm"></div>
-                                    <button id="slot-1" class="{{#if isSlot1}}btn-primary{{else}}btn-secondary{{/if}}" style="anchor-width: 120; anchor-height: 45;">Status</button>
+                                    <button id="slot-1" class="{{#if isSlot1}}secondary-button{{else}}secondary-button{{/if}}" style="anchor-width: 120; anchor-height: 45;">Status</button>
                                     <div class="spacer-h-sm"></div>
-                                    <button id="slot-2" class="{{#if isSlot2}}btn-primary{{else}}btn-secondary{{/if}}" style="anchor-width: 120; anchor-height: 45;">Action</button>
+                                    <button id="slot-2" class="{{#if isSlot2}}secondary-button{{else}}secondary-button{{/if}}" style="anchor-width: 120; anchor-height: 45;">Action</button>
                                     <div class="spacer-h-sm"></div>
-                                    <button id="slot-3" class="{{#if isSlot3}}btn-primary{{else}}btn-secondary{{/if}}" style="anchor-width: 110; anchor-height: 45;">Face</button>
+                                    <button id="slot-3" class="{{#if isSlot3}}secondary-button{{else}}secondary-button{{/if}}" style="anchor-width: 110; anchor-height: 45;">Face</button>
                                     <div class="spacer-h-sm"></div>
-                                    <button id="slot-4" class="{{#if isSlot4}}btn-primary{{else}}btn-secondary{{/if}}" style="anchor-width: 110; anchor-height: 45;">Emote</button>
+                                    <button id="slot-4" class="{{#if isSlot4}}secondary-button{{else}}secondary-button{{/if}}" style="anchor-width: 110; anchor-height: 45;">Emote</button>
                                 </div>
                                 <div class="spacer-xs"></div>
                                 <p style="color: #8b949e; font-size: 12; text-align: center;">Trial and error may be needed to figure out which animation uses which type. Usually "Action" works for most.</p>
@@ -3613,9 +3644,9 @@ public class CitizensUI {
 
                         <!-- Footer -->
                         <div class="footer">
-                            <button id="cancel-btn" class="btn-ghost">Cancel</button>
+                            <button id="cancel-btn" class="secondary-button">Cancel</button>
                             <div class="spacer-h-md"></div>
-                            <button id="save-anim-btn" class="btn-primary" style="anchor-width: 200;">{{#if isEditing}}Save Changes{{else}}Add Animation{{/if}}</button>
+                            <button id="save-anim-btn" class="secondary-button" style="anchor-width: 200;">{{#if isEditing}}Save Changes{{else}}Add Animation{{/if}}</button>
                         </div>
                 
                     </div>
@@ -3812,25 +3843,27 @@ public class CitizensUI {
 
         String html = template.process(getSharedStyles() + """
                 <div class="page-overlay">
-                    <div class="main-container" style="anchor-width: 900; anchor-height: 720;">
+                    <div class="main-container decorated-container" style="anchor-width: 900; anchor-height: 720;">
 
                         <!-- Header -->
-                        <div class="header">
+                        <div class="header container-title">
                             <div class="header-content">
                                 <p class="header-title">Messages</p>
-                                <p class="header-subtitle">Configure messages sent on interaction ({{$messageCount}} messages)</p>
                             </div>
                         </div>
 
                         <!-- Body -->
                         <div class="body">
 
+                            <p class="page-description">Configure messages sent on interaction ({{$messageCount}} messages)</p>
+                            <div class="spacer-sm"></div>
+
                             <!-- Info + Add Section -->
                             <div class="section">
                                 {{@sectionHeader:title=Messages}}
                                 
                                 <div style="layout: center;">
-                                    <button id="add-message-btn" class="btn-primary" style="anchor-width: 200; anchor-height: 38;">Add Message</button>
+                                    <button id="add-message-btn" class="secondary-button" style="anchor-width: 200; anchor-height: 38;">Add Message</button>
                                 </div>
                                 
                                 <div class="spacer-sm"></div>
@@ -3852,11 +3885,11 @@ public class CitizensUI {
                             <div class="section">
                                 {{@sectionHeader:title=Selection Mode,description=How messages are chosen when the citizen is interacted with}}
                                 <div class="form-row">
-                                    <button id="mode-random" class="{{#if isRandom}}btn-primary{{else}}btn-secondary{{/if}}" style="flex-weight: 1; anchor-height: 38;">Random</button>
+                                    <button id="mode-random" class="{{#if isRandom}}secondary-button{{else}}secondary-button{{/if}}" style="flex-weight: 1; anchor-height: 38;">Random</button>
                                     <div class="spacer-h-sm"></div>
-                                    <button id="mode-sequential" class="{{#if isSequential}}btn-primary{{else}}btn-secondary{{/if}}" style="flex-weight: 1; anchor-height: 38;">Sequential</button>
+                                    <button id="mode-sequential" class="{{#if isSequential}}secondary-button{{else}}secondary-button{{/if}}" style="flex-weight: 1; anchor-height: 38;">Sequential</button>
                                     <div class="spacer-h-sm"></div>
-                                    <button id="mode-all" class="{{#if isAll}}btn-primary{{else}}btn-secondary{{/if}}" style="flex-weight: 1; anchor-height: 38;">All</button>
+                                    <button id="mode-all" class="{{#if isAll}}secondary-button{{else}}secondary-button{{/if}}" style="flex-weight: 1; anchor-height: 38;">All</button>
                                 </div>
                                 <div class="spacer-xs"></div>
                                 {{#if isRandom}}
@@ -3874,7 +3907,7 @@ public class CitizensUI {
 
                             <!-- Messages List -->
                             {{#if hasMessages}}
-                            <div class="list-container" style="anchor-height: 240;">
+                            <div class="list-container" data-hyui-scrollbar-style='"Common.ui" "DefaultScrollbarStyle"' style="anchor-height: 240;">
                                 {{#each messages}}
                                 <div class="command-item">
                                     <div class="command-icon command-icon-player">
@@ -3885,9 +3918,9 @@ public class CitizensUI {
                                         <p class="command-type">{{$triggerLabel}}{{#if hasDelay}} | Delay: {{$delaySeconds}}s{{/if}}</p>
                                     </div>
                                     <div class="command-actions">
-                                        <button id="edit-msg-{{$index}}" class="btn-info btn-small">Edit</button>
+                                        <button id="edit-msg-{{$index}}" class="secondary-button small-secondary-button">Edit</button>
                                         <div class="spacer-h-sm"></div>
-                                        <button id="delete-msg-{{$index}}" class="btn-danger btn-small">Delete</button>
+                                        <button id="delete-msg-{{$index}}" class="secondary-button small-secondary-button">Delete</button>
                                     </div>
                                 </div>
                                 <div class="spacer-sm"></div>
@@ -3906,9 +3939,9 @@ public class CitizensUI {
 
                         <!-- Footer -->
                         <div class="footer">
-                            <button id="cancel-btn" class="btn-ghost">Cancel</button>
+                            <button id="cancel-btn" class="secondary-button">Cancel</button>
                             <div class="spacer-h-md"></div>
-                            <button id="done-btn" class="btn-primary" style="anchor-width: 110;">Done</button>
+                            <button id="done-btn" class="secondary-button" style="anchor-width: 110;">Done</button>
                         </div>
 
                     </div>
@@ -3996,18 +4029,20 @@ public class CitizensUI {
 
         String html = template.process(getSharedStyles() + """
                 <div class="page-overlay">
-                    <div class="main-container" style="anchor-width: 680; anchor-height: 580;">
+                    <div class="main-container decorated-container" style="anchor-width: 680; anchor-height: 580;">
 
                         <!-- Header -->
-                        <div class="header">
+                        <div class="header container-title">
                             <div class="header-content">
                                 <p class="header-title">{{#if isNew}}Add Message{{else}}Edit Message{{/if}}</p>
-                                <p class="header-subtitle">{{#if isNew}}Configure a new message to send on interaction{{else}}Modify the message sent on interaction{{/if}}</p>
                             </div>
                         </div>
 
                         <!-- Body -->
                         <div class="body">
+
+                            <p class="page-description">{{#if isNew}}Configure a new message to send on interaction{{else}}Modify the message sent on interaction{{/if}}</p>
+                            <div class="spacer-sm"></div>
 
                             <!-- Message Input -->
                             <div class="section">
@@ -4023,11 +4058,11 @@ public class CitizensUI {
                             <div class="section">
                                 {{@sectionHeader:title=Interaction Trigger,description=Which player action sends this message}}
                                 <div class="form-row">
-                                    <button id="trigger-left-click" class="{{#if isLeftClick}}btn-primary{{else}}btn-secondary{{/if}}" style="flex-weight: 1; anchor-height: 38;">Left Click</button>
+                                    <button id="trigger-left-click" class="{{#if isLeftClick}}secondary-button{{else}}secondary-button{{/if}}" style="flex-weight: 1; anchor-height: 38;">Left Click</button>
                                     <div class="spacer-h-sm"></div>
-                                    <button id="trigger-f-key" class="{{#if isFKey}}btn-primary{{else}}btn-secondary{{/if}}" style="flex-weight: 1; anchor-height: 38;">F Key</button>
+                                    <button id="trigger-f-key" class="{{#if isFKey}}secondary-button{{else}}secondary-button{{/if}}" style="flex-weight: 1; anchor-height: 38;">F Key</button>
                                     <div class="spacer-h-sm"></div>
-                                    <button id="trigger-both" class="{{#if isBoth}}btn-primary{{else}}btn-secondary{{/if}}" style="flex-weight: 1; anchor-height: 38;">Both</button>
+                                    <button id="trigger-both" class="{{#if isBoth}}secondary-button{{else}}secondary-button{{/if}}" style="flex-weight: 1; anchor-height: 38;">Both</button>
                                 </div>
                                 <div class="spacer-xs"></div>
                                 {{#if isLeftClick}}
@@ -4053,9 +4088,9 @@ public class CitizensUI {
 
                         <!-- Footer -->
                         <div class="footer">
-                            <button id="cancel-btn" class="btn-ghost">Cancel</button>
+                            <button id="cancel-btn" class="secondary-button">Cancel</button>
                             <div class="spacer-h-md"></div>
-                            <button id="save-msg-btn" class="btn-primary" style="anchor-width: 200;">{{#if isNew}}Add Message{{else}}Save Changes{{/if}}</button>
+                            <button id="save-msg-btn" class="secondary-button" style="anchor-width: 200;">{{#if isNew}}Add Message{{else}}Save Changes{{/if}}</button>
                         </div>
 
                     </div>
@@ -4178,18 +4213,20 @@ public class CitizensUI {
 
         String html = template.process(getSharedStyles() + """
                 <div class="page-overlay">
-                    <div class="main-container" style="layout-mode: TopScrolling; anchor-width: 850; anchor-height: 900;">
+                    <div class="main-container decorated-container" style="anchor-width: 850; anchor-height: 900;">
 
                         <!-- Header -->
-                        <div class="header">
+                        <div class="header container-title">
                             <div class="header-content">
                                 <p class="header-title">Combat Configuration</p>
-                                <p class="header-subtitle">Advanced combat parameters for this citizen</p>
                             </div>
                         </div>
 
                         <!-- Body -->
-                        <div class="body">
+                        <div class="body" data-hyui-scrollbar-style='"Common.ui" "DefaultScrollbarStyle"' style="layout-mode: TopScrolling;">
+
+                            <p class="page-description">Advanced combat parameters for this citizen</p>
+                            <div class="spacer-sm"></div>
                             <div>
                                 <p class="form-hint" style="text-align: center; color: #f85149;">Warning: Hytale has minimum and maximum values for all of these options. If you change something and the citizen disappears,</p>
                             </div>
@@ -4206,7 +4243,7 @@ public class CitizensUI {
                                     </div>
                                     <div class="spacer-h-sm"></div>
                                     <div style="flex-weight: 0; anchor-width: 160;">
-                                        <button id="auto-resolve-btn" class="btn-secondary" style="anchor-width: 150; anchor-height: 38;">Auto Resolve</button>
+                                        <button id="auto-resolve-btn" class="secondary-button" style="anchor-width: 150; anchor-height: 38;">Auto Resolve</button>
                                     </div>
                                 </div>
                                 <div class="form-row">
@@ -4378,9 +4415,9 @@ public class CitizensUI {
 
                         <!-- Footer -->
                         <div class="footer">
-                            <button id="cancel-btn" class="btn-ghost">Back</button>
+                            <button id="cancel-btn" class="secondary-button">Back</button>
                             <div class="spacer-h-md"></div>
-                            <button id="save-btn" class="btn-primary" style="anchor-width: 200;">Save Combat Config</button>
+                            <button id="save-btn" class="secondary-button" style="anchor-width: 200;">Save Combat Config</button>
                         </div>
 
                     </div>
@@ -4611,18 +4648,20 @@ public class CitizensUI {
 
         String html = template.process(getSharedStyles() + """
                 <div class="page-overlay">
-                    <div class="main-container" style="anchor-width: 800; anchor-height: 800;">
+                    <div class="main-container decorated-container" style="anchor-width: 800; anchor-height: 800;">
 
                         <!-- Header -->
-                        <div class="header">
+                        <div class="header container-title">
                             <div class="header-content">
                                 <p class="header-title">Detection Configuration</p>
-                                <p class="header-subtitle">How this citizen detects and responds to threats</p>
                             </div>
                         </div>
 
                         <!-- Body -->
-                        <div class="body">
+                        <div class="body" data-hyui-scrollbar-style='"Common.ui" "DefaultScrollbarStyle"' style="layout-mode: TopScrolling;">
+
+                            <p class="page-description">How this citizen detects and responds to threats</p>
+                            <div class="spacer-sm"></div>
                             <div>
                                 <p class="form-hint" style="text-align: center; color: #f85149;">Warning: Hytale has minimum and maximum values for all of these options. If you change something and the citizen disappears,</p>
                             </div>
@@ -4709,14 +4748,15 @@ public class CitizensUI {
                                     </div>
                                 </div>
                             </div>
+                            <div class="spacer-md"></div>
 
                         </div>
 
                         <!-- Footer -->
                         <div class="footer">
-                            <button id="cancel-btn" class="btn-ghost">Back</button>
+                            <button id="cancel-btn" class="secondary-button">Back</button>
                             <div class="spacer-h-md"></div>
-                            <button id="save-btn" class="btn-primary" style="anchor-width: 220;">Save Detection Config</button>
+                            <button id="save-btn" class="secondary-button" style="anchor-width: 220;">Save Detection Config</button>
                         </div>
 
                     </div>
@@ -4841,17 +4881,17 @@ public class CitizensUI {
 
         String html = template.process(getSharedStyles() + """
                 <div class="page-overlay">
-                    <div class="main-container" style="layout-mode: TopScrolling; anchor-width: 850; anchor-height: 900;">
+                    <div class="main-container decorated-container" style="anchor-width: 850; anchor-height: 900;">
 
                         <!-- Header -->
-                        <div class="header">
+                        <div class="header container-title">
                             <div class="header-content">
                                 <p class="header-title">Advanced Settings</p>
                             </div>
                         </div>
 
                         <!-- Body -->
-                        <div class="body">
+                        <div class="body" data-hyui-scrollbar-style='"Common.ui" "DefaultScrollbarStyle"' style="layout-mode: TopScrolling;">
                             <div>
                                 <p class="form-hint" style="text-align: center; color: #f85149;">Warning: Hytale has minimum and maximum values for all of these options. If you change something and the citizen disappears,</p>
                             </div>
@@ -4971,9 +5011,9 @@ public class CitizensUI {
 
                         <!-- Footer -->
                         <div class="footer">
-                            <button id="cancel-btn" class="btn-ghost">Back</button>
+                            <button id="cancel-btn" class="secondary-button">Back</button>
                             <div class="spacer-h-md"></div>
-                            <button id="save-btn" class="btn-primary" style="anchor-width: 220;">Save Advanced Settings</button>
+                            <button id="save-btn" class="secondary-button" style="anchor-width: 220;">Save Advanced Settings</button>
                         </div>
 
                     </div>
@@ -5158,7 +5198,7 @@ public class CitizensUI {
                     <p class="drop-item-index">#%d</p>
                     <div class="spacer-h-sm"></div>
                     <div class="slot-background">
-                        <button id="drop-item-%d" class="raw-button"
+                        <button id="drop-item-%d" class="secondary-button raw-button"
                                 style="layout: top; flex-weight: 0; anchor-width: 64; anchor-height: 72;
                                        background-color: #12161a; padding: 4;">
                             %s
@@ -5170,7 +5210,7 @@ public class CitizensUI {
                         <p class="list-item-title">%s</p>
                         <p class="list-item-subtitle">Quantity: %d &middot; Click to change</p>
                     </div>
-                    <button id="delete-drop-%d" class="btn-danger btn-small">Delete</button>
+                    <button id="delete-drop-%d" class="secondary-button small-secondary-button">Delete</button>
                 </div>
                 <div class="spacer-sm"></div>
                 """.formatted(
@@ -5192,9 +5232,9 @@ public class CitizensUI {
                         <p class="list-item-subtitle">%s | Delay: %.1fs</p>
                     </div>
                     <div class="list-item-actions">
-                        <button id="edit-dcmd-%d" class="btn-secondary btn-small">Edit</button>
+                        <button id="edit-dcmd-%d" class="secondary-button small-secondary-button">Edit</button>
                         <div class="spacer-h-sm"></div>
-                        <button id="delete-dcmd-%d" class="btn-danger btn-small">Delete</button>
+                        <button id="delete-dcmd-%d" class="secondary-button small-secondary-button">Delete</button>
                     </div>
                 </div>
                 <div class="spacer-sm"></div>
@@ -5216,9 +5256,9 @@ public class CitizensUI {
                         <p class="list-item-subtitle">Delay: %.1fs</p>
                     </div>
                     <div class="list-item-actions">
-                        <button id="edit-dmsg-%d" class="btn-secondary btn-small">Edit</button>
+                        <button id="edit-dmsg-%d" class="secondary-button small-secondary-button">Edit</button>
                         <div class="spacer-h-sm"></div>
-                        <button id="delete-dmsg-%d" class="btn-danger btn-small">Delete</button>
+                        <button id="delete-dmsg-%d" class="secondary-button small-secondary-button">Delete</button>
                     </div>
                 </div>
                 <div class="spacer-sm"></div>
@@ -5239,18 +5279,20 @@ public class CitizensUI {
 
         String html = template.process(getSharedStyles() + """
                 <div class="page-overlay">
-                    <div class="main-container" style="layout-mode: TopScrolling; anchor-width: 950; anchor-height: 1000;">
+                    <div class="main-container decorated-container" style="anchor-width: 950; anchor-height: 1000;">
 
                         <!-- Header -->
-                        <div class="header">
+                        <div class="header container-title">
                             <div class="header-content">
                                 <p class="header-title">Death Configuration</p>
-                                <p class="header-subtitle">Configure what happens when this citizen dies</p>
                             </div>
                         </div>
 
                         <!-- Body -->
-                        <div class="body">
+                        <div class="body" data-hyui-scrollbar-style='"Common.ui" "DefaultScrollbarStyle"' style="layout-mode: TopScrolling;">
+
+                            <p class="page-description">Configure what happens when this citizen dies</p>
+                            <div class="spacer-sm"></div>
 
                             <div class="spacer-sm"></div>
 
@@ -5258,11 +5300,11 @@ public class CitizensUI {
                             <div class="section">
                                 {{@sectionHeader:title=Drop Items ({{$dropCount}}),description=Items dropped at the citizen's position on death}}
 
-                                <button id="add-drop-btn" class="btn-primary" style="anchor-width: 200; anchor-height: 40;">Add Drop Item</button>
+                                <button id="add-drop-btn" class="secondary-button" style="anchor-width: 200; anchor-height: 40;">Add Drop Item</button>
                                 <div class="spacer-sm"></div>
 
                                 {{#if hasDrops}}
-                                <div class="list-container" style="anchor-height: 200;">
+                                <div class="list-container" data-hyui-scrollbar-style='"Common.ui" "DefaultScrollbarStyle"' style="anchor-height: 200;">
                                 """ + dropsHtml.toString() + """
                                 </div>
                                 {{else}}
@@ -5279,16 +5321,16 @@ public class CitizensUI {
                                 {{@sectionHeader:title=Death Commands ({{$cmdCount}}),description=Commands executed when the citizen dies}}
 
                                 <div class="form-row">
-                                    <button id="add-dcmd-btn" class="btn-primary" style="anchor-width: 200; anchor-height: 40;">Add Command</button>
+                                    <button id="add-dcmd-btn" class="secondary-button" style="anchor-width: 200; anchor-height: 40;">Add Command</button>
                                     <div class="spacer-h-sm"></div>
-                                    <button id="cmd-mode-all" class="{{#if cmdModeAll}}btn-primary{{else}}btn-secondary{{/if}}" style="anchor-width: 120; anchor-height: 40;">All</button>
+                                    <button id="cmd-mode-all" class="{{#if cmdModeAll}}secondary-button{{else}}secondary-button{{/if}}" style="anchor-width: 120; anchor-height: 40;">All</button>
                                     <div class="spacer-h-sm"></div>
-                                    <button id="cmd-mode-random" class="{{#if cmdModeRandom}}btn-primary{{else}}btn-secondary{{/if}}" style="anchor-width: 120; anchor-height: 40;">Random</button>
+                                    <button id="cmd-mode-random" class="{{#if cmdModeRandom}}secondary-button{{else}}secondary-button{{/if}}" style="anchor-width: 120; anchor-height: 40;">Random</button>
                                 </div>
                                 <div class="spacer-sm"></div>
 
                                 {{#if hasCmds}}
-                                <div class="list-container" style="anchor-height: 200;">
+                                <div class="list-container" data-hyui-scrollbar-style='"Common.ui" "DefaultScrollbarStyle"' style="anchor-height: 200;">
                                 """ + cmdsHtml.toString() + """
                                 </div>
                                 {{else}}
@@ -5305,16 +5347,16 @@ public class CitizensUI {
                                 {{@sectionHeader:title=Death Messages ({{$msgCount}}),description=Messages sent to the killer when the citizen dies}}
 
                                 <div class="form-row">
-                                    <button id="add-dmsg-btn" class="btn-primary" style="anchor-width: 200; anchor-height: 40;">Add Message</button>
+                                    <button id="add-dmsg-btn" class="secondary-button" style="anchor-width: 200; anchor-height: 40;">Add Message</button>
                                     <div class="spacer-h-sm"></div>
-                                    <button id="msg-mode-all" class="{{#if msgModeAll}}btn-primary{{else}}btn-secondary{{/if}}" style="anchor-width: 120; anchor-height: 40;">All</button>
+                                    <button id="msg-mode-all" class="{{#if msgModeAll}}secondary-button{{else}}secondary-button{{/if}}" style="anchor-width: 120; anchor-height: 40;">All</button>
                                     <div class="spacer-h-sm"></div>
-                                    <button id="msg-mode-random" class="{{#if msgModeRandom}}btn-primary{{else}}btn-secondary{{/if}}" style="anchor-width: 120; anchor-height: 40;">Random</button>
+                                    <button id="msg-mode-random" class="{{#if msgModeRandom}}secondary-button{{else}}secondary-button{{/if}}" style="anchor-width: 120; anchor-height: 40;">Random</button>
                                 </div>
                                 <div class="spacer-sm"></div>
 
                                 {{#if hasMsgs}}
-                                <div class="list-container" style="anchor-height: 200;">
+                                <div class="list-container" data-hyui-scrollbar-style='"Common.ui" "DefaultScrollbarStyle"' style="anchor-height: 200;">
                                 """ + msgsHtml.toString() + """
                                 </div>
                                 {{else}}
@@ -5330,7 +5372,7 @@ public class CitizensUI {
 
                         <!-- Footer -->
                         <div class="footer">
-                            <button id="back-btn" class="btn-ghost">Back</button>
+                            <button id="back-btn" class="secondary-button">Back</button>
                         </div>
 
                     </div>
@@ -5513,7 +5555,7 @@ public class CitizensUI {
 
                 itemsHtml.append("""
                     <div style="layout: top; flex-weight: 0; anchor-width: 90; anchor-height: 90; background-color: #535359;">
-                        <button id="pick-%d" style="layout: top; flex-weight: 0; anchor-width: 80; anchor-height: 80; background-color: #21262d; padding: 6;">
+                        <button id="pick-%d" class="secondary-button raw-button" style="layout: top; flex-weight: 0; anchor-width: 80; anchor-height: 80; background-color: #21262d; padding: 6;">
                             <span class="item-icon" data-hyui-item-id="%s" style="anchor-width: 36; anchor-height: 36;"></span>
                             <p style="color: #e6edf3; font-size: 9; text-align: center;">%s</p>
                         </button>
@@ -5533,13 +5575,16 @@ public class CitizensUI {
 
         String html = getSharedStyles() + """
                 <div class="page-overlay">
-                    <div class="main-container" style="anchor-width: 850; anchor-height: 750;">
+                    <div class="main-container decorated-container" style="anchor-width: 850; anchor-height: 750;">
 
-                        <div class="header">
+                        <div class="header container-title">
                             <div class="header-content">
                                 <p class="header-title">Select Drop Item</p>
-                                <p class="header-subtitle">Page %d of %d (%d items total)</p>
                             </div>
+                        </div>
+
+                        <div style="layout: top; flex-weight: 0; padding: 8 16 0 16;">
+                            <p class="page-description">Page %d of %d (%d items total)</p>
                         </div>
 
                         <div style="layout: top; flex-weight: 0; padding: 12 16 8 16;">
@@ -5547,22 +5592,22 @@ public class CitizensUI {
                                 <input type="text" id="item-search" class="form-input" style="flex-weight: 1;"
                                        value="%s" placeholder="Search items..." maxlength="64" />
                                 <div style="flex-weight: 0; anchor-width: 8;"></div>
-                                <button id="search-btn" class="btn-primary" style="anchor-width: 130;">Search</button>
+                                <button id="search-btn" class="secondary-button" style="anchor-width: 130;">Search</button>
                             </div>
                         </div>
 
-                        <div style="layout-mode: TopScrolling; flex-weight: 1; padding: 4 16 4 16;">
+                        <div data-hyui-scrollbar-style='"Common.ui" "DefaultScrollbarStyle"' style="layout-mode: TopScrolling; flex-weight: 1; padding: 4 16 4 16;">
                             %s
                         </div>
 
                         <div class="footer">
-                            <button id="back-btn" class="btn-ghost">Back</button>
+                            <button id="back-btn" class="secondary-button">Back</button>
                             <div style="flex-weight: 1;"></div>
-                            <button id="prev-page-btn" class="btn-secondary btn-small" %s>Prev</button>
+                            <button id="prev-page-btn" class="secondary-button small-secondary-button" %s>Prev</button>
                             <div style="flex-weight: 0; anchor-width: 8;"></div>
                             <p style="color: #8b949e; font-size: 12;">%d / %d</p>
                             <div style="flex-weight: 0; anchor-width: 8;"></div>
-                            <button id="next-page-btn" class="btn-secondary btn-small" %s>Next</button>
+                            <button id="next-page-btn" class="secondary-button small-secondary-button" %s>Next</button>
                         </div>
 
                     </div>
@@ -5643,16 +5688,18 @@ public class CitizensUI {
 
         String html = template.process(getSharedStyles() + """
                 <div class="page-overlay">
-                    <div class="main-container" style="anchor-width: 500; anchor-height: 400;">
+                    <div class="main-container decorated-container" style="anchor-width: 500; anchor-height: 400;">
 
-                        <div class="header">
+                        <div class="header container-title">
                             <div class="header-content">
                                 <p class="header-title">Set Drop Quantity</p>
-                                <p class="header-subtitle">How many of this item to drop</p>
                             </div>
                         </div>
 
                         <div class="body">
+
+                            <p class="page-description">How many of this item to drop</p>
+                            <div class="spacer-sm"></div>
                             <div class="section">
                                 <div style="layout: center; flex-weight: 0; padding-bottom: 16;">
                                     <span class="item-icon" data-hyui-item-id="{{$itemId}}" style="anchor-width: 48; anchor-height: 48;"></span>
@@ -5667,9 +5714,9 @@ public class CitizensUI {
                         </div>
 
                         <div class="footer">
-                            <button id="qty-back-btn" class="btn-ghost">Back</button>
+                            <button id="qty-back-btn" class="secondary-button">Back</button>
                             <div style="flex-weight: 0; anchor-width: 8;"></div>
-                            <button id="qty-confirm-btn" class="btn-primary" style="anchor-width: 160;">Confirm</button>
+                            <button id="qty-confirm-btn" class="secondary-button" style="anchor-width: 160;">Confirm</button>
                         </div>
 
                     </div>
@@ -5724,16 +5771,18 @@ public class CitizensUI {
 
         String html = template.process(getSharedStyles() + """
                 <div class="page-overlay">
-                    <div class="main-container" style="anchor-width: 680; anchor-height: 480;">
+                    <div class="main-container decorated-container" style="anchor-width: 680; anchor-height: 480;">
 
-                        <div class="header">
+                        <div class="header container-title">
                             <div class="header-content">
                                 <p class="header-title">{{#if isNew}}Add Death Command{{else}}Edit Death Command{{/if}}</p>
-                                <p class="header-subtitle">Command to execute when the citizen dies</p>
                             </div>
                         </div>
 
                         <div class="body">
+
+                            <p class="page-description">Command to execute when the citizen dies</p>
+                            <div class="spacer-sm"></div>
                             <div class="section">
                                 {{@sectionHeader:title=Command}}
                                 <input type="text" id="command-input" class="form-input" value="{{$command}}"
@@ -5763,9 +5812,9 @@ public class CitizensUI {
                         </div>
 
                         <div class="footer">
-                            <button id="cancel-btn" class="btn-ghost">Cancel</button>
+                            <button id="cancel-btn" class="secondary-button">Cancel</button>
                             <div style="flex-weight: 0; anchor-width: 16;"></div>
-                            <button id="save-dcmd-btn" class="btn-primary" style="anchor-width: 200;">{{#if isNew}}Add Command{{else}}Save Changes{{/if}}</button>
+                            <button id="save-dcmd-btn" class="secondary-button" style="anchor-width: 200;">{{#if isNew}}Add Command{{else}}Save Changes{{/if}}</button>
                         </div>
 
                     </div>
@@ -5841,16 +5890,18 @@ public class CitizensUI {
 
         String html = template.process(getSharedStyles() + """
                 <div class="page-overlay">
-                    <div class="main-container" style="anchor-width: 680; anchor-height: 400;">
+                    <div class="main-container decorated-container" style="anchor-width: 680; anchor-height: 400;">
 
-                        <div class="header">
+                        <div class="header container-title">
                             <div class="header-content">
                                 <p class="header-title">{{#if isNew}}Add Death Message{{else}}Edit Death Message{{/if}}</p>
-                                <p class="header-subtitle">Message sent to the killer when the citizen dies</p>
                             </div>
                         </div>
 
                         <div class="body">
+
+                            <p class="page-description">Message sent to the killer when the citizen dies</p>
+                            <div class="spacer-sm"></div>
                             <div class="section">
                                 {{@sectionHeader:title=Message Text}}
                                 <input type="text" id="message-input" class="form-input" value="{{$message}}"
@@ -5867,9 +5918,9 @@ public class CitizensUI {
                         </div>
 
                         <div class="footer">
-                            <button id="cancel-btn" class="btn-ghost">Cancel</button>
+                            <button id="cancel-btn" class="secondary-button">Cancel</button>
                             <div style="flex-weight: 0; anchor-width: 16;"></div>
-                            <button id="save-dmsg-btn" class="btn-primary" style="anchor-width: 200;">{{#if isNew}}Add Message{{else}}Save Changes{{/if}}</button>
+                            <button id="save-dmsg-btn" class="secondary-button" style="anchor-width: 200;">{{#if isNew}}Add Message{{else}}Save Changes{{/if}}</button>
                         </div>
 
                     </div>
@@ -5943,9 +5994,9 @@ public class CitizensUI {
                                                 <p style="font-size: 12; color: #888888;">%s | %d waypoints</p>
                                             </div>
                                         </div>
-                                        <button id="edit-path-%d" class="btn-secondary" style="anchor-width: 100;">Edit</button>
+                                        <button id="edit-path-%d" class="secondary-button" style="anchor-width: 100;">Edit</button>
                                         <div class="spacer-h-xs"></div>
-                                        <button id="delete-path-%d" class="btn-danger" style="anchor-width: 120;">Delete</button>
+                                        <button id="delete-path-%d" class="secondary-button" style="anchor-width: 120;">Delete</button>
                                     </div>
                                     <div class="spacer-xs"></div>
                                     """.formatted(
@@ -5962,16 +6013,18 @@ public class CitizensUI {
 
         String html = template.process(getSharedStyles() + """
                 <div class="page-overlay">
-                    <div class="main-container" style="anchor-width: 750; anchor-height: 700;">
+                    <div class="main-container decorated-container" style="anchor-width: 750; anchor-height: 700;">
 
-                        <div class="header">
+                        <div class="header container-title">
                             <div class="header-content">
                                 <p class="header-title">Patrol Paths</p>
-                                <p class="header-subtitle">Manage plugin-managed patrol paths</p>
                             </div>
                         </div>
 
                         <div class="body">
+
+                            <p class="page-description">Manage plugin-managed patrol paths</p>
+                            <div class="spacer-sm"></div>
 
                             <div class="section">
                                 {{@sectionHeader:title=Create New Path,description=Create a new named patrol path}}
@@ -5981,7 +6034,7 @@ public class CitizensUI {
                                     </div>
                                     <div class="spacer-h-sm"></div>
                                     <div style="flex-weight: 0; layout: center; padding-top: 18;">
-                                        <button id="create-path-btn" class="btn-primary">Create</button>
+                                        <button id="create-path-btn" class="secondary-button">Create</button>
                                     </div>
                                 </div>
                             </div>
@@ -5991,7 +6044,7 @@ public class CitizensUI {
                             <div class="section">
                                 {{@sectionHeader:title=Existing Paths,description=Edit or delete patrol paths}}
                                 {{#if hasPaths}}
-                                <div class="list-container" style="anchor-height: 350;" data-hyui-scrollbar-style='"Common.ui" "DefaultScrollbarStyle"'>
+                                <div class="list-container" data-hyui-scrollbar-style='"Common.ui" "DefaultScrollbarStyle"' style="anchor-height: 350;">
                 """ + pathsHtml + """
                                 </div>
                                 {{else}}
@@ -6002,7 +6055,7 @@ public class CitizensUI {
                         </div>
 
                         <div class="footer">
-                            <button id="back-btn" class="btn-ghost">Back</button>
+                            <button id="back-btn" class="secondary-button">Back</button>
                         </div>
 
                     </div>
@@ -6089,24 +6142,26 @@ public class CitizensUI {
 
         String html = template.process(getSharedStyles() + """
                 <div class="page-overlay">
-                    <div class="main-container" style="anchor-width: 900; anchor-height: 700;">
+                    <div class="main-container decorated-container" style="anchor-width: 900; anchor-height: 700;">
 
-                        <div class="header">
+                        <div class="header container-title">
                             <div class="header-content">
                                 <p class="header-title">Edit Path: {{$pathName}}</p>
-                                <p class="header-subtitle">Manage waypoints and loop mode</p>
                             </div>
                         </div>
 
                         <div class="body">
 
+                            <p class="page-description">Manage waypoints and loop mode</p>
+                            <div class="spacer-sm"></div>
+
                             <div class="section">
                                 {{@sectionHeader:title=Loop Mode,description=How the citizen loops through waypoints}}
                                 <div class="button-group">
                                     {{#if isLoop}}
-                                    <button id="mode-loop" class="btn-primary" style="anchor-width: 140;">Loop</button>
+                                    <button id="mode-loop" class="secondary-button" style="anchor-width: 140;">Loop</button>
                                     {{else}}
-                                    <button id="mode-loop" class="btn-primary" style="anchor-width: 140;">Ping Pong</button>
+                                    <button id="mode-loop" class="secondary-button" style="anchor-width: 140;">Ping Pong</button>
                                     {{/if}}
                                 </div>
                             </div>
@@ -6116,7 +6171,7 @@ public class CitizensUI {
                             <div class="section">
                                 {{@sectionHeader:title=Waypoints ({{$waypointCount}}),description=Waypoints the citizen follows in order}}
                                 {{#if hasWaypoints}}
-                                <div class="list-container" style="anchor-height: 350;" data-hyui-scrollbar-style='"Common.ui" "DefaultScrollbarStyle"'>
+                                <div class="list-container" data-hyui-scrollbar-style='"Common.ui" "DefaultScrollbarStyle"' style="anchor-height: 350;">
                                     {{#each waypoints}}
                                     <div class="list-item">
                                         <div style="flex-weight: 1;">
@@ -6126,13 +6181,13 @@ public class CitizensUI {
                                             {{@numberField:id=pause-{{$index}},label=Pause (s),value={{$pauseSeconds}},min=0,max=300,step=0.5,decimals=1}}
                                         </div>
                                         <div class="spacer-h-xs"></div>
-                                        <button id="move-up-{{$index}}" class="btn-secondary" style="anchor-width: 80; flex-weight: 0;">Up</button>
+                                        <button id="move-up-{{$index}}" class="secondary-button" style="anchor-width: 80; flex-weight: 0;">Up</button>
                                         <div class="spacer-h-xs"></div>
-                                        <button id="move-down-{{$index}}" class="btn-secondary" style="anchor-width: 100; flex-weight: 0;">Down</button>
+                                        <button id="move-down-{{$index}}" class="secondary-button" style="anchor-width: 100; flex-weight: 0;">Down</button>
                                         <div class="spacer-h-xs"></div>
-                                        <button id="tp-wp-{{$index}}" class="btn-ghost" style="anchor-width: 80; flex-weight: 0;">TP</button>
+                                        <button id="tp-wp-{{$index}}" class="secondary-button" style="anchor-width: 80; flex-weight: 0;">TP</button>
                                         <div class="spacer-h-xs"></div>
-                                        <button id="delete-wp-{{$index}}" class="btn-danger" style="anchor-width: 110; flex-weight: 0;">Delete</button>
+                                        <button id="delete-wp-{{$index}}" class="secondary-button" style="anchor-width: 110; flex-weight: 0;">Delete</button>
                                     </div>
                                     <div class="spacer-xs"></div>
                                     {{/each}}
@@ -6141,16 +6196,16 @@ public class CitizensUI {
                                 <p style="color: #888888; font-size: 13;">No waypoints yet. Stand where you want a waypoint and click Add.</p>
                                 {{/if}}
                                 <div class="spacer-sm"></div>
-                                <button id="add-waypoint-btn" class="btn-secondary" style="anchor-width: 250;">Add Waypoint at my position</button>
-                                <button id="get-waypoint-item-btn" class="btn-secondary" style="anchor-width: 225;">Get Waypoint item</button>
+                                <button id="add-waypoint-btn" class="secondary-button" style="anchor-width: 250;">Add Waypoint at my position</button>
+                                <button id="get-waypoint-item-btn" class="secondary-button" style="anchor-width: 225;">Get Waypoint item</button>
                             </div>
 
                         </div>
 
                         <div class="footer">
-                            <button id="back-btn" class="btn-ghost">Back</button>
+                            <button id="back-btn" class="secondary-button">Back</button>
                             <div class="spacer-h-md"></div>
-                            <button id="save-btn" class="btn-primary" style="anchor-width: 180;">Save Changes</button>
+                            <button id="save-btn" class="secondary-button" style="anchor-width: 180;">Save Changes</button>
                         </div>
 
                     </div>
