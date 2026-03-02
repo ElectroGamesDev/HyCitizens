@@ -17,7 +17,7 @@ public class CitizensCommand extends AbstractPlayerCommand{
 
     public CitizensCommand(@Nonnull HyCitizensPlugin plugin) {
         super("citizens", "Citizens Commands");
-        this.requirePermission("citizens.admin");
+        this.requirePermission("hycitizens.admin");
         this.addAliases("citizen", "hycitizens", "hycitizen");
         this.plugin = plugin;
     }
