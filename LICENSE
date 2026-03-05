@@ -17,7 +17,11 @@ You MAY NOT:
 - Redistribute this software or derivative works on plugin marketplaces
   (including but not limited to CurseForge, BuiltByBit, or similar platforms)
   without explicit written permission from the copyright holder
-- Sell, sublicense, or commercially distribute this software or derivative works
+- Sell, charge for access to, sublicense, or otherwise commercially distribute
+  this software or any derivative works
+- Include this software or derivative works in any paid product, bundle,
+  subscription, or service without explicit written permission from the
+  copyright holder
 
 Any redistribution, including forks, must retain this license and attribution.
 Redistribution outside of GitHub forks or private, direct sharing requires
