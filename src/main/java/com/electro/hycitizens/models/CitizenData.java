@@ -105,6 +105,11 @@ public class CitizenData {
     // Group field
     private String group = "";
 
+    // Citizen follow fields
+    private boolean followCitizenEnabled = false;
+    private String followCitizenId = "";
+    private float followDistance = 2.0f;
+
     // New config fields for runtime role generation
     private CombatConfig combatConfig = new CombatConfig();
     private DetectionConfig detectionConfig = new DetectionConfig();
@@ -711,6 +716,31 @@ public class CitizenData {
 
     public void setGroup(@Nullable String group) {
         this.group = group != null ? group : "";
+    }
+
+    public boolean isFollowCitizenEnabled() {
+        return followCitizenEnabled;
+    }
+
+    public void setFollowCitizenEnabled(boolean followCitizenEnabled) {
+        this.followCitizenEnabled = followCitizenEnabled;
+    }
+
+    @Nonnull
+    public String getFollowCitizenId() {
+        return followCitizenId;
+    }
+
+    public void setFollowCitizenId(@Nullable String followCitizenId) {
+        this.followCitizenId = followCitizenId != null ? followCitizenId : "";
+    }
+
+    public float getFollowDistance() {
+        return followDistance;
+    }
+
+    public void setFollowDistance(float followDistance) {
+        this.followDistance = Math.max(0.1f, followDistance);
     }
 
     @Nonnull

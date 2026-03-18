@@ -93,6 +93,7 @@ public class CitizensManager {
     private ScheduledFuture<?> nametagMoveTask;
     private ScheduledFuture<?> animationTask;
     private ScheduledFuture<?> healthRegenTask;
+    private ScheduledFuture<?> citizenFollowTask;
     private ScheduledFuture<?> npcRefReconcileTask;
     private final Map<UUID, List<CitizenData>> citizensByWorld = new HashMap<>();
     private final Set<String> groups = new HashSet<>();
@@ -104,6 +105,7 @@ public class CitizensManager {
     private final Map<UUID, Map<UUID, PendingHologramRemoval>> pendingHologramRemovals = new ConcurrentHashMap<>();
     private final Map<UUID, Map<UUID, PendingNpcRemoval>> pendingNpcRemovals = new ConcurrentHashMap<>();
     private final Set<String> pendingNpcRemovalTasks = ConcurrentHashMap.newKeySet();
+    private final Map<String, Ref<EntityStore>> followMoveTargets = new ConcurrentHashMap<>();
     private PatrolManager patrolManager;
 
     public CitizensManager(@Nonnull HyCitizensPlugin plugin) {
@@ -119,6 +121,7 @@ public class CitizensManager {
         startNpcRefReconcileScheduler();
         startAnimationScheduler();
         startHealthRegenScheduler();
+        startCitizenFollowScheduler();
         startNametagMoveScheduler();
         startPositionSaveScheduler();
         this.patrolManager = new PatrolManager(plugin.getConfigManager(), this);
@@ -384,6 +387,18 @@ public class CitizensManager {
         }, 1, 1, TimeUnit.SECONDS);
     }
 
+    private void startCitizenFollowScheduler() {
+        citizenFollowTask = HytaleServer.SCHEDULED_EXECUTOR.scheduleAtFixedRate(() -> {
+            for (CitizenData citizen : citizens.values()) {
+                try {
+                    refreshCitizenFollowTarget(citizen);
+                } catch (Exception e) {
+                    getLogger().atWarning().log("Follow sync error for citizen " + citizen.getId() + ": " + e.getMessage());
+                }
+            }
+        }, 250, 250, TimeUnit.MILLISECONDS);
+    }
+
     // Todo: move position saving to chunk unload event when it becomes available
     private void startPositionSaveScheduler() {
         positionSaveTask = HytaleServer.SCHEDULED_EXECUTOR.scheduleAtFixedRate(() -> {
@@ -482,6 +497,10 @@ public class CitizensManager {
 
         if (healthRegenTask != null && !healthRegenTask.isCancelled()) {
             healthRegenTask.cancel(false);
+        }
+
+        if (citizenFollowTask != null && !citizenFollowTask.isCancelled()) {
+            citizenFollowTask.cancel(false);
         }
 
         if (nametagMoveTask != null && !nametagMoveTask.isCancelled()) {
@@ -672,6 +691,7 @@ public class CitizensManager {
         float wanderWidth = config.getFloat(basePath + ".movement.wander-width", 10.0f);
         float wanderDepth = config.getFloat(basePath + ".movement.wander-depth", 10.0f);
         citizenData.setMovementBehavior(new MovementBehavior(moveType, walkSpeed, wanderRadius, wanderWidth, wanderDepth));
+        citizenData.setFollowDistance(config.getFloat(basePath + ".follow-citizen.distance", 1.0f));
 
         // Load messages config
         int msgCount = config.getInt(basePath + ".messages.count", 0);
@@ -948,6 +968,13 @@ public class CitizensManager {
         if (flockArr != null) citizenData.setFlockArray(flockArr);
         List<String> disableDmgGroups = config.getStringList(basePath + ".disable-damage-groups");
         if (disableDmgGroups != null) citizenData.setDisableDamageGroups(disableDmgGroups);
+        citizenData.setFollowCitizenEnabled(config.getBoolean(basePath + ".follow-citizen.enabled", false));
+        citizenData.setFollowCitizenId(config.getString(basePath + ".follow-citizen.target-id", ""));
+        if (citizenData.isFollowCitizenEnabled()
+                && !citizenData.getFollowCitizenId().trim().isEmpty()
+                && !"FOLLOW_CITIZEN".equals(citizenData.getMovementBehavior().getType())) {
+            citizenData.getMovementBehavior().setType("FOLLOW_CITIZEN");
+        }
 
         return citizenData;
     }
@@ -1070,6 +1097,9 @@ public class CitizensManager {
 
             // Save group
             config.set(basePath + ".group", citizen.getGroup());
+            config.set(basePath + ".follow-citizen.enabled", "FOLLOW_CITIZEN".equals(citizen.getMovementBehavior().getType()));
+            config.set(basePath + ".follow-citizen.target-id", citizen.getFollowCitizenId());
+            config.set(basePath + ".follow-citizen.distance", citizen.getFollowDistance());
 
             // Save death config
             DeathConfig dc = citizen.getDeathConfig();
@@ -1418,6 +1448,7 @@ public class CitizensManager {
         config.set("citizens." + citizenId, null);
 
         roleGenerator.deleteRoleFile(citizenId);
+        followMoveTargets.remove(citizenId);
 
         if (citizen == null) {
             return;
@@ -1517,7 +1548,9 @@ public class CitizensManager {
 
     private boolean shouldAutoStartPluginPatrol(@Nonnull CitizenData citizen) {
         String pluginPatrolPath = citizen.getPathConfig().getPluginPatrolPath();
-        return "PATROL".equals(citizen.getMovementBehavior().getType()) && !pluginPatrolPath.isEmpty();
+        return "PATROL".equals(citizen.getMovementBehavior().getType())
+                && !pluginPatrolPath.isEmpty()
+                && !isCitizenFollowingCitizen(citizen);
     }
 
     public void spawnCitizenNPC(CitizenData citizen, boolean save) {
@@ -1616,6 +1649,7 @@ public class CitizensManager {
         if (shouldAutoStartPluginPatrol(citizen) && patrolManager != null) {
             patrolManager.startPatrol(citizen.getId(), citizen.getPathConfig().getPluginPatrolPath());
         }
+        refreshCitizenFollowTarget(citizen);
         citizensCurrentlySpawning.remove(citizen.getId());
     }
 
@@ -1709,6 +1743,7 @@ public class CitizensManager {
         if (shouldAutoStartPluginPatrol(citizen) && patrolManager != null) {
             patrolManager.startPatrol(citizen.getId(), citizen.getPathConfig().getPluginPatrolPath());
         }
+        refreshCitizenFollowTarget(citizen);
         citizensCurrentlySpawning.remove(citizen.getId());
     }
 
@@ -2200,8 +2235,11 @@ public class CitizensManager {
 
         World world = Universe.get().getWorld(citizen.getWorldUUID());
         if (world == null) {
+            followMoveTargets.remove(citizen.getId());
             return;
         }
+
+        clearCitizenFollowMoveTarget(citizen, world);
 
         boolean despawned = false;
         Ref<EntityStore> npcRef = citizen.getNpcRef();
@@ -2245,12 +2283,15 @@ public class CitizensManager {
         World world = Universe.get().getWorld(citizen.getWorldUUID());
 
         if (world == null) {
+            followMoveTargets.remove(citizen.getId());
             if (npcUUID != null) {
                 queuePendingNpcRemoval(citizen, npcUUID);
             }
             clearCitizenEntityBinding(citizen);
             return;
         }
+
+        clearCitizenFollowMoveTarget(citizen, world);
 
         if (npcRef != null && npcRef.isValid()) {
             world.execute(() -> world.getEntityStore().getStore().removeEntity(npcRef, RemoveReason.REMOVE));
@@ -2703,6 +2744,208 @@ public class CitizensManager {
             // Send the packet
             EntityUpdates packet = new EntityUpdates(null, new EntityUpdate[] { entityUpdate });
             playerRef.getPacketHandler().write(packet);
+        }
+    }
+
+    public boolean isCitizenFollowingCitizen(@Nonnull CitizenData citizen) {
+        return "FOLLOW_CITIZEN".equals(citizen.getMovementBehavior().getType())
+                && !citizen.getFollowCitizenId().trim().isEmpty();
+    }
+
+    private void refreshCitizenFollowTarget(@Nonnull CitizenData citizen) {
+        if (!isCitizenFollowingCitizen(citizen)) {
+            World world = Universe.get().getWorld(citizen.getWorldUUID());
+            if (world != null) {
+                world.execute(() -> {
+                    clearCitizenFollowTargetBinding(citizen);
+                    clearCitizenFollowMoveTarget(citizen, world);
+                });
+            } else {
+                followMoveTargets.remove(citizen.getId());
+            }
+            return;
+        }
+
+        if (citizen.getNpcRef() == null || !citizen.getNpcRef().isValid()) {
+            return;
+        }
+
+        World world = Universe.get().getWorld(citizen.getWorldUUID());
+        if (world == null) {
+            return;
+        }
+
+        CitizenData targetCitizen = citizens.get(citizen.getFollowCitizenId());
+        if (targetCitizen == null
+                || targetCitizen == citizen
+                || !citizen.getWorldUUID().equals(targetCitizen.getWorldUUID())
+                || targetCitizen.getNpcRef() == null
+                || !targetCitizen.getNpcRef().isValid()) {
+            world.execute(() -> {
+                clearCitizenFollowTargetBinding(citizen);
+                clearCitizenFollowMoveTarget(citizen, world);
+            });
+            return;
+        }
+
+        List<CitizenData> followers = citizens.values().stream()
+                .filter(other -> other != null && isCitizenFollowingCitizen(other))
+                .filter(other -> targetCitizen.getId().equals(other.getFollowCitizenId()))
+                .filter(other -> citizen.getWorldUUID().equals(other.getWorldUUID()))
+                .sorted(Comparator.comparing(CitizenData::getId))
+                .collect(Collectors.toList());
+
+        int followerIndex = 0;
+        for (int i = 0; i < followers.size(); i++) {
+            if (followers.get(i).getId().equals(citizen.getId())) {
+                followerIndex = i;
+                break;
+            }
+        }
+
+        final int finalFollowerIndex = followerIndex;
+        int totalFollowers = followers.size();
+        world.execute(() -> {
+            Vector3d targetPosition = computeFollowTargetPosition(citizen, targetCitizen, finalFollowerIndex, totalFollowers);
+            Ref<EntityStore> targetRef = getOrCreateFollowMoveTarget(citizen, world, targetPosition);
+            if (targetRef == null || !targetRef.isValid()) {
+                return;
+            }
+
+            TransformComponent targetTransform = targetRef.getStore().getComponent(targetRef, TransformComponent.getComponentType());
+            if (targetTransform != null) {
+                targetTransform.setPosition(targetPosition);
+            }
+
+            applyCitizenFollowTargetBinding(citizen, targetRef);
+        });
+    }
+
+    private void applyCitizenFollowTargetBinding(@Nonnull CitizenData citizen, @Nonnull Ref<EntityStore> targetRef) {
+        Ref<EntityStore> npcRef = citizen.getNpcRef();
+        if (npcRef == null || !npcRef.isValid() || !targetRef.isValid()) {
+            return;
+        }
+
+        NPCEntity npcEntity = npcRef.getStore().getComponent(npcRef, NPCEntity.getComponentType());
+        if (npcEntity == null || npcEntity.getRole() == null || npcEntity.getRole().getMarkedEntitySupport() == null) {
+            return;
+        }
+
+        if (patrolManager != null && patrolManager.isPatrolling(citizen.getId())) {
+            patrolManager.stopPatrol(citizen.getId());
+        }
+
+        npcEntity.getRole().getMarkedEntitySupport().setMarkedEntity("LockedTarget", targetRef);
+    }
+
+    private void clearCitizenFollowTargetBinding(@Nonnull CitizenData citizen) {
+        Ref<EntityStore> npcRef = citizen.getNpcRef();
+        if (npcRef == null || !npcRef.isValid()) {
+            return;
+        }
+
+        NPCEntity npcEntity = npcRef.getStore().getComponent(npcRef, NPCEntity.getComponentType());
+        if (npcEntity == null || npcEntity.getRole() == null || npcEntity.getRole().getMarkedEntitySupport() == null) {
+            return;
+        }
+
+        try {
+            npcEntity.getRole().getMarkedEntitySupport().setMarkedEntity("LockedTarget", null);
+        } catch (Exception ignored) {
+        }
+    }
+
+    @Nonnull
+    private Vector3d computeFollowTargetPosition(@Nonnull CitizenData follower, @Nonnull CitizenData leader, int followerIndex, int totalFollowers) {
+        Ref<EntityStore> leaderRef = leader.getNpcRef();
+        Vector3d leaderPosition = leader.getCurrentPosition() != null ? leader.getCurrentPosition() : leader.getPosition();
+        Vector3f leaderRotation = new Vector3f(leader.getRotation());
+        if (leaderRef != null && leaderRef.isValid()) {
+            TransformComponent leaderTransform = leaderRef.getStore().getComponent(leaderRef, TransformComponent.getComponentType());
+            if (leaderTransform != null) {
+                leaderPosition = leaderTransform.getPosition();
+                leaderRotation = new Vector3f(leaderTransform.getRotation());
+            }
+        }
+
+        double yaw = leaderRotation.y;
+        double behindX = Math.sin(yaw);
+        double behindZ = Math.cos(yaw);
+        double rightX = behindZ;
+        double rightZ = -behindX;
+        double followDistance = Math.max(0.1, follower.getFollowDistance());
+
+        int followersPerRow = totalFollowers == 2 ? 2 : 3;
+        int row = followerIndex / followersPerRow;
+        int slotInRow = followerIndex % followersPerRow;
+
+        double[] lateralSlots;
+        if (totalFollowers == 1) {
+            lateralSlots = new double[] {0.0};
+        } else if (totalFollowers == 2) {
+            double lateral = Math.max(0.85, followDistance * 0.85);
+            lateralSlots = new double[] {-lateral, lateral};
+        } else {
+            double lateral = Math.max(1.0, followDistance);
+            lateralSlots = new double[] {0.0, -lateral, lateral};
+        }
+
+        double distanceBehind = followDistance + (row * 1.15);
+        double lateralOffset = lateralSlots[Math.min(slotInRow, lateralSlots.length - 1)];
+
+        double offsetX = (behindX * distanceBehind) + (rightX * lateralOffset);
+        double offsetZ = (behindZ * distanceBehind) + (rightZ * lateralOffset);
+
+        return new Vector3d(
+                leaderPosition.x + offsetX,
+                leaderPosition.y,
+                leaderPosition.z + offsetZ
+        );
+    }
+
+    @Nullable
+    private Ref<EntityStore> getOrCreateFollowMoveTarget(@Nonnull CitizenData citizen, @Nonnull World world, @Nonnull Vector3d position) {
+        Ref<EntityStore> existing = followMoveTargets.get(citizen.getId());
+        if (existing != null && existing.isValid()) {
+            return existing;
+        }
+
+        try {
+            Holder<EntityStore> holder = EntityStore.REGISTRY.newHolder();
+
+            ProjectileComponent projectile = new ProjectileComponent("Projectile");
+            holder.putComponent(ProjectileComponent.getComponentType(), projectile);
+            holder.putComponent(TransformComponent.getComponentType(), new TransformComponent(position, new Vector3f(0, 0, 0)));
+            holder.ensureComponent(UUIDComponent.getComponentType());
+            holder.ensureComponent(Intangible.getComponentType());
+            holder.addComponent(
+                    NetworkId.getComponentType(),
+                    new NetworkId(world.getEntityStore().getStore().getExternalData().takeNextNetworkId())
+            );
+
+            projectile.initialize();
+
+            Ref<EntityStore> targetRef = world.getEntityStore().getStore().addEntity(holder, AddReason.SPAWN);
+            if (targetRef != null && targetRef.isValid()) {
+                followMoveTargets.put(citizen.getId(), targetRef);
+            }
+            return targetRef;
+        } catch (Exception e) {
+            getLogger().atWarning().log("Failed to create follow move target for citizen " + citizen.getId() + ": " + e.getMessage());
+            return null;
+        }
+    }
+
+    private void clearCitizenFollowMoveTarget(@Nonnull CitizenData citizen, @Nonnull World world) {
+        Ref<EntityStore> targetRef = followMoveTargets.remove(citizen.getId());
+        if (targetRef == null || !targetRef.isValid()) {
+            return;
+        }
+
+        try {
+            world.getEntityStore().getStore().removeEntity(targetRef, RemoveReason.REMOVE);
+        } catch (Exception ignored) {
         }
     }
 

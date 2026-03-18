@@ -3,6 +3,8 @@ package com.electro.hycitizens.listeners;
 import com.electro.hycitizens.HyCitizensPlugin;
 import com.electro.hycitizens.models.CitizenData;
 import com.hypixel.hytale.component.Ref;
+import com.hypixel.hytale.component.Store;
+import com.hypixel.hytale.component.query.Query;
 import com.hypixel.hytale.math.util.ChunkUtil;
 import com.hypixel.hytale.math.vector.Vector3d;
 import com.hypixel.hytale.server.core.HytaleServer;
@@ -10,10 +12,13 @@ import com.hypixel.hytale.server.core.universe.world.World;
 import com.hypixel.hytale.server.core.universe.world.chunk.WorldChunk;
 import com.hypixel.hytale.server.core.universe.world.events.ChunkPreLoadProcessEvent;
 import com.hypixel.hytale.server.core.universe.world.storage.EntityStore;
+import com.hypixel.hytale.server.npc.entities.NPCEntity;
 
 import javax.annotation.Nonnull;
+import javax.swing.text.html.parser.Entity;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
@@ -91,7 +96,10 @@ public class ChunkPreLoadListener {
 
                 Ref<EntityStore> entityRef = null;
                 if (citizen.getSpawnedUUID() != null) {
-                    entityRef = world.getEntityRef(citizen.getSpawnedUUID());
+                    // Not reliable
+                    //entityRef = world.getEntityRef(citizen.getSpawnedUUID());
+
+                    entityRef = checkIfNpcExists(world.getEntityStore().getStore(), citizen);
                 }
 
                 if (entityRef == null || !entityRef.isValid()) {
@@ -141,7 +149,7 @@ public class ChunkPreLoadListener {
                         return;
                     }
 
-                    world.loadChunkIfInMemory(chunkIndex);
+                    world.loadChunkIfInMemory(chunkIndex); // Todo: we should not be loading the chunk
 
                     world.execute(() -> {
                         if (citizen.isAwaitingRespawn()) {
@@ -150,7 +158,10 @@ public class ChunkPreLoadListener {
 
                         Ref<EntityStore> entityRef = null;
                         if (citizen.getSpawnedUUID() != null) {
-                            entityRef = world.getEntityRef(citizen.getSpawnedUUID());
+                            // Not reliable
+                            //entityRef = world.getEntityRef(citizen.getSpawnedUUID());
+
+                            entityRef = checkIfNpcExists(world.getEntityStore().getStore(), citizen);
                         }
 
                         // If the chunk loads, try to spawn the citizen if it doesn't exist
@@ -193,7 +204,10 @@ public class ChunkPreLoadListener {
 
                 Ref<EntityStore> entityRef = null;
                 if (citizen.getSpawnedUUID() != null) {
-                    entityRef = world.getEntityRef(citizen.getSpawnedUUID());
+                    // Not relaible
+                    //entityRef = world.getEntityRef(citizen.getSpawnedUUID());
+
+                    entityRef = checkIfNpcExists(world.getEntityStore().getStore(), citizen);
                 }
 
                 // If the chunk is loaded, try to spawn the citizen if it doesn't exist
@@ -224,7 +238,11 @@ public class ChunkPreLoadListener {
             return;
         }
 
-        Ref<EntityStore> currentRef = world.getEntityRef(storedUuid);
+        // Not reliable
+        //Ref<EntityStore> currentRef = world.getEntityRef(storedUuid);
+
+        Ref<EntityStore> currentRef = checkIfNpcExists(world.getEntityStore().getStore(), citizen);
+
         if (currentRef != null && currentRef.isValid()) {
             onCitizenEntityResolved(citizen, currentRef);
             return;
@@ -258,7 +276,10 @@ public class ChunkPreLoadListener {
 
             UUID retryUuid = citizen.getSpawnedUUID();
             if (retryUuid != null) {
-                Ref<EntityStore> resolvedRef = world.getEntityRef(retryUuid);
+                // Not reliable
+                //Ref<EntityStore> resolvedRef = world.getEntityRef(retryUuid);
+
+                Ref<EntityStore> resolvedRef = checkIfNpcExists(world.getEntityStore().getStore(), citizen);
                 if (resolvedRef != null && resolvedRef.isValid()) {
                     if (futureRef[0] != null) {
                         futureRef[0].cancel(false);
@@ -406,5 +427,34 @@ public class ChunkPreLoadListener {
             });
 
         }, 100, 500, TimeUnit.MILLISECONDS);
+    }
+
+    Ref<EntityStore> checkIfNpcExists(Store<EntityStore> store, CitizenData citizen) {
+        String role = "HyCitizens_" + citizen.getId() + "_Role";
+        Query<EntityStore> query = NPCEntity.getComponentType();
+        CompletableFuture<Ref<EntityStore>> found = new CompletableFuture<>();
+
+        // Todo: Switch to a custom citizen component so we don't rely on roles
+        store.forEachEntityParallel(query, (index, archetypeChunk, cb) -> {
+            if (found.isDone()) {
+                return;
+            }
+
+            Ref<EntityStore> otherRef = archetypeChunk.getReferenceTo(index);
+            if (otherRef == null || !otherRef.isValid()) {
+                return;
+            }
+
+            NPCEntity npc = archetypeChunk.getComponent(index, NPCEntity.getComponentType());
+            if (npc == null || npc.getRole() == null) {
+                return;
+            }
+
+            if (npc.getRole().getRoleName().equals(role)) {
+                found.complete(otherRef);
+            }
+        });
+
+        return found.isDone() ? found.join() : null;
     }
 }

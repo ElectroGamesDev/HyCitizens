@@ -31,10 +31,12 @@ import javax.annotation.Nullable;
 import java.awt.*;
 import java.util.*;
 import java.util.List;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Consumer;
 
 public class CitizensUI {
     private final HyCitizensPlugin plugin;
+    private final Map<UUID, String> pendingFollowSelections = new ConcurrentHashMap<>();
 
     private String generateAnimationDropdownOptions(String selectedValue, String modelId) {
         StringBuilder sb = new StringBuilder();
@@ -169,6 +171,54 @@ public class CitizensUI {
 
     public CitizensUI(@Nonnull HyCitizensPlugin plugin) {
         this.plugin = plugin;
+    }
+
+    public void armFollowTargetSelection(@Nonnull PlayerRef playerRef, @Nonnull CitizenData citizen) {
+        pendingFollowSelections.put(playerRef.getUuid(), citizen.getId());
+        playerRef.sendMessage(Message.raw(
+                "Follow target selection armed. Left click another citizen to make '" + citizen.getName() + "' follow it."
+        ).color(Color.YELLOW));
+    }
+
+    public boolean tryCompleteFollowTargetSelection(@Nonnull PlayerRef playerRef, @Nonnull CitizenData clickedCitizen) {
+        String sourceCitizenId = pendingFollowSelections.get(playerRef.getUuid());
+        if (sourceCitizenId == null || sourceCitizenId.isEmpty()) {
+            return false;
+        }
+
+        CitizenData sourceCitizen = plugin.getCitizensManager().getCitizen(sourceCitizenId);
+        if (sourceCitizen == null) {
+            pendingFollowSelections.remove(playerRef.getUuid());
+            playerRef.sendMessage(Message.raw("The citizen you were editing no longer exists.").color(Color.RED));
+            return true;
+        }
+
+        if (sourceCitizen.getId().equals(clickedCitizen.getId())) {
+            playerRef.sendMessage(Message.raw("Choose a different citizen to follow.").color(Color.RED));
+            return true;
+        }
+
+        if (!sourceCitizen.getWorldUUID().equals(clickedCitizen.getWorldUUID())) {
+            playerRef.sendMessage(Message.raw("Both citizens must be in the same world to follow each other.").color(Color.RED));
+            return true;
+        }
+
+        pendingFollowSelections.remove(playerRef.getUuid());
+        sourceCitizen.setFollowCitizenEnabled(true);
+        sourceCitizen.getMovementBehavior().setType("FOLLOW_CITIZEN");
+        sourceCitizen.setFollowCitizenId(clickedCitizen.getId());
+        plugin.getCitizensManager().updateCitizenNPC(sourceCitizen, true);
+
+        playerRef.sendMessage(Message.raw(
+                "'" + sourceCitizen.getName() + "' will now follow '" + clickedCitizen.getName() + "'."
+        ).color(Color.GREEN));
+
+        Ref<EntityStore> playerEntityRef = playerRef.getReference();
+        if (playerEntityRef != null && playerEntityRef.isValid()) {
+            openBehaviorsGUI(playerRef, playerEntityRef.getStore(), sourceCitizen);
+        }
+
+        return true;
     }
 
     private String sanitizeGroupId(String groupName) {
@@ -908,6 +958,7 @@ public class CitizensUI {
     }
 
     public void openCitizensGUI(@Nonnull PlayerRef playerRef, @Nonnull Store<EntityStore> store, @Nonnull Tab currentTab, @Nonnull String searchQuery, @Nullable String viewingGroup) {
+        pendingFollowSelections.remove(playerRef.getUuid());
         List<CitizenData> allCitizens = plugin.getCitizensManager().getAllCitizens();
 
         // Filter citizens by search query
@@ -1142,6 +1193,7 @@ public class CitizensUI {
                                      String modelId, float scale, String permission, String permMessage, boolean useLiveSkin,
                                      boolean preserveState, String skinUsername, boolean rotateTowardsPlayer,
                                      String group, float lookAtDistance) {
+        pendingFollowSelections.remove(playerRef.getUuid());
 
         List<String> allGroups = plugin.getCitizensManager().getAllGroups();
         String groupOptionsHTML = generateGroupDropdownOptions(group, allGroups);
@@ -1438,6 +1490,7 @@ public class CitizensUI {
     }
 
     public void openEditCitizenGUI(@Nonnull PlayerRef playerRef, @Nonnull Store<EntityStore> store, @Nonnull CitizenData citizen) {
+        pendingFollowSelections.remove(playerRef.getUuid());
         List<String> allGroups = plugin.getCitizensManager().getAllGroups();
         String groupOptionsHTML = generateGroupDropdownOptions(citizen.getGroup(), allGroups);
 
@@ -3429,6 +3482,7 @@ public class CitizensUI {
 
     public void openBehaviorsGUI(@Nonnull PlayerRef playerRef, @Nonnull Store<EntityStore> store,
                                  @Nonnull CitizenData citizen) {
+        pendingFollowSelections.remove(playerRef.getUuid());
         List<AnimationBehavior> anims = citizen.getAnimationBehaviors();
         List<IndexedAnimationBehavior> indexedAnims = new ArrayList<>();
         for (int i = 0; i < anims.size(); i++) {
@@ -3440,6 +3494,14 @@ public class CitizensUI {
         String attitude = citizen.getAttitude();
         String npcAttitude = normalizeNpcAttitude(citizen.getDefaultNpcAttitude());
         boolean takesDamage = citizen.isTakesDamage();
+        CitizenData followTarget = plugin.getCitizensManager().getCitizen(citizen.getFollowCitizenId());
+        boolean hasFollowTarget = followTarget != null && !citizen.getFollowCitizenId().trim().isEmpty();
+        String followTargetName = hasFollowTarget ? followTarget.getName() : "No citizen selected";
+        String followTargetMeta = hasFollowTarget
+                ? "Linked to " + followTarget.getId()
+                : (!citizen.getFollowCitizenId().trim().isEmpty()
+                ? "Saved target ID: " + citizen.getFollowCitizenId() + " (not found)"
+                : "Click Select Target, then hit another citizen in-world.");
 
         TemplateProcessor template = createBaseTemplate()
                 .setVariable("animations", indexedAnims)
@@ -3450,6 +3512,16 @@ public class CitizensUI {
                 .setVariable("isWander", "WANDER".equals(mb.getType()))
                 .setVariable("isWanderCircle", "WANDER_CIRCLE".equals(mb.getType()))
                 .setVariable("isWanderRect", "WANDER_RECT".equals(mb.getType()))
+                .setVariable("isFollowCitizen", "FOLLOW_CITIZEN".equals(mb.getType()))
+                .setVariable("hasWalkSpeedControl",
+                        "WANDER".equals(mb.getType())
+                                || "WANDER_CIRCLE".equals(mb.getType())
+                                || "WANDER_RECT".equals(mb.getType())
+                                || "FOLLOW_CITIZEN".equals(mb.getType()))
+                .setVariable("hasWanderRadiusControl",
+                        "WANDER".equals(mb.getType())
+                                || "WANDER_CIRCLE".equals(mb.getType())
+                                || "WANDER_RECT".equals(mb.getType()))
                 .setVariable("walkSpeed", mb.getWalkSpeed())
                 .setVariable("wanderRadius", mb.getWanderRadius())
                 .setVariable("wanderWidth", mb.getWanderWidth())
@@ -3472,11 +3544,13 @@ public class CitizensUI {
                 .setVariable("healthRegenInterval", citizen.getHealthRegenIntervalSeconds())
                 .setVariable("healthRegenDelayAfterDamage", citizen.getHealthRegenDelayAfterDamageSeconds())
                 .setVariable("isPatrol", "PATROL".equals(mb.getType()))
-                .setVariable("isAnyWander", "WANDER".equals(mb.getType()) || "WANDER_CIRCLE".equals(mb.getType()) || "WANDER_RECT".equals(mb.getType()))
                 .setVariable("patrolPathOptions", generatePatrolPathOptions(citizen.getPathConfig().getPluginPatrolPath()))
                 .setVariable("hasPatrolPaths", !plugin.getCitizensManager().getPatrolManager().getAllPathNames().isEmpty())
                 .setVariable("respawnOnDeath", citizen.isRespawnOnDeath())
-                .setVariable("respawnDelay", citizen.getRespawnDelaySeconds());
+                .setVariable("respawnDelay", citizen.getRespawnDelaySeconds())
+                .setVariable("followDistance", citizen.getFollowDistance())
+                .setVariable("followTargetName", escapeHtml(followTargetName))
+                .setVariable("followTargetMeta", escapeHtml(followTargetMeta));
 
         String html = template.process(getSharedStyles() + """
                 <div class="page-overlay">
@@ -3687,6 +3761,8 @@ public class CitizensUI {
                                     <button id="move-wander" class="{{#if isWander}}secondary-button{{else}}secondary-button{{/if}}" style="anchor-width: 130; anchor-height: 38;">Wander</button>
                                     <div class="spacer-h-sm"></div>
                                     <button id="move-patrol" class="{{#if isPatrol}}secondary-button{{else}}secondary-button{{/if}}" style="anchor-width: 130; anchor-height: 38;">Patrol</button>
+                                    <div class="spacer-h-sm"></div>
+                                    <button id="move-follow" class="{{#if isFollowCitizen}}secondary-button{{else}}secondary-button{{/if}}" style="anchor-width: 170; anchor-height: 38;">Follow Citizen</button>
                                 </div>
 
                                 <div class="spacer-sm"></div>
@@ -3713,20 +3789,50 @@ public class CitizensUI {
                                 {{/if}}
                                 {{/if}}
 
-                                {{#if isAnyWander}}
+                                {{#if hasWalkSpeedControl}}
                                 <div class="spacer-sm"></div>
                                 <div class="form-row">
                                     {{@numberField:id=walk-speed,label=Walk Speed,value={{$walkSpeed}},placeholder=10,min=1,max=100,step=1,decimals=0}}
                                 </div>
+                                {{/if}}
+
+                                {{#if hasWanderRadiusControl}}
                                 <div class="spacer-sm"></div>
                                 <div class="form-row">
                                     {{@numberField:id=wander-radius,label=Wander Radius,value={{$wanderRadius}},placeholder=5,min=1,max=100,step=1,decimals=0}}
                                 </div>
                                 {{/if}}
+
+                                {{#if isFollowCitizen}}
+                                <div class="spacer-sm"></div>
+                                <div class="form-row">
+                                    {{@numberField:id=follow-distance,label=Follow Distance,value={{$followDistance}},placeholder=1,min=0.1,max=10,step=0.1,decimals=1}}
+                                </div>
+
+                                <div class="spacer-sm"></div>
+                                <div class="card">
+                                    <div class="card-body">
+                                        <p class="list-item-title" style="text-align: center;">{{$followTargetName}}</p>
+                                        <p class="list-item-subtitle" style="text-align: center;">{{$followTargetMeta}}</p>
+                                    </div>
+                                </div>
+
+                                <div class="spacer-sm"></div>
+
+                                <div class="form-row">
+                                    <button id="select-follow-target-btn" class="secondary-button" style="anchor-width: 220; anchor-height: 40;">Select Target</button>
+                                    <div class="spacer-h-sm"></div>
+                                    <button id="clear-follow-target-btn" class="secondary-button" style="anchor-width: 200; anchor-height: 40;">Clear Target</button>
+                                </div>
+
+                                <div class="spacer-xs"></div>
+
+                                <p style="color: #8b949e; font-size: 12; text-align: center;">Select Target closes the editor, then waits for you to hit another citizen.</p>
+                                {{/if}}
                             </div>
-                
+                 
                             <div class="spacer-md"></div>
-                
+                 
                             <!-- Animations Section -->
                             <div class="section">
                                 {{@sectionHeader:title=Animations,description=Configure animations that play on various triggers}}
@@ -3818,6 +3924,7 @@ public class CitizensUI {
         final float[] wanderRadius = {mb.getWanderRadius()};
         final float[] wanderWidth = {mb.getWanderWidth()};
         final float[] wanderDepth = {mb.getWanderDepth()};
+        final float[] followDistance = {citizen.getFollowDistance()};
         List<AnimationBehavior> anims = new ArrayList<>(citizen.getAnimationBehaviors());
 
         page.addEventListener("player-attitude", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
@@ -3930,6 +4037,7 @@ public class CitizensUI {
             if ("PATROL".equals(moveType)) {
                 plugin.getCitizensManager().stopCitizenPatrol(citizen.getId());
             }
+            citizen.setFollowCitizenEnabled(false);
             citizen.setMovementBehavior(new MovementBehavior("IDLE", walkSpeed[0], wanderRadius[0], wanderWidth[0], wanderDepth[0]));
             plugin.getCitizensManager().saveCitizen(citizen, true);
             openBehaviorsGUI(playerRef, store, citizen);
@@ -3939,18 +4047,30 @@ public class CitizensUI {
             if ("PATROL".equals(moveType)) {
                 plugin.getCitizensManager().stopCitizenPatrol(citizen.getId());
             }
+            citizen.setFollowCitizenEnabled(false);
             citizen.setMovementBehavior(new MovementBehavior("WANDER", walkSpeed[0], wanderRadius[0], wanderWidth[0], wanderDepth[0]));
             plugin.getCitizensManager().saveCitizen(citizen, true);
             openBehaviorsGUI(playerRef, store, citizen);
         });
 
         page.addEventListener("move-patrol", CustomUIEventBindingType.Activating, event -> {
+            citizen.setFollowCitizenEnabled(false);
             citizen.setMovementBehavior(new MovementBehavior("PATROL", walkSpeed[0], wanderRadius[0], wanderWidth[0], wanderDepth[0]));
             plugin.getCitizensManager().saveCitizen(citizen, true);
             String patrolPath = citizen.getPathConfig().getPluginPatrolPath();
             if (!patrolPath.isEmpty()) {
                 plugin.getCitizensManager().startCitizenPatrol(citizen.getId(), patrolPath);
             }
+            openBehaviorsGUI(playerRef, store, citizen);
+        });
+
+        page.addEventListener("move-follow", CustomUIEventBindingType.Activating, event -> {
+            if ("PATROL".equals(moveType)) {
+                plugin.getCitizensManager().stopCitizenPatrol(citizen.getId());
+            }
+            citizen.setFollowCitizenEnabled(true);
+            citizen.setMovementBehavior(new MovementBehavior("FOLLOW_CITIZEN", walkSpeed[0], wanderRadius[0], wanderWidth[0], wanderDepth[0]));
+            plugin.getCitizensManager().saveCitizen(citizen, true);
             openBehaviorsGUI(playerRef, store, citizen);
         });
 
@@ -3973,9 +4093,37 @@ public class CitizensUI {
             });
         }
 
+        page.addEventListener("select-follow-target-btn", CustomUIEventBindingType.Activating, (event, ctx) -> {
+            if (!"FOLLOW_CITIZEN".equals(citizen.getMovementBehavior().getType())) {
+                playerRef.sendMessage(Message.raw("Set the movement type to Follow Citizen first.").color(Color.RED));
+                return;
+            }
+
+            armFollowTargetSelection(playerRef, citizen);
+            ctx.getPage().ifPresent(newPage -> newPage.close());
+        });
+
+        page.addEventListener("clear-follow-target-btn", CustomUIEventBindingType.Activating, event -> {
+            if (citizen.getFollowCitizenId().trim().isEmpty()) {
+                playerRef.sendMessage(Message.raw("No follow target is currently linked.").color(Color.YELLOW));
+                return;
+            }
+
+            citizen.setFollowCitizenId("");
+            plugin.getCitizensManager().updateCitizenNPC(citizen, true);
+            playerRef.sendMessage(Message.raw("Follow target cleared.").color(Color.GREEN));
+            openBehaviorsGUI(playerRef, store, citizen);
+        });
+
         // Walk speed input
-        boolean isAnyWander = "WANDER".equals(moveType) || "WANDER_CIRCLE".equals(moveType) || "WANDER_RECT".equals(moveType);
-        if (isAnyWander) {
+        boolean hasWalkSpeedControl = "WANDER".equals(moveType)
+                || "WANDER_CIRCLE".equals(moveType)
+                || "WANDER_RECT".equals(moveType)
+                || "FOLLOW_CITIZEN".equals(moveType);
+        boolean hasWanderRadiusControl = "WANDER".equals(moveType)
+                || "WANDER_CIRCLE".equals(moveType)
+                || "WANDER_RECT".equals(moveType);
+        if (hasWalkSpeedControl) {
             page.addEventListener("walk-speed", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
                 ctx.getValue("walk-speed", Double.class).ifPresent(v -> {
                     walkSpeed[0] = v.floatValue();
@@ -3986,11 +4134,21 @@ public class CitizensUI {
         }
 
         // Wander radius input
-        if (isAnyWander) {
+        if (hasWanderRadiusControl) {
             page.addEventListener("wander-radius", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
                 ctx.getValue("wander-radius", Double.class).ifPresent(v -> {
                     wanderRadius[0] = Math.max(1, v.floatValue());
                     citizen.setMovementBehavior(new MovementBehavior(moveType, walkSpeed[0], wanderRadius[0], wanderWidth[0], wanderDepth[0]));
+                    plugin.getCitizensManager().saveCitizen(citizen, true);
+                });
+            });
+        }
+
+        if ("FOLLOW_CITIZEN".equals(moveType)) {
+            page.addEventListener("follow-distance", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
+                ctx.getValue("follow-distance", Double.class).ifPresent(v -> {
+                    followDistance[0] = Math.max(0.1f, v.floatValue());
+                    citizen.setFollowDistance(followDistance[0]);
                     plugin.getCitizensManager().saveCitizen(citizen, true);
                 });
             });

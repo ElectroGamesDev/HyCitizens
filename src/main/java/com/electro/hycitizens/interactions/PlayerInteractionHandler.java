@@ -134,6 +134,11 @@ public class PlayerInteractionHandler implements PacketWatcher {
                 HyCitizensPlugin.get().getCitizensManager().bindCitizenEntityBinding(citizen, entity);
             }
 
+            if (type != InteractionType.Use
+                    && HyCitizensPlugin.get().getCitizensUI().tryCompleteFollowTargetSelection(playerRef, citizen)) {
+                break;
+            }
+
             if (!handleCitizenStick(playerRef, citizen)) {
                 CitizenInteraction.handleInteraction(citizen, playerRef, interactionSource);
             }

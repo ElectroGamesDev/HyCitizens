@@ -108,6 +108,7 @@ public class RoleGenerator {
         String moveType = citizen.getMovementBehavior().getType();
         boolean isIdle = "IDLE".equals(moveType);
         boolean isPatrol = "PATROL".equals(moveType);
+        boolean isFollowCitizen = "FOLLOW_CITIZEN".equals(moveType);
 
         String roleName = getRoleName(citizen);
 
@@ -116,6 +117,8 @@ public class RoleGenerator {
             roleJson = generateIdleRole(citizen);
         } else if (isPatrol) {
             roleJson = generatePatrolRole(citizen);
+        } else if (isFollowCitizen) {
+            roleJson = generateFollowCitizenRole(citizen);
         } else {
             roleJson = generateVariantRole(citizen);
         }
@@ -132,6 +135,7 @@ public class RoleGenerator {
         String moveType = citizen.getMovementBehavior().getType();
         boolean isIdle = "IDLE".equals(moveType);
         boolean isPatrol = "PATROL".equals(moveType);
+        boolean isFollowCitizen = "FOLLOW_CITIZEN".equals(moveType);
 
         String roleName = getRoleName(citizen);
 
@@ -140,6 +144,8 @@ public class RoleGenerator {
             roleJson = generateIdleRole(citizen);
         } else if (isPatrol) {
             roleJson = generatePatrolRole(citizen);
+        } else if (isFollowCitizen) {
+            roleJson = generateFollowCitizenRole(citizen);
         } else {
             roleJson = generateVariantRole(citizen);
         }
@@ -247,7 +253,41 @@ public class RoleGenerator {
         role.addProperty("KnockbackScale", citizen.getKnockbackScale());
 
         JsonArray instructions = new JsonArray();
-        instructions.add(buildFollowInstruction());
+        instructions.add(buildFollowInstruction(citizen));
+        role.add("Instructions", instructions);
+
+        role.addProperty("NameTranslationKey", citizen.getNameTranslationKey());
+
+        return role;
+    }
+
+    @Nonnull
+    private JsonObject generateFollowCitizenRole(@Nonnull CitizenData citizen) {
+        JsonObject role = new JsonObject();
+        role.addProperty("Type", "Generic");
+        role.addProperty("Appearance", citizen.getModelId());
+
+        JsonArray motionControllers = new JsonArray();
+        JsonObject walkController = new JsonObject();
+        walkController.addProperty("Type", "Walk");
+        motionControllers.add(walkController);
+        role.add("MotionControllerList", motionControllers);
+
+        JsonObject maxHealthCompute = new JsonObject();
+        maxHealthCompute.addProperty("Compute", "MaxHealth");
+        role.add("MaxHealth", maxHealthCompute);
+
+        JsonObject parameters = new JsonObject();
+        JsonObject maxHealthParam = new JsonObject();
+        maxHealthParam.addProperty("Value", 100);
+        maxHealthParam.addProperty("Description", "Max health for the NPC");
+        parameters.add("MaxHealth", maxHealthParam);
+        role.add("Parameters", parameters);
+
+        role.addProperty("KnockbackScale", citizen.getKnockbackScale());
+
+        JsonArray instructions = new JsonArray();
+        instructions.add(buildFollowInstruction(citizen));
         role.add("Instructions", instructions);
 
         role.addProperty("NameTranslationKey", citizen.getNameTranslationKey());
@@ -401,7 +441,7 @@ public class RoleGenerator {
 //    }
 
     @Nonnull
-    private JsonObject buildFollowInstruction() {
+    private JsonObject buildFollowInstruction(@Nonnull CitizenData citizen) {
         JsonObject instruction = new JsonObject();
 
         JsonObject sensor = new JsonObject();
@@ -417,10 +457,11 @@ public class RoleGenerator {
 
         JsonObject bodyMotion = new JsonObject();
         bodyMotion.addProperty("Type", "Seek");
-        bodyMotion.addProperty("StopDistance", 0.1);
-        bodyMotion.addProperty("SlowDownDistance", 0.1);
+        float followDistance = Math.max(0.1f, citizen.getFollowDistance());
+        bodyMotion.addProperty("StopDistance", 0.05f);
+        bodyMotion.addProperty("SlowDownDistance", Math.max(0.6f, followDistance + 0.5f));
         bodyMotion.addProperty("AbortDistance", 500.0);
-        bodyMotion.addProperty("RelativeSpeed", 0.55);
+        bodyMotion.addProperty("RelativeSpeed", Math.max(0.2f, Math.min(3.0f, citizen.getMovementBehavior().getWalkSpeed() / 18.0f)));
         bodyMotion.addProperty("UsePathfinder", true);
         instruction.add("BodyMotion", bodyMotion);
 

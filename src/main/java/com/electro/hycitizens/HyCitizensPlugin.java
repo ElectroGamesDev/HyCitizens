@@ -3,10 +3,7 @@ package com.electro.hycitizens;
 import com.electro.hycitizens.actions.BuilderActionInteract;
 import com.electro.hycitizens.commands.CitizensCommand;
 import com.electro.hycitizens.interactions.PlayerInteractionHandler;
-import com.electro.hycitizens.listeners.ChunkPreLoadListener;
-import com.electro.hycitizens.listeners.EntityDamageListener;
-import com.electro.hycitizens.listeners.PlayerConnectionListener;
-import com.electro.hycitizens.listeners.PlayerItemInteractionHandler;
+import com.electro.hycitizens.listeners.*;
 import com.electro.hycitizens.managers.CitizensManager;
 import com.electro.hycitizens.models.CitizenData;
 import com.electro.hycitizens.ui.CitizensUI;
@@ -110,6 +107,8 @@ public class HyCitizensPlugin extends JavaPlugin {
 
         this.getEntityStoreRegistry().registerSystem(new EntityDamageListener(this));
         getEventRegistry().registerGlobal(EventPriority.LAST, ChunkPreLoadProcessEvent.class, chunkPreLoadListener::onChunkPreload);
+
+        this.getEntityStoreRegistry().registerSystem(new DuplicateNPCPrevention());
     }
 
     public static HyCitizensPlugin get() {
