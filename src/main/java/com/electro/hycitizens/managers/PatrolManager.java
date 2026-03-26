@@ -31,6 +31,10 @@ import static com.hypixel.hytale.logger.HytaleLogger.getLogger;
 public class PatrolManager {
     private static final double ARRIVAL_DISTANCE_SQUARED = 4.0;
     private static final long MONITOR_INTERVAL_MS = 250;
+    private static final long PATROL_STUCK_TIMEOUT_MS = 10_000L;
+    private static final long PATROL_RECOVERY_COOLDOWN_MS = 4_000L;
+    private static final double PATROL_PROGRESS_DISTANCE_SQUARED = 0.64;
+    private static final double PATROL_PROGRESS_DISTANCE_DELTA = 0.75;
 
     private final ConfigManager config;
     private final CitizensManager citizensManager;
@@ -45,6 +49,12 @@ public class PatrolManager {
         volatile int waypointIndex;
         volatile boolean forward;
         volatile long pauseUntilMs;
+        volatile int trackedWaypointIndex;
+        volatile Vector3d lastProgressPosition;
+        volatile double lastProgressDistance;
+        volatile long lastProgressAtMs;
+        volatile long lastRecoveryAtMs;
+        volatile int recoveryStage;
 
         PatrolSession(@Nonnull String citizenId, @Nonnull String pathName) {
             this.citizenId = citizenId;
@@ -52,6 +62,12 @@ public class PatrolManager {
             this.waypointIndex = 0;
             this.forward = true;
             this.pauseUntilMs = 0;
+            this.trackedWaypointIndex = -1;
+            this.lastProgressPosition = null;
+            this.lastProgressDistance = Double.MAX_VALUE;
+            this.lastProgressAtMs = System.currentTimeMillis();
+            this.lastRecoveryAtMs = 0L;
+            this.recoveryStage = 0;
         }
     }
 
@@ -96,11 +112,6 @@ public class PatrolManager {
             return;
         }
 
-        Ref<EntityStore> targetRef = moveTargets.get(session.citizenId);
-        if (targetRef == null) {
-            return;
-        }
-
         World world = Universe.get().getWorld(citizen.getWorldUUID());
         if (world == null) {
             return;
@@ -108,9 +119,16 @@ public class PatrolManager {
 
         List<PatrolWaypoint> waypoints = path.getWaypoints();
         int capturedIndex = session.waypointIndex;
+        if (capturedIndex < 0 || capturedIndex >= waypoints.size()) {
+            session.waypointIndex = 0;
+            capturedIndex = 0;
+        }
+        final int currentIndex = capturedIndex;
 
         world.execute(() -> {
-            if (!targetRef.isValid()) {
+            Vector3d waypointPosition = waypoints.get(currentIndex).toVector3d();
+            Ref<EntityStore> targetRef = ensureMoveTarget(citizen, world, waypointPosition);
+            if (targetRef == null || !targetRef.isValid()) {
                 return;
             }
 
@@ -120,7 +138,8 @@ public class PatrolManager {
             }
 
             if (resumingFromPause) {
-                targetTransform.setPosition(waypoints.get(capturedIndex).toVector3d());
+                targetTransform.setPosition(waypointPosition);
+                resetProgressTracking(session, citizen.getCurrentPosition(), Double.MAX_VALUE, currentIndex);
                 return;
             }
 
@@ -134,21 +153,30 @@ public class PatrolManager {
                 return;
             }
 
-            PatrolWaypoint currentWaypoint = waypoints.get(capturedIndex);
+            PatrolWaypoint currentWaypoint = waypoints.get(currentIndex);
             Vector3d npcPos = npcTransform.getPosition();
-            Vector3d wp = currentWaypoint.toVector3d();
+            Vector3d wp = waypointPosition;
             double dx = wp.x - npcPos.x;
             double dy = wp.y - npcPos.y;
             double dz = wp.z - npcPos.z;
+            double distanceSq = dx * dx + dy * dy + dz * dz;
+            double distance = Math.sqrt(distanceSq);
 
-            if (dx * dx + dy * dy + dz * dz > ARRIVAL_DISTANCE_SQUARED) {
+            if (hasPatrolProgressed(session, npcPos, distance, currentIndex)) {
+                markPatrolProgress(session, npcPos, distance, currentIndex, true);
+            }
+
+            if (distanceSq > ARRIVAL_DISTANCE_SQUARED) {
+                maybeRecoverStuckPatrol(session, citizen, world, path, npcPos, distance, currentIndex);
                 return;
             }
 
-            int nextIndex = computeNextIndex(capturedIndex, session.forward, path);
+            markPatrolProgress(session, npcPos, distance, currentIndex, true);
+
+            int nextIndex = computeNextIndex(currentIndex, session.forward, path);
             session.waypointIndex = nextIndex;
             if (path.getLoopMode() == PatrolPath.LoopMode.PING_PONG) {
-                session.forward = computeNextForward(capturedIndex, session.forward, waypoints.size());
+                session.forward = computeNextForward(currentIndex, session.forward, waypoints.size());
             }
 
             float pause = currentWaypoint.getPauseSeconds();
@@ -156,8 +184,96 @@ public class PatrolManager {
                 session.pauseUntilMs = System.currentTimeMillis() + (long) (pause * 1000);
             } else {
                 targetTransform.setPosition(waypoints.get(nextIndex).toVector3d());
+                resetProgressTracking(session, npcPos, distanceTo(waypoints.get(nextIndex).toVector3d(), npcPos), nextIndex);
             }
         });
+    }
+
+    private void maybeRecoverStuckPatrol(@Nonnull PatrolSession session, @Nonnull CitizenData citizen,
+                                         @Nonnull World world, @Nonnull PatrolPath path,
+                                         @Nonnull Vector3d npcPosition, double distanceToWaypoint, int waypointIndex) {
+        long now = System.currentTimeMillis();
+        if (session.pauseUntilMs != 0 && now < session.pauseUntilMs) {
+            return;
+        }
+        if ((now - session.lastProgressAtMs) < PATROL_STUCK_TIMEOUT_MS) {
+            return;
+        }
+        if ((now - session.lastRecoveryAtMs) < PATROL_RECOVERY_COOLDOWN_MS) {
+            return;
+        }
+
+        session.lastRecoveryAtMs = now;
+        int recoveryStage = Math.min(session.recoveryStage, 2);
+        session.recoveryStage = Math.min(recoveryStage + 1, 2);
+
+        switch (recoveryStage) {
+            case 0 -> {
+                getLogger().atInfo().log("Patrol soft reset for citizen '" + citizen.getId() + "' at waypoint " + waypointIndex + " after " + (now - session.lastProgressAtMs) + "ms without progress.");
+                Ref<EntityStore> targetRef = ensureMoveTarget(citizen, world, path.getWaypoints().get(waypointIndex).toVector3d());
+                if (targetRef != null && targetRef.isValid()) {
+                    TransformComponent targetTransform = targetRef.getStore().getComponent(targetRef, TransformComponent.getComponentType());
+                    if (targetTransform != null) {
+                        targetTransform.setPosition(path.getWaypoints().get(waypointIndex).toVector3d());
+                    }
+                }
+            }
+            case 1 -> {
+                int nearestIndex = findNearestWaypointIndex(path, npcPosition);
+                getLogger().atInfo().log("Patrol route reset for citizen '" + citizen.getId() + "' to waypoint " + nearestIndex + " after repeated stall.");
+                restartPatrolInternal(citizen, world, path, nearestIndex, true);
+                PatrolSession restartedSession = activeSessions.get(citizen.getId());
+                if (restartedSession != null) {
+                    restartedSession.recoveryStage = 2;
+                    restartedSession.lastRecoveryAtMs = now;
+                }
+            }
+            default -> {
+                getLogger().atWarning().log("Patrol teleport reset for citizen '" + citizen.getId() + "' after repeated stall. Returning to spawn and restarting patrol.");
+                citizensManager.teleportCitizenToSpawn(citizen);
+                restartPatrolInternal(citizen, world, path, 0, true);
+                PatrolSession restartedSession = activeSessions.get(citizen.getId());
+                if (restartedSession != null) {
+                    restartedSession.recoveryStage = 2;
+                    restartedSession.lastRecoveryAtMs = now;
+                }
+            }
+        }
+
+        resetProgressTracking(session, npcPosition, distanceToWaypoint, waypointIndex);
+    }
+
+    private boolean hasPatrolProgressed(@Nonnull PatrolSession session, @Nonnull Vector3d npcPosition,
+                                        double distanceToWaypoint, int waypointIndex) {
+        if (session.trackedWaypointIndex != waypointIndex || session.lastProgressPosition == null) {
+            return true;
+        }
+
+        double movedSq = distanceSq(session.lastProgressPosition, npcPosition);
+        if (movedSq >= PATROL_PROGRESS_DISTANCE_SQUARED) {
+            return true;
+        }
+
+        return (session.lastProgressDistance - distanceToWaypoint) >= PATROL_PROGRESS_DISTANCE_DELTA;
+    }
+
+    private void markPatrolProgress(@Nonnull PatrolSession session, @Nonnull Vector3d npcPosition,
+                                    double distanceToWaypoint, int waypointIndex, boolean resetRecoveryStage) {
+        session.trackedWaypointIndex = waypointIndex;
+        session.lastProgressPosition = new Vector3d(npcPosition.x, npcPosition.y, npcPosition.z);
+        session.lastProgressDistance = distanceToWaypoint;
+        session.lastProgressAtMs = System.currentTimeMillis();
+        if (resetRecoveryStage) {
+            session.recoveryStage = 0;
+        }
+    }
+
+    private void resetProgressTracking(@Nonnull PatrolSession session, @Nullable Vector3d npcPosition,
+                                       double distanceToWaypoint, int waypointIndex) {
+        session.trackedWaypointIndex = waypointIndex;
+        session.lastProgressPosition = npcPosition == null ? null : new Vector3d(npcPosition.x, npcPosition.y, npcPosition.z);
+        session.lastProgressDistance = distanceToWaypoint;
+        session.lastProgressAtMs = System.currentTimeMillis();
     }
 
     private int computeNextIndex(int current, boolean forward, @Nonnull PatrolPath path) {
@@ -185,6 +301,33 @@ public class PatrolManager {
             return true;
         }
         return forward;
+    }
+
+    private int findNearestWaypointIndex(@Nonnull PatrolPath path, @Nonnull Vector3d position) {
+        List<PatrolWaypoint> waypoints = path.getWaypoints();
+        int nearestIndex = 0;
+        double nearestDistanceSq = Double.MAX_VALUE;
+
+        for (int i = 0; i < waypoints.size(); i++) {
+            double candidateDistanceSq = distanceSq(waypoints.get(i).toVector3d(), position);
+            if (candidateDistanceSq < nearestDistanceSq) {
+                nearestDistanceSq = candidateDistanceSq;
+                nearestIndex = i;
+            }
+        }
+
+        return nearestIndex;
+    }
+
+    private double distanceSq(@Nonnull Vector3d first, @Nonnull Vector3d second) {
+        double dx = first.x - second.x;
+        double dy = first.y - second.y;
+        double dz = first.z - second.z;
+        return dx * dx + dy * dy + dz * dz;
+    }
+
+    private double distanceTo(@Nonnull Vector3d first, @Nonnull Vector3d second) {
+        return Math.sqrt(distanceSq(first, second));
     }
 
     private void spawnMoveTarget(@Nonnull CitizenData citizen, @Nonnull World world, @Nonnull Vector3d position) {
@@ -227,6 +370,46 @@ public class PatrolManager {
         }
     }
 
+    @Nullable
+    private Ref<EntityStore> ensureMoveTarget(@Nonnull CitizenData citizen, @Nonnull World world, @Nonnull Vector3d position) {
+        Ref<EntityStore> targetRef = moveTargets.get(citizen.getId());
+        if (targetRef != null && targetRef.isValid()) {
+            TransformComponent targetTransform = targetRef.getStore().getComponent(targetRef, TransformComponent.getComponentType());
+            if (targetTransform != null) {
+                targetTransform.setPosition(new Vector3d(position.x, position.y, position.z));
+                bindMoveTarget(citizen, targetRef);
+                return targetRef;
+            }
+        }
+
+        spawnMoveTarget(citizen, world, position);
+        Ref<EntityStore> spawnedRef = moveTargets.get(citizen.getId());
+        if (spawnedRef != null && spawnedRef.isValid()) {
+            bindMoveTarget(citizen, spawnedRef);
+        }
+        return spawnedRef;
+    }
+
+    private void bindMoveTarget(@Nonnull CitizenData citizen, @Nonnull Ref<EntityStore> targetRef) {
+        Ref<EntityStore> npcRef = citizen.getNpcRef();
+        if (npcRef == null || !npcRef.isValid() || !targetRef.isValid()) {
+            return;
+        }
+
+        NPCEntity npcEntity = npcRef.getStore().getComponent(npcRef, NPCEntity.getComponentType());
+        if (npcEntity == null || npcEntity.getRole() == null || npcEntity.getRole().getMarkedEntitySupport() == null) {
+            return;
+        }
+
+        TransformComponent targetTransform = targetRef.getStore().getComponent(targetRef, TransformComponent.getComponentType());
+        if (targetTransform == null) {
+            return;
+        }
+
+        npcEntity.getRole().getMarkedEntitySupport().setMarkedEntity("LockedTarget", targetRef);
+        npcEntity.setLeashPoint(targetTransform.getPosition());
+    }
+
     private void cleanupMoveTarget(@Nonnull CitizenData citizen, @Nonnull World world) {
         Ref<EntityStore> targetRef = moveTargets.remove(citizen.getId());
         if (targetRef == null) {
@@ -247,8 +430,6 @@ public class PatrolManager {
             return;
         }
 
-        stopPatrol(citizenId);
-
         CitizenData citizen = citizensManager.getCitizen(citizenId);
         if (citizen == null || citizen.getNpcRef() == null || !citizen.getNpcRef().isValid()) {
             return;
@@ -259,11 +440,11 @@ public class PatrolManager {
             return;
         }
 
-        PatrolSession session = new PatrolSession(citizenId, pathName);
-        activeSessions.put(citizenId, session);
-
-        Vector3d firstWaypoint = path.getWaypoints().get(0).toVector3d();
-        world.execute(() -> spawnMoveTarget(citizen, world, new Vector3d(firstWaypoint.x, firstWaypoint.y, firstWaypoint.z)));
+        activeSessions.remove(citizenId);
+        world.execute(() -> {
+            cleanupMoveTarget(citizen, world);
+            restartPatrolInternal(citizen, world, path, 0, true);
+        });
     }
 
     public void stopPatrol(@Nonnull String citizenId) {
@@ -288,8 +469,6 @@ public class PatrolManager {
     }
 
     public void moveCitizenToPosition(@Nonnull String citizenId, @Nonnull Vector3d position) {
-        stopPatrol(citizenId);
-
         CitizenData citizen = citizensManager.getCitizen(citizenId);
         if (citizen == null || citizen.getNpcRef() == null || !citizen.getNpcRef().isValid()) {
             return;
@@ -300,7 +479,55 @@ public class PatrolManager {
             return;
         }
 
-        world.execute(() -> spawnMoveTarget(citizen, world, new Vector3d(position.x, position.y, position.z)));
+        activeSessions.remove(citizenId);
+        world.execute(() -> {
+            cleanupMoveTarget(citizen, world);
+            spawnMoveTarget(citizen, world, new Vector3d(position.x, position.y, position.z));
+        });
+    }
+
+    public void updateMoveTargetPosition(@Nonnull String citizenId, @Nonnull Vector3d position) {
+        CitizenData citizen = citizensManager.getCitizen(citizenId);
+        if (citizen == null || citizen.getNpcRef() == null || !citizen.getNpcRef().isValid()) {
+            return;
+        }
+
+        World world = Universe.get().getWorld(citizen.getWorldUUID());
+        if (world == null) {
+            return;
+        }
+
+        world.execute(() -> {
+            ensureMoveTarget(citizen, world, new Vector3d(position.x, position.y, position.z));
+        });
+    }
+
+    private void restartPatrolInternal(@Nonnull CitizenData citizen, @Nonnull World world,
+                                       @Nonnull PatrolPath path, int startIndex, boolean forward) {
+        cleanupMoveTarget(citizen, world);
+
+        PatrolSession session = new PatrolSession(citizen.getId(), path.getName());
+        session.waypointIndex = Math.max(0, Math.min(startIndex, path.getWaypoints().size() - 1));
+        session.forward = forward;
+        activeSessions.put(citizen.getId(), session);
+
+        Vector3d waypointPosition = path.getWaypoints().get(session.waypointIndex).toVector3d();
+        Ref<EntityStore> npcRef = citizen.getNpcRef();
+        Vector3d npcPosition = citizen.getCurrentPosition() != null ? citizen.getCurrentPosition() : citizen.getPosition();
+        if (npcRef != null && npcRef.isValid()) {
+            TransformComponent npcTransform = npcRef.getStore().getComponent(npcRef, TransformComponent.getComponentType());
+            if (npcTransform != null) {
+                npcPosition = npcTransform.getPosition();
+            }
+        }
+
+        ensureMoveTarget(citizen, world, waypointPosition);
+        resetProgressTracking(session, npcPosition, distanceTo(waypointPosition, npcPosition), session.waypointIndex);
+    }
+
+    public boolean isPatrolPaused(@Nonnull String citizenId) {
+        PatrolSession session = activeSessions.get(citizenId);
+        return session != null && session.pauseUntilMs != 0 && System.currentTimeMillis() < session.pauseUntilMs;
     }
 
     public void stopMoving(@Nonnull String citizenId) {

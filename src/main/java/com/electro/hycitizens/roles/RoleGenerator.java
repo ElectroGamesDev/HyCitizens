@@ -10,9 +10,11 @@ import java.io.FileWriter;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.Collection;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 import static com.hypixel.hytale.logger.HytaleLogger.getLogger;
@@ -99,61 +101,89 @@ public class RoleGenerator {
     }
 
     @Nonnull
+    public String getScheduleTravelRoleName(@Nonnull CitizenData citizen, @Nonnull ScheduleEntry entry) {
+        return "HyCitizens_" + citizen.getId() + "_ScheduleTravel_" + sanitizeScheduleId(entry.getId()) + "_Role";
+    }
+
+    @Nonnull
+    public String getScheduleFallbackTravelRoleName(@Nonnull CitizenData citizen) {
+        return "HyCitizens_" + citizen.getId() + "_ScheduleFallbackTravel_Role";
+    }
+
+    @Nonnull
+    public String getScheduleFallbackIdleRoleName(@Nonnull CitizenData citizen) {
+        return "HyCitizens_" + citizen.getId() + "_ScheduleFallbackIdle_Role";
+    }
+
+    @Nonnull
+    public String getScheduleEntryRoleName(@Nonnull CitizenData citizen, @Nonnull ScheduleEntry entry) {
+        return "HyCitizens_" + citizen.getId() + "_ScheduleEntry_" + sanitizeScheduleId(entry.getId()) + "_Role";
+    }
+
+    @Nonnull
+    private Set<String> getGeneratedRoleNames(@Nonnull CitizenData citizen) {
+        Set<String> roleNames = new LinkedHashSet<>();
+        roleNames.add(getRoleName(citizen));
+        roleNames.add(getScheduleFallbackTravelRoleName(citizen));
+        roleNames.add(getScheduleFallbackIdleRoleName(citizen));
+        for (ScheduleEntry entry : citizen.getScheduleConfig().getEntries()) {
+            roleNames.add(getScheduleTravelRoleName(citizen, entry));
+            roleNames.add(getScheduleEntryRoleName(citizen, entry));
+        }
+        return roleNames;
+    }
+
+    @Nonnull
     public String generateRole(@Nonnull CitizenData citizen) {
         generateRoleIfChanged(citizen);
         return getRoleName(citizen);
     }
 
     public boolean forceRoleGeneration(@Nonnull CitizenData citizen) {
-        String moveType = citizen.getMovementBehavior().getType();
-        boolean isIdle = "IDLE".equals(moveType);
-        boolean isPatrol = "PATROL".equals(moveType);
-
-        String roleName = getRoleName(citizen);
-
-        JsonObject roleJson;
-        if (isIdle) {
-            roleJson = generateIdleRole(citizen);
-        } else if (isPatrol) {
-            roleJson = generatePatrolRole(citizen);
-        } else {
-            roleJson = generateVariantRole(citizen);
+        Set<String> activeRoleNames = getGeneratedRoleNames(citizen);
+        boolean changed = forceSingleRoleGeneration(getRoleName(citizen), generateCurrentBaseRole(citizen));
+        changed |= forceSingleRoleGeneration(getScheduleFallbackTravelRoleName(citizen),
+                generateSeekRole(citizen, citizen.getMovementBehavior().getWalkSpeed(), 0.05f, 1.0f));
+        changed |= forceSingleRoleGeneration(getScheduleFallbackIdleRoleName(citizen), generateIdleRole(citizen));
+        for (ScheduleEntry entry : citizen.getScheduleConfig().getEntries()) {
+            changed |= forceSingleRoleGeneration(getScheduleTravelRoleName(citizen, entry), generateScheduleTravelRole(citizen, entry));
+            changed |= forceSingleRoleGeneration(getScheduleEntryRoleName(citizen, entry), generateScheduleEntryRole(citizen, entry));
         }
-
-        String content = gson.toJson(roleJson);
-
-        writeRoleFile(roleName, content);
-        lastGeneratedContent.put(roleName, content);
-        return true;
+        changed |= cleanupStaleGeneratedRoles(citizen.getId(), activeRoleNames);
+        return changed;
     }
 
     // Returns true if the role file was actually written
     public boolean generateRoleIfChanged(@Nonnull CitizenData citizen) {
+        Set<String> activeRoleNames = getGeneratedRoleNames(citizen);
+        boolean changed = writeRoleIfChanged(getRoleName(citizen), generateCurrentBaseRole(citizen));
+        changed |= writeRoleIfChanged(getScheduleFallbackTravelRoleName(citizen),
+                generateSeekRole(citizen, citizen.getMovementBehavior().getWalkSpeed(), 0.05f, 1.0f));
+        changed |= writeRoleIfChanged(getScheduleFallbackIdleRoleName(citizen), generateIdleRole(citizen));
+        for (ScheduleEntry entry : citizen.getScheduleConfig().getEntries()) {
+            changed |= writeRoleIfChanged(getScheduleTravelRoleName(citizen, entry), generateScheduleTravelRole(citizen, entry));
+            changed |= writeRoleIfChanged(getScheduleEntryRoleName(citizen, entry), generateScheduleEntryRole(citizen, entry));
+        }
+        changed |= cleanupStaleGeneratedRoles(citizen.getId(), activeRoleNames);
+        return changed;
+    }
+
+    @Nonnull
+    private JsonObject generateCurrentBaseRole(@Nonnull CitizenData citizen) {
         String moveType = citizen.getMovementBehavior().getType();
         boolean isIdle = "IDLE".equals(moveType);
         boolean isPatrol = "PATROL".equals(moveType);
-
-        String roleName = getRoleName(citizen);
-
-        JsonObject roleJson;
+        boolean isFollowCitizen = "FOLLOW_CITIZEN".equals(moveType);
         if (isIdle) {
-            roleJson = generateIdleRole(citizen);
+            return generateIdleRole(citizen);
         } else if (isPatrol) {
-            roleJson = generatePatrolRole(citizen);
+            return generatePatrolRole(citizen);
+        } else if (isFollowCitizen) {
+            return generateSeekRole(citizen, citizen.getMovementBehavior().getWalkSpeed(), 0.05f,
+                    Math.max(0.6f, Math.min(1.4f, citizen.getFollowDistance() + 0.35f)));
         } else {
-            roleJson = generateVariantRole(citizen);
+            return generateVariantRole(citizen);
         }
-
-        String newContent = gson.toJson(roleJson);
-        String previousContent = lastGeneratedContent.get(roleName);
-
-        if (newContent.equals(previousContent)) {
-            return false;
-        }
-
-        writeRoleFile(roleName, newContent);
-        lastGeneratedContent.put(roleName, newContent);
-        return true;
     }
 
     @Nonnull
@@ -247,11 +277,74 @@ public class RoleGenerator {
         role.addProperty("KnockbackScale", citizen.getKnockbackScale());
 
         JsonArray instructions = new JsonArray();
-        instructions.add(buildFollowInstruction());
+        instructions.add(buildSeekInstruction(citizen.getMovementBehavior().getWalkSpeed(), 0.05f, 1.0f));
         role.add("Instructions", instructions);
 
         role.addProperty("NameTranslationKey", citizen.getNameTranslationKey());
 
+        return role;
+    }
+
+    @Nonnull
+    private JsonObject generateScheduleTravelRole(@Nonnull CitizenData citizen, @Nonnull ScheduleEntry entry) {
+        return generateSeekRole(citizen, entry.getTravelSpeed(), 0.05f, Math.max(0.75f, entry.getArrivalRadius() + 0.5f));
+    }
+
+    @Nonnull
+    private JsonObject generateScheduleEntryRole(@Nonnull CitizenData citizen, @Nonnull ScheduleEntry entry) {
+        return switch (entry.getActivityType()) {
+            case IDLE -> generateIdleRole(citizen);
+            case WANDER -> generateScheduleWanderRole(citizen, entry);
+            case PATROL -> generateSeekRole(citizen, entry.getTravelSpeed(), 0.05f,
+                    Math.max(0.75f, entry.getArrivalRadius() + 0.5f));
+            case FOLLOW_CITIZEN -> generateSeekRole(citizen, entry.getTravelSpeed(), 0.05f,
+                    Math.max(0.6f, Math.min(1.4f, entry.getFollowDistance() + 0.35f)));
+        };
+    }
+
+    @Nonnull
+    private JsonObject generateSeekRole(@Nonnull CitizenData citizen, float walkSpeed, float stopDistance, float slowDownDistance) {
+        JsonObject role = new JsonObject();
+        role.addProperty("Type", "Generic");
+        role.addProperty("Appearance", citizen.getModelId());
+
+        JsonArray motionControllers = new JsonArray();
+        JsonObject walkController = new JsonObject();
+        walkController.addProperty("Type", "Walk");
+        motionControllers.add(walkController);
+        role.add("MotionControllerList", motionControllers);
+
+        JsonObject maxHealthCompute = new JsonObject();
+        maxHealthCompute.addProperty("Compute", "MaxHealth");
+        role.add("MaxHealth", maxHealthCompute);
+
+        JsonObject parameters = new JsonObject();
+        JsonObject maxHealthParam = new JsonObject();
+        maxHealthParam.addProperty("Value", 100);
+        maxHealthParam.addProperty("Description", "Max health for the NPC");
+        parameters.add("MaxHealth", maxHealthParam);
+        role.add("Parameters", parameters);
+
+        role.addProperty("KnockbackScale", citizen.getKnockbackScale());
+
+        JsonArray instructions = new JsonArray();
+        instructions.add(buildSeekInstruction(walkSpeed, stopDistance, slowDownDistance));
+        role.add("Instructions", instructions);
+
+        role.addProperty("NameTranslationKey", citizen.getNameTranslationKey());
+        return role;
+    }
+
+    @Nonnull
+    private JsonObject generateScheduleWanderRole(@Nonnull CitizenData citizen, @Nonnull ScheduleEntry entry) {
+        JsonObject role = generateVariantRole(citizen);
+        JsonObject modify = role.getAsJsonObject("Modify");
+        modify.addProperty("WanderRadius", entry.getWanderRadius());
+        modify.addProperty("MaxSpeed", entry.getTravelSpeed());
+        modify.addProperty("FollowPatrolPath", false);
+        modify.addProperty("PatrolPathName", "");
+        modify.addProperty("Patrol", false);
+        modify.addProperty("PatrolWanderDistance", 0.0f);
         return role;
     }
 
@@ -401,7 +494,7 @@ public class RoleGenerator {
 //    }
 
     @Nonnull
-    private JsonObject buildFollowInstruction() {
+    private JsonObject buildSeekInstruction(float walkSpeed, float stopDistance, float slowDownDistance) {
         JsonObject instruction = new JsonObject();
 
         JsonObject sensor = new JsonObject();
@@ -417,10 +510,10 @@ public class RoleGenerator {
 
         JsonObject bodyMotion = new JsonObject();
         bodyMotion.addProperty("Type", "Seek");
-        bodyMotion.addProperty("StopDistance", 0.1);
-        bodyMotion.addProperty("SlowDownDistance", 0.1);
+        bodyMotion.addProperty("StopDistance", Math.max(0.05f, stopDistance));
+        bodyMotion.addProperty("SlowDownDistance", Math.max(stopDistance + 0.25f, slowDownDistance));
         bodyMotion.addProperty("AbortDistance", 500.0);
-        bodyMotion.addProperty("RelativeSpeed", 0.55);
+        bodyMotion.addProperty("RelativeSpeed", Math.max(0.2f, Math.min(3.0f, walkSpeed / 18.0f)));
         bodyMotion.addProperty("UsePathfinder", true);
         instruction.add("BodyMotion", bodyMotion);
 
@@ -526,12 +619,70 @@ public class RoleGenerator {
     }
 
     public void deleteRoleFile(@Nonnull String citizenId) {
-        String roleName = "HyCitizens_" + citizenId + "_Role";
-        lastGeneratedContent.remove(roleName);
-        File roleFile = new File(generatedRolesDir, roleName + ".json");
-        if (roleFile.exists()) {
-            roleFile.delete();
+        String prefix = "HyCitizens_" + citizenId + "_";
+        File[] files = generatedRolesDir.listFiles((dir, name) -> name.startsWith(prefix) && name.endsWith(".json"));
+        if (files == null) {
+            return;
         }
+
+        for (File roleFile : files) {
+            String fileName = roleFile.getName();
+            String roleName = fileName.substring(0, fileName.length() - ".json".length());
+            lastGeneratedContent.remove(roleName);
+            if (roleFile.exists()) {
+                roleFile.delete();
+            }
+        }
+    }
+
+    private boolean forceSingleRoleGeneration(@Nonnull String roleName, @Nonnull JsonObject roleJson) {
+        String content = gson.toJson(roleJson);
+        writeRoleFile(roleName, content);
+        lastGeneratedContent.put(roleName, content);
+        return true;
+    }
+
+    private boolean writeRoleIfChanged(@Nonnull String roleName, @Nonnull JsonObject roleJson) {
+        String newContent = gson.toJson(roleJson);
+        String previousContent = lastGeneratedContent.get(roleName);
+
+        if (newContent.equals(previousContent)) {
+            return false;
+        }
+
+        writeRoleFile(roleName, newContent);
+        lastGeneratedContent.put(roleName, newContent);
+        return true;
+    }
+
+    @Nonnull
+    private String sanitizeScheduleId(@Nonnull String value) {
+        return value.replaceAll("[^A-Za-z0-9_-]", "_");
+    }
+
+    private boolean cleanupStaleGeneratedRoles(@Nonnull String citizenId, @Nonnull Set<String> activeRoleNames) {
+        boolean changed = false;
+        String prefix = "HyCitizens_" + citizenId + "_";
+        File[] files = generatedRolesDir.listFiles((dir, name) -> name.startsWith(prefix) && name.endsWith(".json"));
+        if (files == null) {
+            return false;
+        }
+
+        for (File roleFile : files) {
+            String fileName = roleFile.getName();
+            String roleName = fileName.substring(0, fileName.length() - ".json".length());
+            if (activeRoleNames.contains(roleName)) {
+                continue;
+            }
+            lastGeneratedContent.remove(roleName);
+            if (roleFile.delete()) {
+                changed = true;
+            }
+        }
+
+        lastGeneratedContent.keySet().removeIf(roleName ->
+                roleName.startsWith(prefix) && !activeRoleNames.contains(roleName));
+        return changed;
     }
 
     public void regenerateAllRoles(@Nonnull Collection<CitizenData> citizens) {

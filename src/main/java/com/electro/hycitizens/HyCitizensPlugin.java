@@ -2,11 +2,9 @@ package com.electro.hycitizens;
 
 import com.electro.hycitizens.actions.BuilderActionInteract;
 import com.electro.hycitizens.commands.CitizensCommand;
+import com.electro.hycitizens.components.CitizenNametagComponent;
 import com.electro.hycitizens.interactions.PlayerInteractionHandler;
-import com.electro.hycitizens.listeners.ChunkPreLoadListener;
-import com.electro.hycitizens.listeners.EntityDamageListener;
-import com.electro.hycitizens.listeners.PlayerConnectionListener;
-import com.electro.hycitizens.listeners.PlayerItemInteractionHandler;
+import com.electro.hycitizens.listeners.*;
 import com.electro.hycitizens.managers.CitizensManager;
 import com.electro.hycitizens.models.CitizenData;
 import com.electro.hycitizens.ui.CitizensUI;
@@ -14,6 +12,7 @@ import com.electro.hycitizens.ui.SkinCustomizerUI;
 import com.electro.hycitizens.util.ConfigManager;
 import com.electro.hycitizens.util.RoleAssetPackManager;
 import com.electro.hycitizens.util.UpdateChecker;
+import com.hypixel.hytale.component.ComponentType;
 import com.hypixel.hytale.event.EventPriority;
 import com.hypixel.hytale.server.core.HytaleServer;
 import com.hypixel.hytale.server.core.event.events.player.PlayerConnectEvent;
@@ -22,6 +21,7 @@ import com.hypixel.hytale.server.core.modules.interaction.interaction.config.Int
 import com.hypixel.hytale.server.core.plugin.JavaPlugin;
 import com.hypixel.hytale.server.core.plugin.JavaPluginInit;
 import com.hypixel.hytale.server.core.universe.world.events.ChunkPreLoadProcessEvent;
+import com.hypixel.hytale.server.core.universe.world.storage.EntityStore;
 import com.hypixel.hytale.server.npc.NPCPlugin;
 
 import javax.annotation.Nonnull;
@@ -36,6 +36,7 @@ public class HyCitizensPlugin extends JavaPlugin {
     private CitizensUI citizensUI;
     private SkinCustomizerUI skinCustomizerUI;
     private Path generatedRolesPath;
+    private ComponentType<EntityStore, CitizenNametagComponent> citizenNametagComponent;
 
     // Listeners
     private ChunkPreLoadListener chunkPreLoadListener;
@@ -57,6 +58,11 @@ public class HyCitizensPlugin extends JavaPlugin {
         this.generatedRolesPath = Paths.get("mods", "HyCitizensRoles", "Server", "NPC", "Roles");
 
         RoleAssetPackManager.setup();
+        this.citizenNametagComponent = this.getEntityStoreRegistry().registerComponent(
+                CitizenNametagComponent.class,
+                "HCNAMETAG",
+                CitizenNametagComponent.CODEC
+        );
 
         this.citizensManager = new CitizensManager(this);
         this.citizensUI = new CitizensUI(this);
@@ -110,6 +116,9 @@ public class HyCitizensPlugin extends JavaPlugin {
 
         this.getEntityStoreRegistry().registerSystem(new EntityDamageListener(this));
         getEventRegistry().registerGlobal(EventPriority.LAST, ChunkPreLoadProcessEvent.class, chunkPreLoadListener::onChunkPreload);
+
+        this.getEntityStoreRegistry().registerSystem(new DuplicateNPCPrevention());
+        this.getEntityStoreRegistry().registerSystem(new DuplicateNametagPrevention());
     }
 
     public static HyCitizensPlugin get() {
@@ -135,5 +144,10 @@ public class HyCitizensPlugin extends JavaPlugin {
     @Nonnull
     public Path getGeneratedRolesPath() {
         return generatedRolesPath;
+    }
+
+    @Nonnull
+    public ComponentType<EntityStore, CitizenNametagComponent> getCitizenNametagComponent() {
+        return citizenNametagComponent;
     }
 }

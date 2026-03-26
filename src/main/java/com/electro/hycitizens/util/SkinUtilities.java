@@ -13,8 +13,9 @@ import com.hypixel.hytale.server.core.universe.playerdata.PlayerStorage;
 import com.hypixel.hytale.server.core.universe.world.World;
 import com.hypixel.hytale.server.core.universe.world.storage.EntityStore;
 
-import com.hypixel.hytale.common.util.RandomUtil;
 import com.hypixel.hytale.server.core.cosmetics.CosmeticsModule;
+import com.hypixel.hytale.server.core.cosmetics.PlayerSkinGradientSet;
+import com.hypixel.hytale.server.core.cosmetics.PlayerSkinPart;
 
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
@@ -33,6 +34,105 @@ public class SkinUtilities {
     private static final HttpClient httpClient = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(5))
             .build();
+
+    public static class CosmeticOptionEntry {
+        public final String partId;
+        public final List<String> colorOptions;
+
+        public CosmeticOptionEntry(String partId, List<String> colorOptions) {
+            this.partId = partId;
+            this.colorOptions = Collections.unmodifiableList(colorOptions);
+        }
+    }
+
+    @Nonnull
+    public static Map<String, List<CosmeticOptionEntry>> buildCosmeticCatalogue() {
+        CosmeticsModule module = CosmeticsModule.get();
+        var reg = module.getRegistry();
+
+        Map<String, List<CosmeticOptionEntry>> catalogue = new LinkedHashMap<>();
+
+        catalogue.put("bodyCharacteristic", buildEntries(reg.getBodyCharacteristics(), reg));
+        catalogue.put("underwear",          buildEntries(reg.getUnderwear(),            reg));
+        catalogue.put("skinFeature",        buildEntries(reg.getSkinFeatures(),         reg));
+        catalogue.put("face",               buildEntries(reg.getFaces(),                reg));
+        catalogue.put("eyes",               buildEntries(reg.getEyes(),                 reg));
+        catalogue.put("ears",               buildEntries(reg.getEars(),                 reg));
+        catalogue.put("mouth",              buildEntries(reg.getMouths(),               reg));
+        catalogue.put("eyebrows",           buildEntries(reg.getEyebrows(),             reg));
+        catalogue.put("facialHair",         buildEntries(reg.getFacialHairs(),          reg));
+        catalogue.put("haircut",            buildEntries(reg.getHaircuts(),             reg));
+        catalogue.put("pants",              buildEntries(reg.getPants(),                reg));
+        catalogue.put("overpants",          buildEntries(reg.getOverpants(),            reg));
+        catalogue.put("undertop",           buildEntries(reg.getUndertops(),            reg));
+        catalogue.put("overtop",            buildEntries(reg.getOvertops(),             reg));
+        catalogue.put("shoes",              buildEntries(reg.getShoes(),                reg));
+        catalogue.put("gloves",             buildEntries(reg.getGloves(),               reg));
+        catalogue.put("headAccessory",      buildEntries(reg.getHeadAccessories(),      reg));
+        catalogue.put("faceAccessory",      buildEntries(reg.getFaceAccessories(),      reg));
+        catalogue.put("earAccessory",       buildEntries(reg.getEarAccessories(),       reg));
+        catalogue.put("cape",               buildEntries(reg.getCapes(),                reg));
+
+        return catalogue;
+    }
+
+    @Nonnull
+    private static List<CosmeticOptionEntry> buildEntries(
+            @Nonnull Map<String, PlayerSkinPart> map,
+            @Nonnull com.hypixel.hytale.server.core.cosmetics.CosmeticRegistry reg) {
+
+        List<CosmeticOptionEntry> entries = new ArrayList<>();
+
+        for (PlayerSkinPart part : map.values()) {
+            String partId = part.getId();
+            List<String> colorOptions = new ArrayList<>();
+
+            // Collect the base colour pool (gradient set OR empty)
+            List<String> gradientColors = new ArrayList<>();
+            if (part.getGradientSet() != null) {
+                PlayerSkinGradientSet gradSet =
+                        (PlayerSkinGradientSet) reg.getGradientSets().get(part.getGradientSet());
+                if (gradSet != null) {
+                    gradientColors.addAll(gradSet.getGradients().keySet());
+                }
+            }
+
+            if (part.getVariants() != null && !part.getVariants().isEmpty()) {
+                // Parts that have variants: each variant has its own texture map.
+                for (Map.Entry<String, PlayerSkinPart.Variant> ve : part.getVariants().entrySet()) {
+                    String variantId = ve.getKey();
+                    Map<String, ?> textures = ve.getValue().getTextures();
+
+                    // Build combined colour list: gradient colours + variant texture ids
+                    Set<String> allColors = new LinkedHashSet<>(gradientColors);
+                    if (textures != null) allColors.addAll(textures.keySet());
+
+                    for (String colorId : allColors) {
+                        colorOptions.add(partId + "." + colorId + "." + variantId);
+                    }
+                }
+            } else {
+                // No variants: textures live directly on the part.
+                Map<String, ?> textures = part.getTextures();
+
+                Set<String> allColors = new LinkedHashSet<>(gradientColors);
+                if (textures != null) allColors.addAll(textures.keySet());
+
+                if (allColors.isEmpty()) {
+                    // Part has no colour system at all — id is used as-is.
+                    colorOptions.add(partId);
+                } else {
+                    for (String colorId : allColors) {
+                        colorOptions.add(partId + "." + colorId);
+                    }
+                }
+            }
+
+            entries.add(new CosmeticOptionEntry(partId, colorOptions));
+        }
+
+        return entries;
+    }
 
     @Nonnull
     public static CompletableFuture<PlayerSkin> getSkin(@Nonnull String username) {
@@ -365,31 +465,9 @@ public class SkinUtilities {
     };
 
     @Nonnull
-    public static Map<String, List<String>> discoverCosmeticOptions(int sampleSize) {
-        Map<String, Set<String>> optionSets = new LinkedHashMap<>();
-        for (String slot : SLOT_NAMES) {
-            optionSets.put(slot, new TreeSet<>(String.CASE_INSENSITIVE_ORDER));
-        }
-
-        Random random = RandomUtil.getSecureRandom();
-        for (int i = 0; i < sampleSize; i++) {
-            try {
-                PlayerSkin skin = CosmeticsModule.get().generateRandomSkin(random);
-                for (String slot : SLOT_NAMES) {
-                    String value = getSkinField(skin, slot);
-                    if (value != null && !value.isEmpty()) {
-                        optionSets.get(slot).add(value);
-                    }
-                }
-            } catch (Exception ignored) {
-            }
-        }
-
-        Map<String, List<String>> result = new LinkedHashMap<>();
-        for (Map.Entry<String, Set<String>> entry : optionSets.entrySet()) {
-            result.put(entry.getKey(), new ArrayList<>(entry.getValue()));
-        }
-        return result;
+    public static String partIdOf(@Nonnull String fullId) {
+        int dot = fullId.indexOf('.');
+        return dot < 0 ? fullId : fullId.substring(0, dot);
     }
 
     @Nonnull

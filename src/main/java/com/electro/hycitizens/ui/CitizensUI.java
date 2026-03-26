@@ -31,10 +31,12 @@ import javax.annotation.Nullable;
 import java.awt.*;
 import java.util.*;
 import java.util.List;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Consumer;
 
 public class CitizensUI {
     private final HyCitizensPlugin plugin;
+    private final Map<UUID, String> pendingFollowSelections = new ConcurrentHashMap<>();
 
     private String generateAnimationDropdownOptions(String selectedValue, String modelId) {
         StringBuilder sb = new StringBuilder();
@@ -119,6 +121,99 @@ public class CitizensUI {
         return sb.toString();
     }
 
+    private String generateScheduleLocationOptions(@Nonnull ScheduleConfig scheduleConfig, @Nullable String selectedLocationId) {
+        StringBuilder sb = new StringBuilder();
+        boolean noneSelected = selectedLocationId == null || selectedLocationId.isEmpty();
+        sb.append("<option value=\"\"");
+        if (noneSelected) {
+            sb.append(" selected");
+        }
+        sb.append(">None</option>\n");
+
+        for (ScheduleLocation location : scheduleConfig.getLocations()) {
+            sb.append("<option value=\"").append(escapeHtml(location.getId())).append("\"");
+            if (location.getId().equals(selectedLocationId)) {
+                sb.append(" selected");
+            }
+            sb.append(">").append(escapeHtml(location.getName())).append("</option>\n");
+        }
+        return sb.toString();
+    }
+
+    private String generateScheduleActivityOptions(@Nonnull ScheduleActivityType selectedType) {
+        StringBuilder sb = new StringBuilder();
+        appendOption(sb, ScheduleActivityType.IDLE.name(), "Idle", selectedType == ScheduleActivityType.IDLE);
+        appendOption(sb, ScheduleActivityType.WANDER.name(), "Wander", selectedType == ScheduleActivityType.WANDER);
+        appendOption(sb, ScheduleActivityType.PATROL.name(), "Patrol", selectedType == ScheduleActivityType.PATROL);
+        appendOption(sb, ScheduleActivityType.FOLLOW_CITIZEN.name(), "Follow Citizen", selectedType == ScheduleActivityType.FOLLOW_CITIZEN);
+        return sb.toString();
+    }
+
+    private String generateScheduleCitizenOptions(@Nonnull CitizenData editingCitizen, @Nullable String selectedCitizenId) {
+        StringBuilder sb = new StringBuilder();
+        boolean noneSelected = selectedCitizenId == null || selectedCitizenId.isEmpty();
+        sb.append("<option value=\"\"");
+        if (noneSelected) {
+            sb.append(" selected");
+        }
+        sb.append(">None</option>\n");
+
+        List<CitizenData> citizens = new ArrayList<>(plugin.getCitizensManager().getAllCitizens());
+        citizens.sort(Comparator.comparing(CitizenData::getName, String.CASE_INSENSITIVE_ORDER));
+        for (CitizenData citizen : citizens) {
+            if (citizen.getId().equals(editingCitizen.getId())) {
+                continue;
+            }
+            sb.append("<option value=\"").append(escapeHtml(citizen.getId())).append("\"");
+            if (citizen.getId().equals(selectedCitizenId)) {
+                sb.append(" selected");
+            }
+            sb.append(">").append(escapeHtml(citizen.getName())).append("</option>\n");
+        }
+        return sb.toString();
+    }
+
+    private String formatTime24(double time24) {
+        double clamped = Math.max(0.0, Math.min(24.0, time24));
+        int hour = (int) clamped;
+        int minute = (int) Math.round((clamped - hour) * 60.0);
+        if (minute == 60) {
+            minute = 0;
+            hour = Math.min(24, hour + 1);
+        }
+        return String.format(Locale.ROOT, "%02d:%02d", hour, minute);
+    }
+
+    private String describeScheduleActivity(@Nonnull ScheduleEntry entry) {
+        return switch (entry.getActivityType()) {
+            case IDLE -> "Idle";
+            case WANDER -> "Wander";
+            case PATROL -> entry.getPatrolPathName().isEmpty()
+                    ? "Patrol"
+                    : "Patrol: " + entry.getPatrolPathName();
+            case FOLLOW_CITIZEN -> entry.getFollowCitizenId().isEmpty()
+                    ? "Follow Citizen"
+                    : "Follow Citizen";
+        };
+    }
+
+    private String describeScheduleFallbackMode(@Nonnull ScheduleFallbackMode fallbackMode) {
+        return switch (fallbackMode) {
+            case USE_BASE_BEHAVIOR -> "Use Base Behavior";
+            case GO_TO_DEFAULT_LOCATION_IDLE -> "Go To Default Location";
+            case HOLD_LAST_SCHEDULE_STATE -> "Hold Last Schedule State";
+        };
+    }
+
+    @Nonnull
+    private String generateScheduleStatusText(@Nonnull CitizenData citizen) {
+        String statusText = citizen.getCurrentScheduleStatusText();
+        if (statusText == null || statusText.isBlank()) {
+            return "Inactive";
+        }
+        return statusText;
+    }
+
     private String generatePlayerAttitudeOptions(String selectedValue) {
         String normalized = normalizePlayerAttitude(selectedValue);
         StringBuilder sb = new StringBuilder();
@@ -169,6 +264,54 @@ public class CitizensUI {
 
     public CitizensUI(@Nonnull HyCitizensPlugin plugin) {
         this.plugin = plugin;
+    }
+
+    public void armFollowTargetSelection(@Nonnull PlayerRef playerRef, @Nonnull CitizenData citizen) {
+        pendingFollowSelections.put(playerRef.getUuid(), citizen.getId());
+        playerRef.sendMessage(Message.raw(
+                "Follow target selection armed. Left click another citizen to make '" + citizen.getName() + "' follow it."
+        ).color(Color.YELLOW));
+    }
+
+    public boolean tryCompleteFollowTargetSelection(@Nonnull PlayerRef playerRef, @Nonnull CitizenData clickedCitizen) {
+        String sourceCitizenId = pendingFollowSelections.get(playerRef.getUuid());
+        if (sourceCitizenId == null || sourceCitizenId.isEmpty()) {
+            return false;
+        }
+
+        CitizenData sourceCitizen = plugin.getCitizensManager().getCitizen(sourceCitizenId);
+        if (sourceCitizen == null) {
+            pendingFollowSelections.remove(playerRef.getUuid());
+            playerRef.sendMessage(Message.raw("The citizen you were editing no longer exists.").color(Color.RED));
+            return true;
+        }
+
+        if (sourceCitizen.getId().equals(clickedCitizen.getId())) {
+            playerRef.sendMessage(Message.raw("Choose a different citizen to follow.").color(Color.RED));
+            return true;
+        }
+
+        if (!sourceCitizen.getWorldUUID().equals(clickedCitizen.getWorldUUID())) {
+            playerRef.sendMessage(Message.raw("Both citizens must be in the same world to follow each other.").color(Color.RED));
+            return true;
+        }
+
+        pendingFollowSelections.remove(playerRef.getUuid());
+        sourceCitizen.setFollowCitizenEnabled(true);
+        sourceCitizen.getMovementBehavior().setType("FOLLOW_CITIZEN");
+        sourceCitizen.setFollowCitizenId(clickedCitizen.getId());
+        plugin.getCitizensManager().updateCitizenNPC(sourceCitizen, true);
+
+        playerRef.sendMessage(Message.raw(
+                "'" + sourceCitizen.getName() + "' will now follow '" + clickedCitizen.getName() + "'."
+        ).color(Color.GREEN));
+
+        Ref<EntityStore> playerEntityRef = playerRef.getReference();
+        if (playerEntityRef != null && playerEntityRef.isValid()) {
+            openBehaviorsGUI(playerRef, playerEntityRef.getStore(), sourceCitizen);
+        }
+
+        return true;
     }
 
     private String sanitizeGroupId(String groupName) {
@@ -908,6 +1051,7 @@ public class CitizensUI {
     }
 
     public void openCitizensGUI(@Nonnull PlayerRef playerRef, @Nonnull Store<EntityStore> store, @Nonnull Tab currentTab, @Nonnull String searchQuery, @Nullable String viewingGroup) {
+        pendingFollowSelections.remove(playerRef.getUuid());
         List<CitizenData> allCitizens = plugin.getCitizensManager().getAllCitizens();
 
         // Filter citizens by search query
@@ -1142,6 +1286,7 @@ public class CitizensUI {
                                      String modelId, float scale, String permission, String permMessage, boolean useLiveSkin,
                                      boolean preserveState, String skinUsername, boolean rotateTowardsPlayer,
                                      String group, float lookAtDistance) {
+        pendingFollowSelections.remove(playerRef.getUuid());
 
         List<String> allGroups = plugin.getCitizensManager().getAllGroups();
         String groupOptionsHTML = generateGroupDropdownOptions(group, allGroups);
@@ -1438,6 +1583,7 @@ public class CitizensUI {
     }
 
     public void openEditCitizenGUI(@Nonnull PlayerRef playerRef, @Nonnull Store<EntityStore> store, @Nonnull CitizenData citizen) {
+        pendingFollowSelections.remove(playerRef.getUuid());
         List<String> allGroups = plugin.getCitizensManager().getAllGroups();
         String groupOptionsHTML = generateGroupDropdownOptions(citizen.getGroup(), allGroups);
 
@@ -1718,7 +1864,12 @@ public class CitizensUI {
                                 <div class="form-row">
                                     <button id="behaviors-btn" class="secondary-button" style="anchor-width: 200; anchor-height: 44;">Behaviors</button>
                                     <div class="spacer-h-sm"></div>
+                                    <button id="schedule-btn" class="secondary-button" style="anchor-width: 200; anchor-height: 44;">Schedule</button>
+                                    <div class="spacer-h-sm"></div>
                                     <button id="change-position-btn" class="secondary-button" style="anchor-width: 210; anchor-height: 44;">Update Position</button>
+                                </div>
+                                <div class="spacer-sm"></div>
+                                <div class="form-row">
                                     <div class="spacer-h-sm"></div>
                                     <button id="first-interaction-btn" class="secondary-button" style="anchor-width: 240; anchor-height: 44;">First Interaction</button>
                                 </div>
@@ -3048,6 +3199,10 @@ public class CitizensUI {
             openBehaviorsGUI(playerRef, store, citizen);
         });
 
+        page.addEventListener("schedule-btn", CustomUIEventBindingType.Activating, event -> {
+            openScheduleGUI(playerRef, store, citizen);
+        });
+
         page.addEventListener("messages-btn", CustomUIEventBindingType.Activating, event -> {
             openMessagesGUI(playerRef, store, citizen);
         });
@@ -3429,6 +3584,7 @@ public class CitizensUI {
 
     public void openBehaviorsGUI(@Nonnull PlayerRef playerRef, @Nonnull Store<EntityStore> store,
                                  @Nonnull CitizenData citizen) {
+        pendingFollowSelections.remove(playerRef.getUuid());
         List<AnimationBehavior> anims = citizen.getAnimationBehaviors();
         List<IndexedAnimationBehavior> indexedAnims = new ArrayList<>();
         for (int i = 0; i < anims.size(); i++) {
@@ -3440,6 +3596,14 @@ public class CitizensUI {
         String attitude = citizen.getAttitude();
         String npcAttitude = normalizeNpcAttitude(citizen.getDefaultNpcAttitude());
         boolean takesDamage = citizen.isTakesDamage();
+        CitizenData followTarget = plugin.getCitizensManager().getCitizen(citizen.getFollowCitizenId());
+        boolean hasFollowTarget = followTarget != null && !citizen.getFollowCitizenId().trim().isEmpty();
+        String followTargetName = hasFollowTarget ? followTarget.getName() : "No citizen selected";
+        String followTargetMeta = hasFollowTarget
+                ? "Linked to " + followTarget.getId()
+                : (!citizen.getFollowCitizenId().trim().isEmpty()
+                ? "Saved target ID: " + citizen.getFollowCitizenId() + " (not found)"
+                : "Click Select Target, then hit another citizen in-world.");
 
         TemplateProcessor template = createBaseTemplate()
                 .setVariable("animations", indexedAnims)
@@ -3450,6 +3614,16 @@ public class CitizensUI {
                 .setVariable("isWander", "WANDER".equals(mb.getType()))
                 .setVariable("isWanderCircle", "WANDER_CIRCLE".equals(mb.getType()))
                 .setVariable("isWanderRect", "WANDER_RECT".equals(mb.getType()))
+                .setVariable("isFollowCitizen", "FOLLOW_CITIZEN".equals(mb.getType()))
+                .setVariable("hasWalkSpeedControl",
+                        "WANDER".equals(mb.getType())
+                                || "WANDER_CIRCLE".equals(mb.getType())
+                                || "WANDER_RECT".equals(mb.getType())
+                                || "FOLLOW_CITIZEN".equals(mb.getType()))
+                .setVariable("hasWanderRadiusControl",
+                        "WANDER".equals(mb.getType())
+                                || "WANDER_CIRCLE".equals(mb.getType())
+                                || "WANDER_RECT".equals(mb.getType()))
                 .setVariable("walkSpeed", mb.getWalkSpeed())
                 .setVariable("wanderRadius", mb.getWanderRadius())
                 .setVariable("wanderWidth", mb.getWanderWidth())
@@ -3472,11 +3646,13 @@ public class CitizensUI {
                 .setVariable("healthRegenInterval", citizen.getHealthRegenIntervalSeconds())
                 .setVariable("healthRegenDelayAfterDamage", citizen.getHealthRegenDelayAfterDamageSeconds())
                 .setVariable("isPatrol", "PATROL".equals(mb.getType()))
-                .setVariable("isAnyWander", "WANDER".equals(mb.getType()) || "WANDER_CIRCLE".equals(mb.getType()) || "WANDER_RECT".equals(mb.getType()))
                 .setVariable("patrolPathOptions", generatePatrolPathOptions(citizen.getPathConfig().getPluginPatrolPath()))
                 .setVariable("hasPatrolPaths", !plugin.getCitizensManager().getPatrolManager().getAllPathNames().isEmpty())
                 .setVariable("respawnOnDeath", citizen.isRespawnOnDeath())
-                .setVariable("respawnDelay", citizen.getRespawnDelaySeconds());
+                .setVariable("respawnDelay", citizen.getRespawnDelaySeconds())
+                .setVariable("followDistance", citizen.getFollowDistance())
+                .setVariable("followTargetName", escapeHtml(followTargetName))
+                .setVariable("followTargetMeta", escapeHtml(followTargetMeta));
 
         String html = template.process(getSharedStyles() + """
                 <div class="page-overlay">
@@ -3687,6 +3863,8 @@ public class CitizensUI {
                                     <button id="move-wander" class="{{#if isWander}}secondary-button{{else}}secondary-button{{/if}}" style="anchor-width: 130; anchor-height: 38;">Wander</button>
                                     <div class="spacer-h-sm"></div>
                                     <button id="move-patrol" class="{{#if isPatrol}}secondary-button{{else}}secondary-button{{/if}}" style="anchor-width: 130; anchor-height: 38;">Patrol</button>
+                                    <div class="spacer-h-sm"></div>
+                                    <button id="move-follow" class="{{#if isFollowCitizen}}secondary-button{{else}}secondary-button{{/if}}" style="anchor-width: 170; anchor-height: 38;">Follow Citizen</button>
                                 </div>
 
                                 <div class="spacer-sm"></div>
@@ -3713,20 +3891,50 @@ public class CitizensUI {
                                 {{/if}}
                                 {{/if}}
 
-                                {{#if isAnyWander}}
+                                {{#if hasWalkSpeedControl}}
                                 <div class="spacer-sm"></div>
                                 <div class="form-row">
                                     {{@numberField:id=walk-speed,label=Walk Speed,value={{$walkSpeed}},placeholder=10,min=1,max=100,step=1,decimals=0}}
                                 </div>
+                                {{/if}}
+
+                                {{#if hasWanderRadiusControl}}
                                 <div class="spacer-sm"></div>
                                 <div class="form-row">
                                     {{@numberField:id=wander-radius,label=Wander Radius,value={{$wanderRadius}},placeholder=5,min=1,max=100,step=1,decimals=0}}
                                 </div>
                                 {{/if}}
+
+                                {{#if isFollowCitizen}}
+                                <div class="spacer-sm"></div>
+                                <div class="form-row">
+                                    {{@numberField:id=follow-distance,label=Follow Distance,value={{$followDistance}},placeholder=1,min=0.1,max=10,step=0.1,decimals=1}}
+                                </div>
+
+                                <div class="spacer-sm"></div>
+                                <div class="card">
+                                    <div class="card-body">
+                                        <p class="list-item-title" style="text-align: center;">{{$followTargetName}}</p>
+                                        <p class="list-item-subtitle" style="text-align: center;">{{$followTargetMeta}}</p>
+                                    </div>
+                                </div>
+
+                                <div class="spacer-sm"></div>
+
+                                <div class="form-row">
+                                    <button id="select-follow-target-btn" class="secondary-button" style="anchor-width: 220; anchor-height: 40;">Select Target</button>
+                                    <div class="spacer-h-sm"></div>
+                                    <button id="clear-follow-target-btn" class="secondary-button" style="anchor-width: 200; anchor-height: 40;">Clear Target</button>
+                                </div>
+
+                                <div class="spacer-xs"></div>
+
+                                <p style="color: #8b949e; font-size: 12; text-align: center;">Select Target closes the editor, then waits for you to hit another citizen.</p>
+                                {{/if}}
                             </div>
-                
+                 
                             <div class="spacer-md"></div>
-                
+                 
                             <!-- Animations Section -->
                             <div class="section">
                                 {{@sectionHeader:title=Animations,description=Configure animations that play on various triggers}}
@@ -3818,6 +4026,7 @@ public class CitizensUI {
         final float[] wanderRadius = {mb.getWanderRadius()};
         final float[] wanderWidth = {mb.getWanderWidth()};
         final float[] wanderDepth = {mb.getWanderDepth()};
+        final float[] followDistance = {citizen.getFollowDistance()};
         List<AnimationBehavior> anims = new ArrayList<>(citizen.getAnimationBehaviors());
 
         page.addEventListener("player-attitude", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
@@ -3930,6 +4139,7 @@ public class CitizensUI {
             if ("PATROL".equals(moveType)) {
                 plugin.getCitizensManager().stopCitizenPatrol(citizen.getId());
             }
+            citizen.setFollowCitizenEnabled(false);
             citizen.setMovementBehavior(new MovementBehavior("IDLE", walkSpeed[0], wanderRadius[0], wanderWidth[0], wanderDepth[0]));
             plugin.getCitizensManager().saveCitizen(citizen, true);
             openBehaviorsGUI(playerRef, store, citizen);
@@ -3939,18 +4149,30 @@ public class CitizensUI {
             if ("PATROL".equals(moveType)) {
                 plugin.getCitizensManager().stopCitizenPatrol(citizen.getId());
             }
+            citizen.setFollowCitizenEnabled(false);
             citizen.setMovementBehavior(new MovementBehavior("WANDER", walkSpeed[0], wanderRadius[0], wanderWidth[0], wanderDepth[0]));
             plugin.getCitizensManager().saveCitizen(citizen, true);
             openBehaviorsGUI(playerRef, store, citizen);
         });
 
         page.addEventListener("move-patrol", CustomUIEventBindingType.Activating, event -> {
+            citizen.setFollowCitizenEnabled(false);
             citizen.setMovementBehavior(new MovementBehavior("PATROL", walkSpeed[0], wanderRadius[0], wanderWidth[0], wanderDepth[0]));
             plugin.getCitizensManager().saveCitizen(citizen, true);
             String patrolPath = citizen.getPathConfig().getPluginPatrolPath();
             if (!patrolPath.isEmpty()) {
                 plugin.getCitizensManager().startCitizenPatrol(citizen.getId(), patrolPath);
             }
+            openBehaviorsGUI(playerRef, store, citizen);
+        });
+
+        page.addEventListener("move-follow", CustomUIEventBindingType.Activating, event -> {
+            if ("PATROL".equals(moveType)) {
+                plugin.getCitizensManager().stopCitizenPatrol(citizen.getId());
+            }
+            citizen.setFollowCitizenEnabled(true);
+            citizen.setMovementBehavior(new MovementBehavior("FOLLOW_CITIZEN", walkSpeed[0], wanderRadius[0], wanderWidth[0], wanderDepth[0]));
+            plugin.getCitizensManager().saveCitizen(citizen, true);
             openBehaviorsGUI(playerRef, store, citizen);
         });
 
@@ -3974,8 +4196,14 @@ public class CitizensUI {
         }
 
         // Walk speed input
-        boolean isAnyWander = "WANDER".equals(moveType) || "WANDER_CIRCLE".equals(moveType) || "WANDER_RECT".equals(moveType);
-        if (isAnyWander) {
+        boolean hasWalkSpeedControl = "WANDER".equals(moveType)
+                || "WANDER_CIRCLE".equals(moveType)
+                || "WANDER_RECT".equals(moveType)
+                || "FOLLOW_CITIZEN".equals(moveType);
+        boolean hasWanderRadiusControl = "WANDER".equals(moveType)
+                || "WANDER_CIRCLE".equals(moveType)
+                || "WANDER_RECT".equals(moveType);
+        if (hasWalkSpeedControl) {
             page.addEventListener("walk-speed", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
                 ctx.getValue("walk-speed", Double.class).ifPresent(v -> {
                     walkSpeed[0] = v.floatValue();
@@ -3986,11 +4214,43 @@ public class CitizensUI {
         }
 
         // Wander radius input
-        if (isAnyWander) {
+        if (hasWanderRadiusControl) {
             page.addEventListener("wander-radius", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
                 ctx.getValue("wander-radius", Double.class).ifPresent(v -> {
                     wanderRadius[0] = Math.max(1, v.floatValue());
                     citizen.setMovementBehavior(new MovementBehavior(moveType, walkSpeed[0], wanderRadius[0], wanderWidth[0], wanderDepth[0]));
+                    plugin.getCitizensManager().saveCitizen(citizen, true);
+                });
+            });
+        }
+
+        if ("FOLLOW_CITIZEN".equals(moveType)) {
+            page.addEventListener("select-follow-target-btn", CustomUIEventBindingType.Activating, (event, ctx) -> {
+                if (!"FOLLOW_CITIZEN".equals(citizen.getMovementBehavior().getType())) {
+                    playerRef.sendMessage(Message.raw("Set the movement type to Follow Citizen first.").color(Color.RED));
+                    return;
+                }
+
+                armFollowTargetSelection(playerRef, citizen);
+                ctx.getPage().ifPresent(newPage -> newPage.close());
+            });
+
+            page.addEventListener("clear-follow-target-btn", CustomUIEventBindingType.Activating, event -> {
+                if (citizen.getFollowCitizenId().trim().isEmpty()) {
+                    playerRef.sendMessage(Message.raw("No follow target is currently linked.").color(Color.YELLOW));
+                    return;
+                }
+
+                citizen.setFollowCitizenId("");
+                plugin.getCitizensManager().updateCitizenNPC(citizen, true);
+                playerRef.sendMessage(Message.raw("Follow target cleared.").color(Color.GREEN));
+                openBehaviorsGUI(playerRef, store, citizen);
+            });
+
+            page.addEventListener("follow-distance", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
+                ctx.getValue("follow-distance", Double.class).ifPresent(v -> {
+                    followDistance[0] = Math.max(0.1f, v.floatValue());
+                    citizen.setFollowDistance(followDistance[0]);
                     plugin.getCitizensManager().saveCitizen(citizen, true);
                 });
             });
@@ -7405,6 +7665,796 @@ public class CitizensUI {
         page.addEventListener("cancel-btn", CustomUIEventBindingType.Activating, event -> {
             openDeathConfigGUI(playerRef, store, citizen);
         });
+
+        page.open(store);
+    }
+
+    private void openScheduleGUI(@Nonnull PlayerRef playerRef, @Nonnull Store<EntityStore> store,
+                                 @Nonnull CitizenData citizen) {
+        if (citizen.getScheduleConfig() == null) {
+            citizen.setScheduleConfig(new ScheduleConfig());
+        }
+        final ScheduleConfig scheduleConfig = citizen.getScheduleConfig();
+
+        Map<String, String> locationNames = new HashMap<>();
+        for (ScheduleLocation location : scheduleConfig.getLocations()) {
+            locationNames.put(location.getId(), location.getName());
+        }
+
+        StringBuilder locationsHtml = new StringBuilder();
+        List<ScheduleLocation> locations = scheduleConfig.getLocations();
+        for (int i = 0; i < locations.size(); i++) {
+            ScheduleLocation location = locations.get(i);
+            boolean isDefault = location.getId().equals(scheduleConfig.getDefaultLocationId());
+            String worldLabel = location.getWorldUUID() != null ? location.getWorldUUID().toString() : "Unknown world";
+            String positionLabel = String.format(Locale.ROOT, "%.1f, %.1f, %.1f",
+                    location.getPosition().x, location.getPosition().y, location.getPosition().z);
+
+            locationsHtml.append("""
+                                    <div class="list-item">
+                                        <div style="flex-weight: 1;">
+                                            <div>
+                                                <p style="font-size: 14; font-weight: bold;">%s%s</p>
+                                            </div>
+                                            <div>
+                                                <p style="font-size: 12; color: #888888;">%s</p>
+                                            </div>
+                                            <div>
+                                                <p style="font-size: 12; color: #888888;">%s</p>
+                                            </div>
+                                        </div>
+                                        <button id="schedule-default-location-%d" class="secondary-button" style="anchor-width: 120;">%s</button>
+                                        <div class="spacer-h-xs"></div>
+                                        <button id="schedule-update-location-%d" class="secondary-button" style="anchor-width: 120;">Update Pos</button>
+                                        <div class="spacer-h-xs"></div>
+                                        <button id="schedule-rename-location-%d" class="secondary-button" style="anchor-width: 100;">Rename</button>
+                                        <div class="spacer-h-xs"></div>
+                                        <button id="schedule-delete-location-%d" class="secondary-button" style="anchor-width: 100;">Delete</button>
+                                    </div>
+                                    <div class="spacer-xs"></div>
+                                    """.formatted(
+                    escapeHtml(location.getName()),
+                    isDefault ? " [Default]" : "",
+                    escapeHtml(worldLabel),
+                    escapeHtml(positionLabel),
+                    i,
+                    isDefault ? "Default" : "Set Default",
+                    i,
+                    i,
+                    i
+            ));
+        }
+
+        StringBuilder entriesHtml = new StringBuilder();
+        List<ScheduleEntry> entries = scheduleConfig.getEntries();
+        for (int i = 0; i < entries.size(); i++) {
+            ScheduleEntry entry = entries.get(i);
+            String locationName = locationNames.getOrDefault(entry.getLocationId(), "No location");
+            String timeLabel = formatTime24(entry.getStartTime24()) + " - " + formatTime24(entry.getEndTime24());
+            String activityLabel = describeScheduleActivity(entry);
+            if (entry.getActivityType() == ScheduleActivityType.FOLLOW_CITIZEN && !entry.getFollowCitizenId().isEmpty()) {
+                CitizenData followTarget = plugin.getCitizensManager().getCitizen(entry.getFollowCitizenId());
+                String targetName = followTarget != null ? followTarget.getName() : "Missing Citizen";
+                activityLabel = "Follow: " + targetName + " @ " + String.format(Locale.ROOT, "%.1f", entry.getFollowDistance());
+            }
+            String detailLabel = activityLabel + " | " + locationName
+                    + " | Radius " + String.format(Locale.ROOT, "%.1f", entry.getArrivalRadius());
+
+            entriesHtml.append("""
+                                    <div class="list-item">
+                                        <div style="flex-weight: 1;">
+                                            <div>
+                                                <p style="font-size: 14; font-weight: bold;">%s%s</p>
+                                            </div>
+                                            <div>
+                                                <p style="font-size: 12; color: #888888;">%s</p>
+                                            </div>
+                                            <div>
+                                                <p style="font-size: 12; color: #888888;">%s</p>
+                                            </div>
+                                        </div>
+                                        <button id="schedule-edit-entry-%d" class="secondary-button" style="anchor-width: 90;">Edit</button>
+                                        <div class="spacer-h-xs"></div>
+                                        <button id="schedule-duplicate-entry-%d" class="secondary-button" style="anchor-width: 100;">Duplicate</button>
+                                        <div class="spacer-h-xs"></div>
+                                        <button id="schedule-toggle-entry-%d" class="secondary-button" style="anchor-width: 95;">%s</button>
+                                        <div class="spacer-h-xs"></div>
+                                        <button id="schedule-move-up-entry-%d" class="secondary-button" style="anchor-width: 60;">Up</button>
+                                        <div class="spacer-h-xs"></div>
+                                        <button id="schedule-move-down-entry-%d" class="secondary-button" style="anchor-width: 70;">Down</button>
+                                        <div class="spacer-h-xs"></div>
+                                        <button id="schedule-delete-entry-%d" class="secondary-button" style="anchor-width: 90;">Delete</button>
+                                    </div>
+                                    <div class="spacer-xs"></div>
+                                    """.formatted(
+                    escapeHtml(entry.getName()),
+                    entry.isEnabled() ? "" : " [Disabled]",
+                    escapeHtml(timeLabel),
+                    escapeHtml(detailLabel),
+                    i,
+                    i,
+                    i,
+                    entry.isEnabled() ? "Disable" : "Enable",
+                    i,
+                    i,
+                    i
+            ));
+        }
+
+        String currentEntryName = scheduleConfig.findEntry(citizen.getCurrentScheduleEntryId())
+                .map(ScheduleEntry::getName)
+                .orElse("None");
+
+        TemplateProcessor template = createBaseTemplate()
+                .setVariable("citizenName", escapeHtml(citizen.getName()))
+                .setVariable("scheduleEnabled", scheduleConfig.isEnabled())
+                .setVariable("runtimeState", citizen.getCurrentScheduleRuntimeState().name())
+                .setVariable("currentEntryName", escapeHtml(currentEntryName))
+                .setVariable("statusText", escapeHtml(generateScheduleStatusText(citizen)))
+                .setVariable("fallbackModeText", escapeHtml(describeScheduleFallbackMode(scheduleConfig.getFallbackMode())))
+                .setVariable("locationsHtml", locationsHtml.toString())
+                .setVariable("entriesHtml", entriesHtml.toString())
+                .setVariable("hasLocations", !locations.isEmpty())
+                .setVariable("hasEntries", !entries.isEmpty());
+
+        String html = template.process(getSharedStyles() + """
+                <div class="page-overlay">
+                    <div class="main-container decorated-container" style="anchor-width: 980; anchor-height: 1040;">
+
+                        <div class="header container-title">
+                            <div class="header-content">
+                                <p class="header-title">Daily Schedule</p>
+                            </div>
+                        </div>
+
+                        <div class="body" data-hyui-scrollbar-style='"Common.ui" "DefaultScrollbarStyle"' style="layout-mode: TopScrolling;">
+                            <p class="page-description">Plan what {{$citizenName}} does throughout the day. Times use Hytale's 0-24 hour clock.</p>
+                            <div class="spacer-sm"></div>
+
+                            <div class="section">
+                                {{@sectionHeader:title=Runtime State,description=Live schedule status for this citizen}}
+                                <div class="stats-grid" style="layout: left;">
+                                    {{@statCard:value={{$runtimeState}},label=State}}
+                                    {{@statCard:value={{$currentEntryName}},label=Current Entry}}
+                                </div>
+                                <div class="spacer-xs"></div>
+                                {{@infoBox:text={{$statusText}}}}
+                            </div>
+
+                            <div class="spacer-sm"></div>
+
+                            <div class="section">
+                                {{@sectionHeader:title=Schedule Toggle,description=Enable or disable daily schedule control}}
+                                <div style="layout: center;">
+                                    <button id="schedule-toggle-enabled" class="secondary-button" style="anchor-width: 180; anchor-height: 42;">{{#if scheduleEnabled}}Enabled{{else}}Disabled{{/if}}</button>
+                                </div>
+                                <div class="spacer-xs"></div>
+                                <p style="color: #8b949e; font-size: 12; text-align: center;">When enabled, schedule entries override the citizen's base movement as needed.</p>
+                            </div>
+
+                            <div class="spacer-sm"></div>
+
+                            <div class="section">
+                                {{@sectionHeader:title=Fallback Mode,description=Behavior to use when no schedule entry is currently active}}
+                                <div class="card">
+                                    <div class="card-body">
+                                        <p style="color: #c9d1d9; font-size: 13; text-align: center;">Current: {{$fallbackModeText}}</p>
+                                    </div>
+                                </div>
+                                <div class="spacer-sm"></div>
+                                <div class="form-row">
+                                    <button id="schedule-fallback-base" class="secondary-button" style="anchor-width: 190;">Use Base</button>
+                                    <div class="spacer-h-sm"></div>
+                                    <button id="schedule-fallback-default" class="secondary-button" style="anchor-width: 220;">Go To Default Location</button>
+                                    <div class="spacer-h-sm"></div>
+                                    <button id="schedule-fallback-hold" class="secondary-button" style="anchor-width: 190;">Hold Last State</button>
+                                </div>
+                            </div>
+
+                            <div class="spacer-md"></div>
+
+                            <div class="section">
+                                {{@sectionHeader:title=Locations,description=Named places this citizen can travel to during the day}}
+                                {{#if hasLocations}}
+                                {{{$locationsHtml}}}
+                                {{else}}
+                                <p style="color: #8b949e; font-size: 12; text-align: center;">No schedule locations yet. Add one from your current position.</p>
+                                <div class="spacer-xs"></div>
+                                {{/if}}
+                                <div style="layout: center;">
+                                    <button id="schedule-add-location" class="secondary-button" style="anchor-width: 240;">Add Location At My Position</button>
+                                </div>
+                            </div>
+
+                            <div class="spacer-md"></div>
+
+                            <div class="section">
+                                {{@sectionHeader:title=Entries,description=Time blocks that define where the citizen goes and what it does there}}
+                                {{#if hasEntries}}
+                                {{{$entriesHtml}}}
+                                {{else}}
+                                <p style="color: #8b949e; font-size: 12; text-align: center;">No schedule entries yet. Create one to start using the system.</p>
+                                <div class="spacer-xs"></div>
+                                {{/if}}
+                                <div class="form-row">
+                                    <button id="schedule-add-entry" class="secondary-button" style="anchor-width: 210;">Add Schedule Entry</button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="footer">
+                            <button id="schedule-back-btn" class="secondary-button" style="anchor-width: 180;">Back To Citizen</button>
+                        </div>
+                    </div>
+                </div>
+                """);
+
+        PageBuilder page = PageBuilder.pageForPlayer(playerRef)
+                .withLifetime(CustomPageLifetime.CanDismiss)
+                .fromHtml(html);
+
+        page.addEventListener("schedule-toggle-enabled", CustomUIEventBindingType.Activating, event -> {
+            scheduleConfig.setEnabled(!scheduleConfig.isEnabled());
+            plugin.getCitizensManager().saveCitizen(citizen);
+            plugin.getCitizensManager().getScheduleManager().refreshCitizen(citizen);
+            openScheduleGUI(playerRef, store, citizen);
+        });
+
+        page.addEventListener("schedule-fallback-base", CustomUIEventBindingType.Activating, event -> {
+            scheduleConfig.setFallbackMode(ScheduleFallbackMode.USE_BASE_BEHAVIOR);
+            plugin.getCitizensManager().saveCitizen(citizen);
+            plugin.getCitizensManager().getScheduleManager().refreshCitizen(citizen);
+            openScheduleGUI(playerRef, store, citizen);
+        });
+
+        page.addEventListener("schedule-fallback-default", CustomUIEventBindingType.Activating, event -> {
+            scheduleConfig.setFallbackMode(ScheduleFallbackMode.GO_TO_DEFAULT_LOCATION_IDLE);
+            plugin.getCitizensManager().saveCitizen(citizen);
+            plugin.getCitizensManager().getScheduleManager().refreshCitizen(citizen);
+            openScheduleGUI(playerRef, store, citizen);
+        });
+
+        page.addEventListener("schedule-fallback-hold", CustomUIEventBindingType.Activating, event -> {
+            scheduleConfig.setFallbackMode(ScheduleFallbackMode.HOLD_LAST_SCHEDULE_STATE);
+            plugin.getCitizensManager().saveCitizen(citizen);
+            plugin.getCitizensManager().getScheduleManager().refreshCitizen(citizen);
+            openScheduleGUI(playerRef, store, citizen);
+        });
+
+        page.addEventListener("schedule-add-location", CustomUIEventBindingType.Activating, event -> {
+            UUID worldUuid = playerRef.getWorldUuid();
+            if (worldUuid == null) {
+                playerRef.sendMessage(Message.raw("Could not determine your world.").color(Color.RED));
+                return;
+            }
+
+            Vector3d position = new Vector3d(playerRef.getTransform().getPosition());
+            Vector3f rotation = new Vector3f(playerRef.getTransform().getRotation());
+            ScheduleLocation location = new ScheduleLocation(
+                    UUID.randomUUID().toString(),
+                    "Location " + (scheduleConfig.getLocations().size() + 1),
+                    worldUuid,
+                    position,
+                    rotation
+            );
+            scheduleConfig.getLocations().add(location);
+            if (scheduleConfig.getDefaultLocationId().isEmpty()) {
+                scheduleConfig.setDefaultLocationId(location.getId());
+            }
+            plugin.getCitizensManager().saveCitizen(citizen);
+            plugin.getCitizensManager().getScheduleManager().refreshCitizen(citizen);
+            openScheduleGUI(playerRef, store, citizen);
+        });
+
+        for (int i = 0; i < locations.size(); i++) {
+            final int index = i;
+
+            page.addEventListener("schedule-default-location-" + i, CustomUIEventBindingType.Activating, event -> {
+                ScheduleLocation location = scheduleConfig.getLocations().get(index);
+                scheduleConfig.setDefaultLocationId(location.getId());
+                plugin.getCitizensManager().saveCitizen(citizen);
+                plugin.getCitizensManager().getScheduleManager().refreshCitizen(citizen);
+                openScheduleGUI(playerRef, store, citizen);
+            });
+
+            page.addEventListener("schedule-update-location-" + i, CustomUIEventBindingType.Activating, event -> {
+                UUID worldUuid = playerRef.getWorldUuid();
+                if (worldUuid == null) {
+                    playerRef.sendMessage(Message.raw("Could not determine your world.").color(Color.RED));
+                    return;
+                }
+
+                ScheduleLocation location = scheduleConfig.getLocations().get(index);
+                location.setWorldUUID(worldUuid);
+                location.setPosition(new Vector3d(playerRef.getTransform().getPosition()));
+                location.setRotation(new Vector3f(playerRef.getTransform().getRotation()));
+                plugin.getCitizensManager().saveCitizen(citizen);
+                plugin.getCitizensManager().getScheduleManager().refreshCitizen(citizen);
+                openScheduleGUI(playerRef, store, citizen);
+            });
+
+            page.addEventListener("schedule-rename-location-" + i, CustomUIEventBindingType.Activating, event ->
+                    openScheduleLocationRenameGUI(playerRef, store, citizen, index));
+
+            page.addEventListener("schedule-delete-location-" + i, CustomUIEventBindingType.Activating, event -> {
+                ScheduleLocation location = scheduleConfig.getLocations().remove(index);
+                if (location.getId().equals(scheduleConfig.getDefaultLocationId())) {
+                    scheduleConfig.setDefaultLocationId("");
+                }
+                for (ScheduleEntry entry : scheduleConfig.getEntries()) {
+                    if (location.getId().equals(entry.getLocationId())) {
+                        entry.setLocationId("");
+                    }
+                }
+                plugin.getCitizensManager().saveCitizen(citizen);
+                plugin.getCitizensManager().getScheduleManager().refreshCitizen(citizen);
+                openScheduleGUI(playerRef, store, citizen);
+            });
+        }
+
+        page.addEventListener("schedule-add-entry", CustomUIEventBindingType.Activating, event -> {
+            ScheduleEntry newEntry = new ScheduleEntry();
+            newEntry.setId(UUID.randomUUID().toString());
+            newEntry.setName("New Entry");
+            newEntry.setStartTime24(8.0);
+            newEntry.setEndTime24(12.0);
+            if (!scheduleConfig.getLocations().isEmpty()) {
+                newEntry.setLocationId(scheduleConfig.getLocations().get(0).getId());
+            }
+            openScheduleEntryEditorGUI(playerRef, store, citizen, newEntry, true, -1);
+        });
+
+        for (int i = 0; i < entries.size(); i++) {
+            final int index = i;
+
+            page.addEventListener("schedule-edit-entry-" + i, CustomUIEventBindingType.Activating, event -> {
+                ScheduleEntry source = scheduleConfig.getEntries().get(index);
+                ScheduleEntry draft = new ScheduleEntry();
+                draft.setId(source.getId());
+                draft.setName(source.getName());
+                draft.setEnabled(source.isEnabled());
+                draft.setStartTime24(source.getStartTime24());
+                draft.setEndTime24(source.getEndTime24());
+                draft.setLocationId(source.getLocationId());
+                draft.setActivityType(source.getActivityType());
+                draft.setArrivalRadius(source.getArrivalRadius());
+                draft.setTravelSpeed(source.getTravelSpeed());
+                draft.setWanderRadius(source.getWanderRadius());
+                draft.setPatrolPathName(source.getPatrolPathName());
+                draft.setFollowCitizenId(source.getFollowCitizenId());
+                draft.setFollowDistance(source.getFollowDistance());
+                draft.setArrivalAnimationName(source.getArrivalAnimationName());
+                draft.setArrivalAnimationSlot(source.getArrivalAnimationSlot());
+                draft.setPriority(source.getPriority());
+                openScheduleEntryEditorGUI(playerRef, store, citizen, draft, false, index);
+            });
+
+            page.addEventListener("schedule-duplicate-entry-" + i, CustomUIEventBindingType.Activating, event -> {
+                ScheduleEntry source = scheduleConfig.getEntries().get(index);
+                ScheduleEntry duplicate = new ScheduleEntry();
+                duplicate.setId(UUID.randomUUID().toString());
+                duplicate.setName(source.getName() + " Copy");
+                duplicate.setEnabled(source.isEnabled());
+                duplicate.setStartTime24(source.getStartTime24());
+                duplicate.setEndTime24(source.getEndTime24());
+                duplicate.setLocationId(source.getLocationId());
+                duplicate.setActivityType(source.getActivityType());
+                duplicate.setArrivalRadius(source.getArrivalRadius());
+                duplicate.setTravelSpeed(source.getTravelSpeed());
+                duplicate.setWanderRadius(source.getWanderRadius());
+                duplicate.setPatrolPathName(source.getPatrolPathName());
+                duplicate.setFollowCitizenId(source.getFollowCitizenId());
+                duplicate.setFollowDistance(source.getFollowDistance());
+                duplicate.setArrivalAnimationName(source.getArrivalAnimationName());
+                duplicate.setArrivalAnimationSlot(source.getArrivalAnimationSlot());
+                duplicate.setPriority(source.getPriority());
+                scheduleConfig.getEntries().add(index + 1, duplicate);
+                plugin.getCitizensManager().saveCitizen(citizen);
+                plugin.getCitizensManager().getScheduleManager().refreshCitizen(citizen);
+                openScheduleGUI(playerRef, store, citizen);
+            });
+
+            page.addEventListener("schedule-toggle-entry-" + i, CustomUIEventBindingType.Activating, event -> {
+                ScheduleEntry entry = scheduleConfig.getEntries().get(index);
+                entry.setEnabled(!entry.isEnabled());
+                plugin.getCitizensManager().saveCitizen(citizen);
+                plugin.getCitizensManager().getScheduleManager().refreshCitizen(citizen);
+                openScheduleGUI(playerRef, store, citizen);
+            });
+
+            page.addEventListener("schedule-move-up-entry-" + i, CustomUIEventBindingType.Activating, event -> {
+                if (index <= 0) {
+                    openScheduleGUI(playerRef, store, citizen);
+                    return;
+                }
+                Collections.swap(scheduleConfig.getEntries(), index, index - 1);
+                plugin.getCitizensManager().saveCitizen(citizen);
+                plugin.getCitizensManager().getScheduleManager().refreshCitizen(citizen);
+                openScheduleGUI(playerRef, store, citizen);
+            });
+
+            page.addEventListener("schedule-move-down-entry-" + i, CustomUIEventBindingType.Activating, event -> {
+                if (index >= scheduleConfig.getEntries().size() - 1) {
+                    openScheduleGUI(playerRef, store, citizen);
+                    return;
+                }
+                Collections.swap(scheduleConfig.getEntries(), index, index + 1);
+                plugin.getCitizensManager().saveCitizen(citizen);
+                plugin.getCitizensManager().getScheduleManager().refreshCitizen(citizen);
+                openScheduleGUI(playerRef, store, citizen);
+            });
+
+            page.addEventListener("schedule-delete-entry-" + i, CustomUIEventBindingType.Activating, event -> {
+                scheduleConfig.getEntries().remove(index);
+                plugin.getCitizensManager().saveCitizen(citizen);
+                plugin.getCitizensManager().getScheduleManager().refreshCitizen(citizen);
+                openScheduleGUI(playerRef, store, citizen);
+            });
+        }
+
+        page.addEventListener("schedule-back-btn", CustomUIEventBindingType.Activating, event ->
+                openEditCitizenGUI(playerRef, store, citizen));
+
+        page.open(store);
+    }
+
+    private void openScheduleLocationRenameGUI(@Nonnull PlayerRef playerRef, @Nonnull Store<EntityStore> store,
+                                               @Nonnull CitizenData citizen, int locationIndex) {
+        ScheduleConfig scheduleConfig = citizen.getScheduleConfig();
+        if (locationIndex < 0 || locationIndex >= scheduleConfig.getLocations().size()) {
+            openScheduleGUI(playerRef, store, citizen);
+            return;
+        }
+
+        ScheduleLocation location = scheduleConfig.getLocations().get(locationIndex);
+
+        TemplateProcessor template = createBaseTemplate()
+                .setVariable("locationName", escapeHtml(location.getName()));
+
+        String html = template.process(getSharedStyles() + """
+                <div class="page-overlay">
+                    <div class="main-container decorated-container" style="anchor-width: 620; anchor-height: 360;">
+                        <div class="header container-title">
+                            <div class="header-content">
+                                <p class="header-title">Rename Schedule Location</p>
+                            </div>
+                        </div>
+                        <div class="body">
+                            <p class="page-description">Change the display name used by schedule entries and fallback settings.</p>
+                            <div class="spacer-sm"></div>
+                            <div class="section">
+                                {{@formField:id=schedule-location-name,label=Location Name,value={{$locationName}},placeholder=Enter a location name...}}
+                            </div>
+                        </div>
+                        <div class="footer">
+                            <button id="schedule-location-cancel-btn" class="secondary-button">Cancel</button>
+                            <div class="spacer-h-md"></div>
+                            <button id="schedule-location-save-btn" class="secondary-button" style="anchor-width: 200;">Save Name</button>
+                        </div>
+                    </div>
+                </div>
+                """);
+
+        PageBuilder page = PageBuilder.pageForPlayer(playerRef)
+                .withLifetime(CustomPageLifetime.CanDismiss)
+                .fromHtml(html);
+
+        final String[] locationName = {location.getName()};
+        page.addEventListener("schedule-location-name", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
+            locationName[0] = ctx.getValue("schedule-location-name", String.class).orElse(location.getName()).trim();
+        });
+
+        page.addEventListener("schedule-location-save-btn", CustomUIEventBindingType.Activating, event -> {
+            if (locationName[0].isEmpty()) {
+                playerRef.sendMessage(Message.raw("Location name cannot be empty.").color(Color.RED));
+                return;
+            }
+            location.setName(locationName[0]);
+            plugin.getCitizensManager().saveCitizen(citizen);
+            plugin.getCitizensManager().getScheduleManager().refreshCitizen(citizen);
+            openScheduleGUI(playerRef, store, citizen);
+        });
+
+        page.addEventListener("schedule-location-cancel-btn", CustomUIEventBindingType.Activating, event ->
+                openScheduleGUI(playerRef, store, citizen));
+
+        page.open(store);
+    }
+
+    private void openScheduleEntryEditorGUI(@Nonnull PlayerRef playerRef, @Nonnull Store<EntityStore> store,
+                                            @Nonnull CitizenData citizen, @Nonnull ScheduleEntry draftEntry,
+                                            boolean isNew, int editIndex) {
+        ScheduleConfig scheduleConfig = citizen.getScheduleConfig();
+
+        TemplateProcessor template = createBaseTemplate()
+                .setVariable("isNew", isNew)
+                .setVariable("entryName", escapeHtml(draftEntry.getName()))
+                .setVariable("startTime24", draftEntry.getStartTime24())
+                .setVariable("endTime24", draftEntry.getEndTime24())
+                .setVariable("locationOptions", generateScheduleLocationOptions(scheduleConfig, draftEntry.getLocationId()))
+                .setVariable("activityOptions", generateScheduleActivityOptions(draftEntry.getActivityType()))
+                .setVariable("followCitizenOptions", generateScheduleCitizenOptions(citizen, draftEntry.getFollowCitizenId()))
+                .setVariable("followDistance", draftEntry.getFollowDistance())
+                .setVariable("arrivalRadius", draftEntry.getArrivalRadius())
+                .setVariable("travelSpeed", draftEntry.getTravelSpeed())
+                .setVariable("wanderRadius", draftEntry.getWanderRadius())
+                .setVariable("patrolPathOptions", generatePatrolPathOptions(draftEntry.getPatrolPathName()))
+                .setVariable("arrivalAnimationName", escapeHtml(draftEntry.getArrivalAnimationName()))
+                .setVariable("arrivalAnimationSlot", draftEntry.getArrivalAnimationSlot())
+                .setVariable("priority", draftEntry.getPriority());
+
+        String html = template.process(getSharedStyles() + """
+                <div class="page-overlay">
+                    <div class="main-container decorated-container" style="anchor-width: 860; anchor-height: 980;">
+
+                        <div class="header container-title">
+                            <div class="header-content">
+                                <p class="header-title">{{#if isNew}}Create Schedule Entry{{else}}Edit Schedule Entry{{/if}}</p>
+                            </div>
+                        </div>
+
+                        <div class="body" data-hyui-scrollbar-style='"Common.ui" "DefaultScrollbarStyle"' style="layout-mode: TopScrolling;">
+                            <p class="page-description">Schedule entries use Hytale's 0-24 hour clock. Overnight ranges such as 22.0 to 6.0 are supported.</p>
+                            <div class="spacer-sm"></div>
+
+                            <div class="section">
+                                {{@sectionHeader:title=Entry Identity}}
+                                {{@formField:id=schedule-entry-name,label=Entry Name,value={{$entryName}},placeholder=Morning Patrol}}
+                            </div>
+
+                            <div class="spacer-sm"></div>
+
+                            <div class="section">
+                                {{@sectionHeader:title=Time Block}}
+                                <div class="form-row">
+                                    <div style="flex-weight: 1;">
+                                        {{@numberField:id=schedule-start-time,label=Start Time,value={{$startTime24}},placeholder=8.0,min=0,max=24,step=0.25,decimals=2,hint=Use 0-24 time, such as 6.5 for 06:30}}
+                                    </div>
+                                    <div class="spacer-h-sm"></div>
+                                    <div style="flex-weight: 1;">
+                                        {{@numberField:id=schedule-end-time,label=End Time,value={{$endTime24}},placeholder=12.0,min=0,max=24,step=0.25,decimals=2,hint=If end is earlier than start, the entry runs overnight}}
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="spacer-sm"></div>
+
+                            <div class="section">
+                                {{@sectionHeader:title=Destination}}
+                                <div class="form-row">
+                                    <select id="schedule-location-id" data-hyui-showlabel="true">
+                                        {{{$locationOptions}}}
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div class="spacer-sm"></div>
+
+                            <div class="section">
+                                {{@sectionHeader:title=Activity}}
+                                <div class="form-row">
+                                    <select id="schedule-activity-type" data-hyui-showlabel="true">
+                                        {{{$activityOptions}}}
+                                    </select>
+                                </div>
+                                <div class="spacer-xs"></div>
+                                <p class="form-hint" style="text-align: center;">Patrol uses the path below after the citizen reaches the destination.</p>
+                            </div>
+
+                            <div class="spacer-sm"></div>
+
+                            <div class="section">
+                                {{@sectionHeader:title=Travel And Activity Settings}}
+                                <div class="form-row">
+                                    <div style="flex-weight: 1;">
+                                        {{@numberField:id=schedule-arrival-radius,label=Arrival Radius,value={{$arrivalRadius}},placeholder=1.5,min=0.25,max=50,step=0.25,decimals=2}}
+                                    </div>
+                                    <div class="spacer-h-sm"></div>
+                                    <div style="flex-weight: 1;">
+                                        {{@numberField:id=schedule-travel-speed,label=Travel Speed,value={{$travelSpeed}},placeholder=10,min=1,max=100,step=1,decimals=0}}
+                                    </div>
+                                </div>
+                                <div class="spacer-xs"></div>
+                                <div class="form-row">
+                                    <div style="flex-weight: 1;">
+                                        {{@numberField:id=schedule-wander-radius,label=Wander Radius,value={{$wanderRadius}},placeholder=5,min=1,max=100,step=1,decimals=0}}
+                                    </div>
+                                    <div class="spacer-h-sm"></div>
+                                    <div style="flex-weight: 1;">
+                                        {{@numberField:id=schedule-priority,label=Priority,value={{$priority}},placeholder=0,min=0,max=1000,step=1,decimals=0,hint=Higher priority wins if entries overlap}}
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="spacer-sm"></div>
+
+                            <div class="section">
+                                {{@sectionHeader:title=Patrol Path}}
+                                <div class="form-row">
+                                    <select id="schedule-patrol-path" data-hyui-showlabel="true">
+                                        {{{$patrolPathOptions}}}
+                                    </select>
+                                </div>
+                                <div class="spacer-xs"></div>
+                                <p class="form-hint" style="text-align: center;">Used only when Activity is Patrol.</p>
+                            </div>
+
+                            <div class="spacer-sm"></div>
+
+                            <div class="section">
+                                {{@sectionHeader:title=Follow Target}}
+                                <div class="form-row">
+                                    <select id="schedule-follow-citizen-id" data-hyui-showlabel="true">
+                                        {{{$followCitizenOptions}}}
+                                    </select>
+                                </div>
+                                <div class="spacer-xs"></div>
+                                <div class="form-row">
+                                    {{@numberField:id=schedule-follow-distance,label=Follow Distance,value={{$followDistance}},placeholder=2.0,min=0.1,max=20,step=0.1,decimals=1}}
+                                </div>
+                                <div class="spacer-xs"></div>
+                                <p class="form-hint" style="text-align: center;">Used only when Activity is Follow Citizen.</p>
+                            </div>
+
+                            <div class="spacer-sm"></div>
+
+                            <div class="section">
+                                {{@sectionHeader:title=Arrival Animation,description=Optional one-time animation to play after arriving}}
+                                <div class="form-row">
+                                    <div style="flex-weight: 1;">
+                                        {{@formField:id=schedule-arrival-animation-name,label=Animation Name,value={{$arrivalAnimationName}},placeholder=Leave blank for none}}
+                                    </div>
+                                    <div class="spacer-h-sm"></div>
+                                    <div style="flex-weight: 1;">
+                                        {{@numberField:id=schedule-arrival-animation-slot,label=Animation Slot,value={{$arrivalAnimationSlot}},placeholder=0,min=0,max=12,step=1,decimals=0}}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="footer">
+                            <button id="schedule-entry-cancel-btn" class="secondary-button">Cancel</button>
+                            <div class="spacer-h-md"></div>
+                            <button id="schedule-entry-save-btn" class="secondary-button" style="anchor-width: 220;">{{#if isNew}}Create Entry{{else}}Save Changes{{/if}}</button>
+                        </div>
+                    </div>
+                </div>
+                """);
+
+        PageBuilder page = PageBuilder.pageForPlayer(playerRef)
+                .withLifetime(CustomPageLifetime.CanDismiss)
+                .fromHtml(html);
+
+        final String[] entryName = {draftEntry.getName()};
+        final double[] startTime24 = {draftEntry.getStartTime24()};
+        final double[] endTime24 = {draftEntry.getEndTime24()};
+        final String[] locationId = {draftEntry.getLocationId()};
+        final ScheduleActivityType[] activityType = {draftEntry.getActivityType()};
+        final float[] arrivalRadius = {draftEntry.getArrivalRadius()};
+        final float[] travelSpeed = {draftEntry.getTravelSpeed()};
+        final float[] wanderRadius = {draftEntry.getWanderRadius()};
+        final String[] patrolPathName = {draftEntry.getPatrolPathName()};
+        final String[] followCitizenId = {draftEntry.getFollowCitizenId()};
+        final float[] followDistance = {draftEntry.getFollowDistance()};
+        final String[] arrivalAnimationName = {draftEntry.getArrivalAnimationName()};
+        final int[] arrivalAnimationSlot = {draftEntry.getArrivalAnimationSlot()};
+        final int[] priority = {draftEntry.getPriority()};
+
+        page.addEventListener("schedule-entry-name", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
+            entryName[0] = ctx.getValue("schedule-entry-name", String.class).orElse(draftEntry.getName()).trim();
+        });
+
+        page.addEventListener("schedule-start-time", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
+            ctx.getValue("schedule-start-time", Double.class).ifPresent(v ->
+                    startTime24[0] = Math.max(0.0, Math.min(24.0, v)));
+        });
+
+        page.addEventListener("schedule-end-time", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
+            ctx.getValue("schedule-end-time", Double.class).ifPresent(v ->
+                    endTime24[0] = Math.max(0.0, Math.min(24.0, v)));
+        });
+
+        page.addEventListener("schedule-location-id", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
+            locationId[0] = ctx.getValue("schedule-location-id", String.class).orElse("");
+        });
+
+        page.addEventListener("schedule-activity-type", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
+            String value = ctx.getValue("schedule-activity-type", String.class).orElse(ScheduleActivityType.IDLE.name());
+            try {
+                activityType[0] = ScheduleActivityType.valueOf(value);
+            } catch (IllegalArgumentException ignored) {
+                activityType[0] = ScheduleActivityType.IDLE;
+            }
+        });
+
+        page.addEventListener("schedule-arrival-radius", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
+            ctx.getValue("schedule-arrival-radius", Double.class).ifPresent(v ->
+                    arrivalRadius[0] = Math.max(0.25f, v.floatValue()));
+        });
+
+        page.addEventListener("schedule-travel-speed", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
+            ctx.getValue("schedule-travel-speed", Double.class).ifPresent(v ->
+                    travelSpeed[0] = Math.max(1.0f, v.floatValue()));
+        });
+
+        page.addEventListener("schedule-wander-radius", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
+            ctx.getValue("schedule-wander-radius", Double.class).ifPresent(v ->
+                    wanderRadius[0] = Math.max(1.0f, v.floatValue()));
+        });
+
+        page.addEventListener("schedule-priority", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
+            ctx.getValue("schedule-priority", Double.class).ifPresent(v ->
+                    priority[0] = Math.max(0, v.intValue()));
+        });
+
+        page.addEventListener("schedule-patrol-path", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
+            patrolPathName[0] = ctx.getValue("schedule-patrol-path", String.class).orElse("");
+        });
+
+        page.addEventListener("schedule-follow-citizen-id", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
+            followCitizenId[0] = ctx.getValue("schedule-follow-citizen-id", String.class).orElse("");
+        });
+
+        page.addEventListener("schedule-follow-distance", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
+            ctx.getValue("schedule-follow-distance", Double.class).ifPresent(v ->
+                    followDistance[0] = Math.max(0.1f, v.floatValue()));
+        });
+
+        page.addEventListener("schedule-arrival-animation-name", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
+            arrivalAnimationName[0] = ctx.getValue("schedule-arrival-animation-name", String.class).orElse("").trim();
+        });
+
+        page.addEventListener("schedule-arrival-animation-slot", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
+            ctx.getValue("schedule-arrival-animation-slot", Double.class).ifPresent(v ->
+                    arrivalAnimationSlot[0] = Math.max(0, v.intValue()));
+        });
+
+        page.addEventListener("schedule-entry-save-btn", CustomUIEventBindingType.Activating, event -> {
+            if (entryName[0].isEmpty()) {
+                playerRef.sendMessage(Message.raw("Entry name cannot be empty.").color(Color.RED));
+                return;
+            }
+            if (locationId[0].isEmpty()) {
+                playerRef.sendMessage(Message.raw("Select a destination location first.").color(Color.RED));
+                return;
+            }
+            if (activityType[0] == ScheduleActivityType.PATROL && patrolPathName[0].isEmpty()) {
+                playerRef.sendMessage(Message.raw("Patrol entries need a patrol path.").color(Color.RED));
+                return;
+            }
+            if (activityType[0] == ScheduleActivityType.FOLLOW_CITIZEN && followCitizenId[0].isEmpty()) {
+                playerRef.sendMessage(Message.raw("Follow entries need a target citizen.").color(Color.RED));
+                return;
+            }
+
+            draftEntry.setName(entryName[0]);
+            draftEntry.setStartTime24(startTime24[0]);
+            draftEntry.setEndTime24(endTime24[0]);
+            draftEntry.setLocationId(locationId[0]);
+            draftEntry.setActivityType(activityType[0]);
+            draftEntry.setArrivalRadius(arrivalRadius[0]);
+            draftEntry.setTravelSpeed(travelSpeed[0]);
+            draftEntry.setWanderRadius(wanderRadius[0]);
+            draftEntry.setPatrolPathName(patrolPathName[0]);
+            draftEntry.setFollowCitizenId(followCitizenId[0]);
+            draftEntry.setFollowDistance(followDistance[0]);
+            draftEntry.setArrivalAnimationName(arrivalAnimationName[0]);
+            draftEntry.setArrivalAnimationSlot(arrivalAnimationSlot[0]);
+            draftEntry.setPriority(priority[0]);
+
+            if (isNew) {
+                scheduleConfig.getEntries().add(draftEntry);
+            } else if (editIndex >= 0 && editIndex < scheduleConfig.getEntries().size()) {
+                scheduleConfig.getEntries().set(editIndex, draftEntry);
+            }
+
+            plugin.getCitizensManager().saveCitizen(citizen);
+            plugin.getCitizensManager().getScheduleManager().refreshCitizen(citizen);
+            openScheduleGUI(playerRef, store, citizen);
+        });
+
+        page.addEventListener("schedule-entry-cancel-btn", CustomUIEventBindingType.Activating, event ->
+                openScheduleGUI(playerRef, store, citizen));
 
         page.open(store);
     }
