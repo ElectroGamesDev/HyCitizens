@@ -16,6 +16,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ScheduledFuture;
 
 import static com.hypixel.hytale.logger.HytaleLogger.getLogger;
 
@@ -35,6 +36,7 @@ public class CitizenData {
     private List<UUID> hologramLineUuids = new ArrayList<>();
     private Ref<EntityStore> npcRef;
     public final Map<UUID, Direction> lastLookDirections = new ConcurrentHashMap<>();
+    private transient Map<UUID, ScheduledFuture<?>> pendingLookResetTasks = new ConcurrentHashMap<>();
     private boolean rotateTowardsPlayer;
     private float lookAtDistance = 25.0f;
     private boolean hideNametag = false;
@@ -559,6 +561,14 @@ public class CitizenData {
     @Nonnull
     public Map<UUID, Boolean> getPlayersInProximity() {
         return playersInProximity;
+    }
+
+    @Nonnull
+    public Map<UUID, ScheduledFuture<?>> getPendingLookResetTasks() {
+        if (pendingLookResetTasks == null) {
+            pendingLookResetTasks = new ConcurrentHashMap<>();
+        }
+        return pendingLookResetTasks;
     }
 
     @Nonnull

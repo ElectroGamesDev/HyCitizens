@@ -67,6 +67,7 @@ public class CitizensManager {
     private static final long WANDER_UNSTICK_TICK_INTERVAL_MS = 1_000L;
     private static final long WANDER_STUCK_TIMEOUT_MS = 35_000L;
     private static final long WANDER_RECOVERY_COOLDOWN_MS = 20_000L;
+    private static final long LOOK_RESET_DELAY_MS = 3_000L;
     private static final double WANDER_PROGRESS_DISTANCE_SQUARED = 0.64;
 
     private static final class PendingHologramRemoval {
@@ -202,7 +203,7 @@ public class CitizensManager {
                         if (citizen.getSpawnedUUID() == null || citizen.getNpcRef() == null || !citizen.getNpcRef().isValid())
                             continue;
 
-                        Vector3d citizenPos = citizen.getPosition();
+                        Vector3d citizenPos = citizen.getCurrentPosition() != null ? citizen.getCurrentPosition() : citizen.getPosition();
 
                         long chunkIndex = ChunkUtil.indexChunkFromBlock(citizenPos.x, citizenPos.z);
                         WorldChunk chunk = world.getChunkIfLoaded(chunkIndex);
@@ -210,6 +211,10 @@ public class CitizensManager {
                             continue;
 
                         for (PlayerRef playerRef : players) {
+                            if (!isPlayerRefValid(playerRef)) {
+                                continue;
+                            }
+
                             float maxDistance = Math.max(0.0f, citizen.getLookAtDistance());
                             float maxDistanceSq = maxDistance * maxDistance;
 
@@ -217,24 +222,21 @@ public class CitizensManager {
                             double dz = playerRef.getTransform().getPosition().z - citizenPos.z;
 
                             double distSq = dx * dx + dz * dz;
+                            boolean withinLookDistance = distSq <= maxDistanceSq;
 
-                            if (distSq > maxDistanceSq) {
-                                continue;
-                            }
-
-                            // Check proximity animations
-                            if (!citizen.getAnimationBehaviors().isEmpty()) {
+                            if (withinLookDistance && !citizen.getAnimationBehaviors().isEmpty()) {
                                 checkProximityAnimations(citizen, playerRef, distSq);
                             }
 
-                            if (!citizen.getRotateTowardsPlayer())
+                            if (withinLookDistance
+                                    && citizen.getRotateTowardsPlayer()
+                                    && citizen.getMovementBehavior().getType().equals("IDLE")) {
+                                cancelPendingLookReset(citizen, playerRef.getUuid());
+                                rotateCitizenToPlayer(citizen, playerRef);
                                 continue;
+                            }
 
-                            // Only look at player if idle
-                            if (!citizen.getMovementBehavior().getType().equals("IDLE"))
-                                continue;
-
-                            rotateCitizenToPlayer(citizen, playerRef);
+                            scheduleLookResetIfNeeded(citizen, playerRef.getUuid());
                         }
                     }
                 });
@@ -629,6 +631,7 @@ public class CitizensManager {
         }
 
         for (CitizenData citizen : citizens.values()) {
+            cancelAllPendingLookResets(citizen);
             saveCitizen(citizen);
         }
 
@@ -1672,6 +1675,7 @@ public class CitizensManager {
             return;
         }
 
+        cancelAllPendingLookResets(citizen);
         despawnCitizenForDeletion(citizen);
         fireCitizenRemovedEvent(new CitizenRemovedEvent(citizen));
     }
@@ -2985,6 +2989,10 @@ public class CitizensManager {
     }
 
     public void rotateCitizenToPlayer(CitizenData citizen, PlayerRef playerRef) {
+        if (!isPlayerRefValid(playerRef)) {
+            return;
+        }
+
         if (citizen == null || citizen.getSpawnedUUID() == null || citizen.getNpcRef() == null || !citizen.getNpcRef().isValid()) {
             return;
         }
@@ -3034,25 +3042,197 @@ public class CitizensManager {
 
             citizen.lastLookDirections.put(playerUUID, lookDirection);
 
-            // Create ModelTransform
-            ModelTransform transform = new ModelTransform();
-            transform.lookOrientation = lookDirection;
-            transform.bodyOrientation = bodyDirection;
-
-            // Create TransformUpdate
-            TransformUpdate update = new TransformUpdate(transform);
-
-            // Create EntityUpdate
-            EntityUpdate entityUpdate = new EntityUpdate(
-                    citizenNetworkId.getId(),
-                    null,
-                    new ComponentUpdate[] { update }
-            );
-
-            // Send the packet
-            EntityUpdates packet = new EntityUpdates(null, new EntityUpdate[] { entityUpdate });
-            playerRef.getPacketHandler().write(packet);
+            sendRotationUpdate(citizenNetworkId, playerRef, lookDirection, bodyDirection);
         }
+    }
+
+    public void clearPlayerRuntimeState(@Nonnull UUID playerUuid) {
+        for (CitizenData citizen : citizens.values()) {
+            cancelPendingLookReset(citizen, playerUuid);
+            citizen.lastLookDirections.remove(playerUuid);
+            citizen.getSequentialMessageIndex().remove(playerUuid);
+            citizen.getSequentialCommandIndex().remove(playerUuid);
+            citizen.getSequentialDeathMessageIndex().remove(playerUuid);
+            citizen.getSequentialDeathCommandIndex().remove(playerUuid);
+            citizen.getSequentialFirstInteractionMessageIndex().remove(playerUuid);
+            citizen.getSequentialFirstInteractionCommandIndex().remove(playerUuid);
+            citizen.getPlayersInProximity().remove(playerUuid);
+        }
+    }
+
+    private void scheduleLookResetIfNeeded(@Nonnull CitizenData citizen, @Nonnull UUID playerUuid) {
+        if (!citizen.lastLookDirections.containsKey(playerUuid)) {
+            cancelPendingLookReset(citizen, playerUuid);
+            return;
+        }
+
+        ScheduledFuture<?> existingTask = citizen.getPendingLookResetTasks().get(playerUuid);
+        if (existingTask != null && !existingTask.isDone()) {
+            return;
+        }
+
+        final ScheduledFuture<?>[] futureRef = new ScheduledFuture<?>[1];
+        futureRef[0] = HytaleServer.SCHEDULED_EXECUTOR.schedule(() ->
+                        resetCitizenLookForPlayer(citizen, playerUuid, futureRef[0]),
+                LOOK_RESET_DELAY_MS,
+                TimeUnit.MILLISECONDS);
+
+        citizen.getPendingLookResetTasks().put(playerUuid, futureRef[0]);
+    }
+
+    private void resetCitizenLookForPlayer(@Nonnull CitizenData citizen, @Nonnull UUID playerUuid,
+                                           @Nonnull ScheduledFuture<?> expectedTask) {
+        ScheduledFuture<?> activeTask = citizen.getPendingLookResetTasks().get(playerUuid);
+        if (activeTask != expectedTask) {
+            return;
+        }
+
+        UUID worldUuid = citizen.getWorldUUID();
+        World world = Universe.get().getWorld(worldUuid);
+        if (world == null) {
+            clearPendingLookResetState(citizen, playerUuid, expectedTask);
+            return;
+        }
+
+        world.execute(() -> {
+            try {
+                ScheduledFuture<?> worldThreadTask = citizen.getPendingLookResetTasks().get(playerUuid);
+                if (worldThreadTask != expectedTask) {
+                    return;
+                }
+
+                PlayerRef playerRef = Universe.get().getPlayer(playerUuid);
+                if (!isPlayerRefValid(playerRef)) {
+                    clearPendingLookResetState(citizen, playerUuid, expectedTask);
+                    return;
+                }
+
+                if (!worldUuid.equals(playerRef.getWorldUuid())) {
+                    clearPendingLookResetState(citizen, playerUuid, expectedTask);
+                    return;
+                }
+
+                if (!citizen.lastLookDirections.containsKey(playerUuid)) {
+                    clearPendingLookResetState(citizen, playerUuid, expectedTask);
+                    return;
+                }
+
+                if (shouldRotateCitizenTowardsPlayer(citizen, playerRef)) {
+                    clearPendingLookResetState(citizen, playerUuid, expectedTask);
+                    return;
+                }
+
+                if (citizen.getSpawnedUUID() == null || citizen.getNpcRef() == null || !citizen.getNpcRef().isValid()) {
+                    clearPendingLookResetState(citizen, playerUuid, expectedTask);
+                    return;
+                }
+
+                NetworkId citizenNetworkId = citizen.getNpcRef().getStore().getComponent(citizen.getNpcRef(), NetworkId.getComponentType());
+                TransformComponent npcTransformComponent = citizen.getNpcRef().getStore().getComponent(citizen.getNpcRef(), TransformComponent.getComponentType());
+                if (citizenNetworkId == null || npcTransformComponent == null) {
+                    clearPendingLookResetState(citizen, playerUuid, expectedTask);
+                    return;
+                }
+
+                Vector3f baseRotation = npcTransformComponent.getRotation();
+                Direction baseLookDirection = toPacketDirection(baseRotation, true);
+                Direction baseBodyDirection = toPacketDirection(baseRotation, false);
+                sendRotationUpdate(citizenNetworkId, playerRef, baseLookDirection, baseBodyDirection);
+
+                citizen.lastLookDirections.remove(playerUuid);
+                clearPendingLookResetState(citizen, playerUuid, expectedTask);
+            } catch (Exception e) {
+                clearPendingLookResetState(citizen, playerUuid, expectedTask);
+                getLogger().atWarning().withCause(e)
+                        .log("Failed to reset look rotation for citizen " + citizen.getId() + " and player " + playerUuid);
+            }
+        });
+    }
+
+    private void cancelPendingLookReset(@Nonnull CitizenData citizen, @Nonnull UUID playerUuid) {
+        ScheduledFuture<?> existingTask = citizen.getPendingLookResetTasks().remove(playerUuid);
+        if (existingTask != null) {
+            existingTask.cancel(false);
+        }
+    }
+
+    private void cancelAllPendingLookResets(@Nonnull CitizenData citizen) {
+        for (Map.Entry<UUID, ScheduledFuture<?>> entry : citizen.getPendingLookResetTasks().entrySet()) {
+            ScheduledFuture<?> task = entry.getValue();
+            if (task != null) {
+                task.cancel(false);
+            }
+        }
+        citizen.getPendingLookResetTasks().clear();
+    }
+
+    private void clearPendingLookResetState(@Nonnull CitizenData citizen, @Nonnull UUID playerUuid,
+                                            @Nonnull ScheduledFuture<?> expectedTask) {
+        citizen.getPendingLookResetTasks().remove(playerUuid, expectedTask);
+    }
+
+    private boolean shouldRotateCitizenTowardsPlayer(@Nonnull CitizenData citizen, @Nonnull PlayerRef playerRef) {
+        if (!isPlayerRefValid(playerRef)) {
+            return false;
+        }
+
+        if (citizen.getSpawnedUUID() == null || citizen.getNpcRef() == null || !citizen.getNpcRef().isValid()) {
+            return false;
+        }
+
+        if (!citizen.getRotateTowardsPlayer()) {
+            return false;
+        }
+
+        if (!"IDLE".equals(citizen.getMovementBehavior().getType())) {
+            return false;
+        }
+
+        Vector3d citizenPos = citizen.getCurrentPosition() != null ? citizen.getCurrentPosition() : citizen.getPosition();
+        float maxDistance = Math.max(0.0f, citizen.getLookAtDistance());
+        double maxDistanceSq = maxDistance * maxDistance;
+
+        double dx = playerRef.getTransform().getPosition().x - citizenPos.x;
+        double dz = playerRef.getTransform().getPosition().z - citizenPos.z;
+        double distSq = dx * dx + dz * dz;
+        return distSq <= maxDistanceSq;
+    }
+
+    private boolean isPlayerRefValid(@Nullable PlayerRef playerRef) {
+        if (playerRef == null || playerRef.getPacketHandler() == null || playerRef.getWorldUuid() == null) {
+            return false;
+        }
+
+        Ref<EntityStore> playerEntityRef = playerRef.getReference();
+        return playerEntityRef != null && playerEntityRef.isValid();
+    }
+
+    private Direction toPacketDirection(@Nonnull Vector3f rotation, boolean includePitch) {
+        // Transform rotations are stored as Euler XYZ, while packet Direction expects yaw/pitch/roll.
+        float yaw = rotation.y;
+        float pitch = includePitch ? rotation.x : 0.0f;
+        return new Direction(yaw, pitch, rotation.z);
+    }
+
+    private void sendRotationUpdate(@Nonnull NetworkId citizenNetworkId, @Nonnull PlayerRef playerRef,
+                                    @Nonnull Direction lookDirection, @Nonnull Direction bodyDirection) {
+        if (!isPlayerRefValid(playerRef)) {
+            return;
+        }
+
+        ModelTransform transform = new ModelTransform();
+        transform.lookOrientation = lookDirection;
+        transform.bodyOrientation = bodyDirection;
+
+        TransformUpdate update = new TransformUpdate(transform);
+        EntityUpdate entityUpdate = new EntityUpdate(
+                citizenNetworkId.getId(),
+                null,
+                new ComponentUpdate[] { update }
+        );
+
+        EntityUpdates packet = new EntityUpdates(null, new EntityUpdate[] { entityUpdate });
+        playerRef.getPacketHandler().write(packet);
     }
 
     @Nullable
