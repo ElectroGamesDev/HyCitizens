@@ -223,7 +223,8 @@ public class CitizensManager {
                             double dz = playerRef.getTransform().getPosition().z - citizenPos.z;
 
                             double distSq = dx * dx + dz * dz;
-                            boolean withinLookDistance = distSq <= maxDistanceSq;
+                            double lookDistanceSq = distanceSquared(playerRef.getTransform().getPosition(), citizenPos);
+                            boolean withinLookDistance = lookDistanceSq <= maxDistanceSq;
 
                             if (withinLookDistance && !citizen.getAnimationBehaviors().isEmpty()) {
                                 checkProximityAnimations(citizen, playerRef, distSq);
@@ -3149,7 +3150,7 @@ public class CitizensManager {
 
             // Create directions
             Direction lookDirection = new Direction(yaw, pitch, 0f);
-            Direction bodyDirection = new Direction(yaw, 0f, 0f);
+            Direction bodyDirection = new Direction(yaw, 0, 0f);
 
             // Don't rotate if the player barely moved
             UUID playerUUID = playerRef.getUuid();
@@ -3263,7 +3264,7 @@ public class CitizensManager {
 
                 Vector3f baseRotation = npcTransformComponent.getRotation();
                 Direction baseLookDirection = toPacketDirection(baseRotation, true);
-                Direction baseBodyDirection = toPacketDirection(baseRotation, false);
+                Direction baseBodyDirection = toPacketDirection(baseRotation, true);
                 sendRotationUpdate(citizenNetworkId, playerRef, baseLookDirection, baseBodyDirection);
 
                 citizen.lastLookDirections.remove(playerUuid);
@@ -3341,11 +3342,7 @@ public class CitizensManager {
         Vector3d citizenPos = citizen.getCurrentPosition() != null ? citizen.getCurrentPosition() : citizen.getPosition();
         float maxDistance = Math.max(0.0f, citizen.getLookAtDistance());
         double maxDistanceSq = maxDistance * maxDistance;
-
-        double dx = playerRef.getTransform().getPosition().x - citizenPos.x;
-        double dz = playerRef.getTransform().getPosition().z - citizenPos.z;
-        double distSq = dx * dx + dz * dz;
-        return distSq <= maxDistanceSq;
+        return distanceSquared(playerRef.getTransform().getPosition(), citizenPos) <= maxDistanceSq;
     }
 
     private boolean shouldRotateModelNametagTowardsPlayer(@Nonnull CitizenData citizen, @Nonnull PlayerRef playerRef) {
@@ -3370,11 +3367,14 @@ public class CitizensManager {
         Vector3d citizenPos = citizen.getCurrentPosition() != null ? citizen.getCurrentPosition() : citizen.getPosition();
         float maxDistance = Math.max(0.0f, citizen.getLookAtDistance());
         double maxDistanceSq = maxDistance * maxDistance;
+        return distanceSquared(playerRef.getTransform().getPosition(), citizenPos) <= maxDistanceSq;
+    }
 
-        double dx = playerRef.getTransform().getPosition().x - citizenPos.x;
-        double dz = playerRef.getTransform().getPosition().z - citizenPos.z;
-        double distSq = dx * dx + dz * dz;
-        return distSq <= maxDistanceSq;
+    private double distanceSquared(@Nonnull Vector3d first, @Nonnull Vector3d second) {
+        double dx = first.x - second.x;
+        double dy = first.y - second.y;
+        double dz = first.z - second.z;
+        return dx * dx + dy * dy + dz * dz;
     }
 
     private boolean isPlayerRefValid(@Nullable PlayerRef playerRef) {
@@ -3447,7 +3447,7 @@ public class CitizensManager {
         float pitch = (float) Math.atan2(dy, horizontalDistance);
 
         Direction lookDirection = new Direction(yaw, pitch, 0f);
-        Direction bodyDirection = new Direction(yaw, 0f, 0f);
+        Direction bodyDirection = new Direction(yaw, pitch, 0f);
 
         UUID playerUuid = playerRef.getUuid();
         Direction lastLook = citizen.lastNametagLookDirections.get(playerUuid);
@@ -3534,7 +3534,7 @@ public class CitizensManager {
 
                 Vector3f baseRotation = nametagTransform.getRotation();
                 Direction baseLookDirection = toPacketDirection(baseRotation, true);
-                Direction baseBodyDirection = toPacketDirection(baseRotation, false);
+                Direction baseBodyDirection = toPacketDirection(baseRotation, true);
                 sendRotationUpdate(nametagNetworkId, playerRef, baseLookDirection, baseBodyDirection);
 
                 citizen.lastNametagLookDirections.remove(playerUuid);
