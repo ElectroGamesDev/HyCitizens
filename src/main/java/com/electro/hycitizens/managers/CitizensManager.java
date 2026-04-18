@@ -14,6 +14,7 @@ import com.electro.hycitizens.models.*;
 import com.electro.hycitizens.roles.RoleGenerator;
 import com.electro.hycitizens.util.ConfigManager;
 import com.electro.hycitizens.util.SkinUtilities;
+import com.electro.hycitizens.util.ThreadedScheduler;
 import com.hypixel.hytale.component.*;
 import com.hypixel.hytale.component.query.Query;
 import com.hypixel.hytale.math.util.ChunkUtil;
@@ -113,12 +114,13 @@ public class CitizensManager {
     private final List<CitizenRemovedListener> removedListeners = new ArrayList<>();
     private final List<CitizenInteractListener> interactListeners = new ArrayList<>();
     private final List<CitizenDeathListener> deathListeners = new ArrayList<>();
-    private ScheduledFuture<?> skinUpdateTask;
-    private ScheduledFuture<?> rotateTask;
-    private ScheduledFuture<?> nametagMoveTask;
-    private ScheduledFuture<?> animationTask;
-    private ScheduledFuture<?> healthRegenTask;
-    private ScheduledFuture<?> npcRefReconcileTask;
+    private ThreadedScheduler skinUpdateTask = new ThreadedScheduler();
+    private ThreadedScheduler rotateTask = new ThreadedScheduler();
+    private ThreadedScheduler nametagMoveTask = new ThreadedScheduler();
+    private ThreadedScheduler animationTask = new ThreadedScheduler();
+    private ThreadedScheduler healthRegenTask = new ThreadedScheduler();
+    private ThreadedScheduler npcRefReconcileTask = new ThreadedScheduler();
+    private ThreadedScheduler citizensByWorldTask = new ThreadedScheduler();
     private final Map<UUID, List<CitizenData>> citizensByWorld = new HashMap<>();
     private final Set<String> groups = new HashSet<>();
     private final Set<String> registeredNoLoopAnimations = ConcurrentHashMap.newKeySet();
@@ -134,8 +136,8 @@ public class CitizensManager {
     private final Map<String, ScheduledFuture<?>> pendingNpcSpawnRetryTasks = new ConcurrentHashMap<>();
     private PatrolManager patrolManager;
     private ScheduleManager scheduleManager;
-    private ScheduledFuture<?> followCitizenTask;
-    private ScheduledFuture<?> movementUnstickTask;
+    private ThreadedScheduler followCitizenTask = new ThreadedScheduler();
+    private ThreadedScheduler movementUnstickTask = new ThreadedScheduler();
 
     public CitizensManager(@Nonnull HyCitizensPlugin plugin) {
         this.plugin = plugin;
@@ -159,7 +161,7 @@ public class CitizensManager {
     }
 
     private void startSkinUpdateScheduler() {
-        skinUpdateTask = HytaleServer.SCHEDULED_EXECUTOR.scheduleAtFixedRate(() -> {
+        skinUpdateTask.scheduleAtFixedRate("citizens-skin-update", () -> {
             long currentTime = System.currentTimeMillis();
             long thirtyMinutes = 30 * 60 * 1000;
 
@@ -180,7 +182,7 @@ public class CitizensManager {
     }
 
     private void startRotateScheduler() {
-        rotateTask = HytaleServer.SCHEDULED_EXECUTOR.scheduleAtFixedRate(() -> {
+        rotateTask.scheduleAtFixedRate("citizens-rotate", () -> {
             // Group citizens by world
             Map<UUID, List<CitizenData>> snapshot;
 
@@ -254,11 +256,11 @@ public class CitizensManager {
                     }
                 });
             }
-        }, 0, 60, TimeUnit.MILLISECONDS);
+        }, 60, TimeUnit.MILLISECONDS);
     }
 
     private void startNametagMoveScheduler() {
-        nametagMoveTask = HytaleServer.SCHEDULED_EXECUTOR.scheduleAtFixedRate(() -> {
+        nametagMoveTask.scheduleAtFixedRate("citizens-nametag-move", () -> {
             // Group citizens by world
             Map<UUID, List<CitizenData>> snapshot;
 
@@ -354,7 +356,7 @@ public class CitizensManager {
     }
 
     private void startCitizensByWorldScheduler() {
-        HytaleServer.SCHEDULED_EXECUTOR.scheduleAtFixedRate(() -> {
+        citizensByWorldTask.scheduleAtFixedRate("citizens-by-world", () -> {
             Map<UUID, List<CitizenData>> tmp = new HashMap<>();
 
             for (CitizenData citizen : citizens.values()) {
@@ -378,7 +380,7 @@ public class CitizensManager {
     }
 
     private void startNpcRefReconcileScheduler() {
-        npcRefReconcileTask = HytaleServer.SCHEDULED_EXECUTOR.scheduleAtFixedRate(() -> {
+        npcRefReconcileTask.scheduleAtFixedRate("citizens-npc-ref-reconcile", () -> {
             Map<UUID, List<CitizenData>> unresolvedByWorld = new HashMap<>();
 
             for (CitizenData citizen : citizens.values()) {
@@ -514,7 +516,7 @@ public class CitizensManager {
     }
 
     private void startFollowCitizenScheduler() {
-        followCitizenTask = HytaleServer.SCHEDULED_EXECUTOR.scheduleAtFixedRate(() -> {
+        followCitizenTask.scheduleAtFixedRate("citizens-follow", () -> {
             for (CitizenData citizen : citizens.values()) {
                 try {
                     tickStandaloneFollowCitizen(citizen);
@@ -526,7 +528,7 @@ public class CitizensManager {
     }
 
     private void startMovementUnstickScheduler() {
-        movementUnstickTask = HytaleServer.SCHEDULED_EXECUTOR.scheduleAtFixedRate(() -> {
+        movementUnstickTask.scheduleAtFixedRate("citizens-unstick", () -> {
             for (CitizenData citizen : citizens.values()) {
                 try {
                     tickWanderUnstick(citizen);
@@ -538,7 +540,7 @@ public class CitizensManager {
     }
 
     private void startHealthRegenScheduler() {
-        healthRegenTask = HytaleServer.SCHEDULED_EXECUTOR.scheduleAtFixedRate(() -> {
+        healthRegenTask.scheduleAtFixedRate("citizens-health-regen", () -> {
             long now = System.currentTimeMillis();
 
             for (CitizenData citizen : citizens.values()) {
@@ -600,40 +602,18 @@ public class CitizensManager {
     }
 
     public void shutdown() {
-        if (skinUpdateTask != null && !skinUpdateTask.isCancelled()) {
-            skinUpdateTask.cancel(false);
-        }
+        skinUpdateTask.stop();
+        rotateTask.stop();
+        animationTask.stop();
+        healthRegenTask.stop();
+        nametagMoveTask.stop();
 
-        if (rotateTask != null && !rotateTask.isCancelled()) {
-            rotateTask.cancel(false);
-        }
-
-        if (animationTask != null && !animationTask.isCancelled()) {
-            animationTask.cancel(false);
-        }
-
-        if (healthRegenTask != null && !healthRegenTask.isCancelled()) {
-            healthRegenTask.cancel(false);
-        }
-
-        if (nametagMoveTask != null && !nametagMoveTask.isCancelled()) {
-            nametagMoveTask.cancel(false);
-        }
+        followCitizenTask.stop();
+        movementUnstickTask.stop();
+        npcRefReconcileTask.stop();
 
         if (positionSaveTask != null && !positionSaveTask.isCancelled()) {
             positionSaveTask.cancel(false);
-        }
-
-        if (followCitizenTask != null && !followCitizenTask.isCancelled()) {
-            followCitizenTask.cancel(false);
-        }
-
-        if (movementUnstickTask != null && !movementUnstickTask.isCancelled()) {
-            movementUnstickTask.cancel(false);
-        }
-
-        if (npcRefReconcileTask != null && !npcRefReconcileTask.isCancelled()) {
-            npcRefReconcileTask.cancel(false);
         }
 
         if (patrolManager != null) {
@@ -3753,7 +3733,7 @@ public class CitizensManager {
     }
 
     private void startAnimationScheduler() {
-        animationTask = HytaleServer.SCHEDULED_EXECUTOR.scheduleAtFixedRate(() -> {
+        animationTask.scheduleAtFixedRate("citizens-animations", () -> {
             long now = System.currentTimeMillis();
 
             for (CitizenData citizen : citizens.values()) {
@@ -3847,7 +3827,6 @@ public class CitizensManager {
                 }
             }
         } else if (behavior == null || !"DEFAULT".equals(behavior.getType())) {
-            // Legacy behavior: stop after 3 seconds for non-DEFAULT animations
             shouldStop = true;
         }
 

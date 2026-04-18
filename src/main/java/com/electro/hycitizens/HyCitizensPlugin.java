@@ -115,6 +115,7 @@ public class HyCitizensPlugin extends JavaPlugin {
         getEventRegistry().register(PlayerConnectEvent.class, connectionListener::onPlayerConnect);
 
         this.getEntityStoreRegistry().registerSystem(new EntityDamageListener(this));
+        this.getEntityStoreRegistry().registerSystem(new EntityDeathListener(this));
         getEventRegistry().registerGlobal(EventPriority.LAST, ChunkPreLoadProcessEvent.class, chunkPreLoadListener::onChunkPreload);
 
         this.getEntityStoreRegistry().registerSystem(new DuplicateNPCPrevention());

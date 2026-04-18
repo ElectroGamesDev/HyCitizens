@@ -2,6 +2,7 @@ package com.electro.hycitizens.managers;
 
 import com.electro.hycitizens.models.*;
 import com.electro.hycitizens.roles.RoleGenerator;
+import com.electro.hycitizens.util.ThreadedScheduler;
 import com.hypixel.hytale.component.Ref;
 import com.hypixel.hytale.math.vector.Vector3d;
 import com.hypixel.hytale.math.vector.Vector3f;
@@ -46,7 +47,7 @@ public class ScheduleManager {
 
     private final CitizensManager citizensManager;
     private final Map<String, ScheduleSession> sessions = new ConcurrentHashMap<>();
-    private ScheduledFuture<?> task;
+    private ThreadedScheduler task = new ThreadedScheduler();
 
     public ScheduleManager(@Nonnull CitizensManager citizensManager) {
         this.citizensManager = citizensManager;
@@ -54,7 +55,7 @@ public class ScheduleManager {
     }
 
     private void start() {
-        task = HytaleServer.SCHEDULED_EXECUTOR.scheduleAtFixedRate(() -> {
+        task.scheduleAtFixedRate("citizens-schedule-manager", () -> {
             for (CitizenData citizen : citizensManager.getAllCitizens()) {
                 try {
                     tickCitizen(citizen);
@@ -66,9 +67,7 @@ public class ScheduleManager {
     }
 
     public void shutdown() {
-        if (task != null && !task.isCancelled()) {
-            task.cancel(false);
-        }
+        task.stop();
         sessions.clear();
     }
 
