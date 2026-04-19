@@ -16,10 +16,30 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ScheduledFuture;
 
 import static com.hypixel.hytale.logger.HytaleLogger.getLogger;
 
 public class CitizenData {
+    private static final float MIN_MODEL_SCALE = 0.01f;
+    private static final float MAX_MODEL_SCALE = 100.0f;
+    public static final String MAP_MARKER_TYPE_PIN = "PIN";
+    public static final String MAP_MARKER_TYPE_DOT = "DOT";
+    public static final String MAP_MARKER_TYPE_STAR = "STAR";
+    public static final String MAP_MARKER_TYPE_DIAMOND = "DIAMOND";
+    public static final String MAP_MARKER_TYPE_SQUARE = "SQUARE";
+    public static final String MAP_MARKER_TYPE_QUESTION = "QUESTION";
+    public static final String MAP_MARKER_TYPE_EXCLAMATION = "EXCLAMATION";
+    public static final String MAP_MARKER_TYPE_MONEY_SYMBOL = "MONEY_SYMBOL";
+    public static final String MAP_MARKER_TYPE_SHOP = "SHOP";
+    public static final String MAP_MARKER_TYPE_TRADER = "TRADER";
+    public static final String MAP_MARKER_TYPE_CHEST = "CHEST";
+    public static final String MAP_MARKER_TYPE_SWORD = "SWORD";
+    public static final String MAP_MARKER_TYPE_SHIELD = "SHIELD";
+    public static final String MAP_MARKER_TYPE_HEART = "HEART";
+    public static final String MAP_MARKER_TYPE_HOME = "HOME";
+    public static final String MAP_MARKER_TYPE_NPC_TYPE = "NPC_TYPE";
+
     private final String id;
     private String name;
     private String modelId;
@@ -35,13 +55,23 @@ public class CitizenData {
     private List<UUID> hologramLineUuids = new ArrayList<>();
     private Ref<EntityStore> npcRef;
     public final Map<UUID, Direction> lastLookDirections = new ConcurrentHashMap<>();
+    private transient Map<UUID, ScheduledFuture<?>> pendingLookResetTasks = new ConcurrentHashMap<>();
+    public final Map<UUID, Direction> lastNametagLookDirections = new ConcurrentHashMap<>();
+    private transient Map<UUID, ScheduledFuture<?>> pendingNametagLookResetTasks = new ConcurrentHashMap<>();
     private boolean rotateTowardsPlayer;
     private float lookAtDistance = 25.0f;
     private boolean hideNametag = false;
     private boolean hideNpc = false;
     private float nametagOffset;
+    private boolean modelNametagEnabled = false;
+    private String nametagModelId = "";
+    private float nametagModelScale = 1.0f;
+    private boolean rotateNametagTowardsPlayer = true;
     private boolean fKeyInteractionEnabled;
     private boolean forceFKeyInteractionText;
+    private boolean mapMarkerEnabled = false;
+    private String mapMarkerType = MAP_MARKER_TYPE_PIN;
+    private String mapMarkerName = "";
 
     // Item-related fields
     private String npcHelmet;
@@ -101,6 +131,7 @@ public class CitizenData {
     private boolean respawnOnDeath = true;
     private float respawnDelaySeconds = 5.0f;
     private transient boolean awaitingRespawn = false;
+    private long respawnReadyAtMillis = 0L;
     private transient long lastDeathTime = 0;
 
     // Group field
@@ -173,15 +204,15 @@ public class CitizenData {
         this.position = position;
         this.rotation = rotation;
         this.currentPosition = position;
-        this.scale = scale;
+        this.scale = sanitizeModelScale(scale);
         this.requiredPermission = requiredPermission;
         this.noPermissionMessage = noPermissionMessage;
         this.commandActions = new ArrayList<>(commandActions);
         this.spawnedUUID = npcUUID;
         this.hologramLineUuids = hologramLineUuids != null ? new ArrayList<>(hologramLineUuids) : new ArrayList<>();
         this.isPlayerModel = isPlayerModel;
-        this.useLiveSkin = useLiveSkin;
         this.skinUsername = skinUsername != null ? skinUsername : "";
+        this.useLiveSkin = useLiveSkin && !isGeneratedSkinUsername(this.skinUsername);
         this.cachedSkin = cachedSkin;
         this.lastSkinUpdate = lastSkinUpdate;
         this.createdAt = 0;
@@ -197,6 +228,10 @@ public class CitizenData {
 
         this.nametagOffset = 0;
         this.hideNametag = false;
+        this.modelNametagEnabled = false;
+        this.nametagModelId = "";
+        this.nametagModelScale = 1.0f;
+        this.rotateNametagTowardsPlayer = true;
 
         this.fKeyInteractionEnabled = false;
     }
@@ -265,7 +300,7 @@ public class CitizenData {
     }
 
     public void setScale(float scale) {
-        this.scale = scale;
+        this.scale = sanitizeModelScale(scale);
     }
 
     @Nonnull
@@ -352,7 +387,7 @@ public class CitizenData {
     }
 
     public void setUseLiveSkin(boolean useLiveSkin) {
-        this.useLiveSkin = useLiveSkin;
+        this.useLiveSkin = useLiveSkin && !isGeneratedSkinUsername(this.skinUsername);
     }
 
     @Nonnull
@@ -362,6 +397,9 @@ public class CitizenData {
 
     public void setSkinUsername(@Nullable String skinUsername) {
         this.skinUsername = skinUsername != null ? skinUsername : "";
+        if (isGeneratedSkinUsername(this.skinUsername)) {
+            this.useLiveSkin = false;
+        }
     }
 
     public Ref<EntityStore> getNpcRef() {
@@ -444,6 +482,53 @@ public class CitizenData {
         return nametagOffset;
     }
 
+    public boolean isModelNametagEnabled() {
+        return modelNametagEnabled;
+    }
+
+    public void setModelNametagEnabled(boolean modelNametagEnabled) {
+        this.modelNametagEnabled = modelNametagEnabled;
+    }
+
+    @Nonnull
+    public String getNametagModelId() {
+        return nametagModelId;
+    }
+
+    public void setNametagModelId(@Nullable String nametagModelId) {
+        this.nametagModelId = nametagModelId != null ? nametagModelId : "";
+    }
+
+    public float getNametagModelScale() {
+        return nametagModelScale;
+    }
+
+    public void setNametagModelScale(float nametagModelScale) {
+        this.nametagModelScale = sanitizeModelScale(nametagModelScale);
+    }
+
+    public boolean isRotateNametagTowardsPlayer() {
+        return rotateNametagTowardsPlayer;
+    }
+
+    public void setRotateNametagTowardsPlayer(boolean rotateNametagTowardsPlayer) {
+        this.rotateNametagTowardsPlayer = rotateNametagTowardsPlayer;
+    }
+
+    private static float sanitizeModelScale(float scale) {
+        if (!Float.isFinite(scale) || scale <= 0.0f) {
+            return MIN_MODEL_SCALE;
+        }
+        return Math.max(MIN_MODEL_SCALE, Math.min(MAX_MODEL_SCALE, scale));
+    }
+
+    public static boolean isGeneratedSkinUsername(@Nullable String skinUsername) {
+        if (skinUsername == null) {
+            return false;
+        }
+        return skinUsername.startsWith("random_") || skinUsername.startsWith("custom_");
+    }
+
     @Nullable
     public PlayerSkin getCachedSkin() {
         return cachedSkin;
@@ -485,6 +570,63 @@ public class CitizenData {
 
     public boolean getForceFKeyInteractionText() {
         return forceFKeyInteractionText;
+    }
+
+    public void setMapMarkerEnabled(boolean enabled) {
+        this.mapMarkerEnabled = enabled;
+    }
+
+    public boolean isMapMarkerEnabled() {
+        return mapMarkerEnabled;
+    }
+
+    public void setMapMarkerType(@Nullable String type) {
+        this.mapMarkerType = normalizeMapMarkerType(type);
+    }
+
+    @Nonnull
+    public String getMapMarkerType() {
+        return normalizeMapMarkerType(mapMarkerType);
+    }
+
+    public void setMapMarkerName(@Nullable String name) {
+        this.mapMarkerName = name != null ? name.trim() : "";
+    }
+
+    @Nonnull
+    public String getMapMarkerName() {
+        return mapMarkerName != null ? mapMarkerName : "";
+    }
+
+    @Nonnull
+    public static String normalizeMapMarkerType(@Nullable String type) {
+        if (type == null || type.isBlank()) {
+            return MAP_MARKER_TYPE_PIN;
+        }
+
+        String normalized = type.trim().toUpperCase(java.util.Locale.ROOT).replace('-', '_').replace(' ', '_');
+        if (normalized.equals("MONEY_BAG")) {
+            return MAP_MARKER_TYPE_MONEY_SYMBOL;
+        }
+
+        if (normalized.equals(MAP_MARKER_TYPE_DOT)
+                || normalized.equals(MAP_MARKER_TYPE_STAR)
+                || normalized.equals(MAP_MARKER_TYPE_DIAMOND)
+                || normalized.equals(MAP_MARKER_TYPE_SQUARE)
+                || normalized.equals(MAP_MARKER_TYPE_QUESTION)
+                || normalized.equals(MAP_MARKER_TYPE_EXCLAMATION)
+                || normalized.equals(MAP_MARKER_TYPE_MONEY_SYMBOL)
+                || normalized.equals(MAP_MARKER_TYPE_SHOP)
+                || normalized.equals(MAP_MARKER_TYPE_TRADER)
+                || normalized.equals(MAP_MARKER_TYPE_CHEST)
+                || normalized.equals(MAP_MARKER_TYPE_SWORD)
+                || normalized.equals(MAP_MARKER_TYPE_SHIELD)
+                || normalized.equals(MAP_MARKER_TYPE_HEART)
+                || normalized.equals(MAP_MARKER_TYPE_HOME)
+                || normalized.equals(MAP_MARKER_TYPE_NPC_TYPE)) {
+            return normalized;
+        }
+        return MAP_MARKER_TYPE_PIN;
     }
 
     @Nonnull
@@ -559,6 +701,22 @@ public class CitizenData {
     @Nonnull
     public Map<UUID, Boolean> getPlayersInProximity() {
         return playersInProximity;
+    }
+
+    @Nonnull
+    public Map<UUID, ScheduledFuture<?>> getPendingLookResetTasks() {
+        if (pendingLookResetTasks == null) {
+            pendingLookResetTasks = new ConcurrentHashMap<>();
+        }
+        return pendingLookResetTasks;
+    }
+
+    @Nonnull
+    public Map<UUID, ScheduledFuture<?>> getPendingNametagLookResetTasks() {
+        if (pendingNametagLookResetTasks == null) {
+            pendingNametagLookResetTasks = new ConcurrentHashMap<>();
+        }
+        return pendingNametagLookResetTasks;
     }
 
     @Nonnull
@@ -708,11 +866,42 @@ public class CitizenData {
     }
 
     public boolean isAwaitingRespawn() {
+        if (awaitingRespawn && respawnReadyAtMillis > 0L && System.currentTimeMillis() >= respawnReadyAtMillis) {
+            awaitingRespawn = false;
+            respawnReadyAtMillis = 0L;
+        }
         return awaitingRespawn;
     }
 
     public void setAwaitingRespawn(boolean awaitingRespawn) {
         this.awaitingRespawn = awaitingRespawn;
+        if (!awaitingRespawn) {
+            this.respawnReadyAtMillis = 0L;
+        }
+    }
+
+    public void markAwaitingRespawnUntil(long respawnReadyAtMillis) {
+        this.awaitingRespawn = true;
+        this.respawnReadyAtMillis = Math.max(System.currentTimeMillis(), respawnReadyAtMillis);
+    }
+
+    public long getRespawnReadyAtMillis() {
+        return respawnReadyAtMillis;
+    }
+
+    public void setRespawnReadyAtMillis(long respawnReadyAtMillis) {
+        this.respawnReadyAtMillis = Math.max(0L, respawnReadyAtMillis);
+        this.awaitingRespawn = this.respawnReadyAtMillis > System.currentTimeMillis();
+        if (!this.awaitingRespawn) {
+            this.respawnReadyAtMillis = 0L;
+        }
+    }
+
+    public long getRemainingRespawnMillis() {
+        if (respawnReadyAtMillis <= 0L) {
+            return 0L;
+        }
+        return Math.max(0L, respawnReadyAtMillis - System.currentTimeMillis());
     }
 
     public long getLastDeathTime() {
@@ -729,7 +918,24 @@ public class CitizenData {
     }
 
     public void setGroup(@Nullable String group) {
-        this.group = group != null ? group : "";
+        this.group = normalizeGroupPath(group);
+    }
+
+    @Nonnull
+    private static String normalizeGroupPath(@Nullable String group) {
+        if (group == null) {
+            return "";
+        }
+
+        String normalized = group.trim().replace('\\', '/');
+        normalized = normalized.replaceAll("/+", "/");
+        while (normalized.startsWith("/")) {
+            normalized = normalized.substring(1);
+        }
+        while (normalized.endsWith("/")) {
+            normalized = normalized.substring(0, normalized.length() - 1);
+        }
+        return normalized.trim();
     }
 
     public boolean isFollowCitizenEnabled() {

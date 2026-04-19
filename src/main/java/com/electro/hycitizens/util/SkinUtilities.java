@@ -119,7 +119,6 @@ public class SkinUtilities {
                 if (textures != null) allColors.addAll(textures.keySet());
 
                 if (allColors.isEmpty()) {
-                    // Part has no colour system at all — id is used as-is.
                     colorOptions.add(partId);
                 } else {
                     for (String colorId : allColors) {
@@ -128,7 +127,9 @@ public class SkinUtilities {
                 }
             }
 
-            entries.add(new CosmeticOptionEntry(partId, colorOptions));
+            if (!colorOptions.isEmpty()) {
+                entries.add(new CosmeticOptionEntry(partId, colorOptions));
+            }
         }
 
         return entries;
@@ -446,6 +447,30 @@ public class SkinUtilities {
         skin.undertop = "shirt_tshirt";
         skin.shoes = "shoes_sneakers";
         return skin;
+    }
+
+    public static boolean isValidSkin(@Nullable PlayerSkin skin) {
+        if (skin == null) {
+            return false;
+        }
+
+        try {
+            CosmeticsModule.get().validateSkin(skin);
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    public static boolean trySetSkinField(@Nonnull PlayerSkin skin, @Nonnull String slotName, @Nullable String value) {
+        PlayerSkin candidate = copySkin(skin);
+        setSkinField(candidate, slotName, value);
+        if (!isValidSkin(candidate)) {
+            return false;
+        }
+
+        setSkinField(skin, slotName, value);
+        return true;
     }
 
     public static final String[] SLOT_NAMES = {

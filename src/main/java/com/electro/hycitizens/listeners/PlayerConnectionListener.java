@@ -1,7 +1,6 @@
 package com.electro.hycitizens.listeners;
 
 import com.electro.hycitizens.HyCitizensPlugin;
-import com.electro.hycitizens.models.CitizenData;
 import com.electro.hycitizens.util.UpdateChecker;
 import com.hypixel.hytale.component.Ref;
 import com.hypixel.hytale.server.core.HytaleServer;
@@ -17,7 +16,6 @@ import com.hypixel.hytale.server.core.universe.world.storage.EntityStore;
 import javax.annotation.Nonnull;
 
 import java.awt.*;
-import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
@@ -135,17 +133,6 @@ public class PlayerConnectionListener {
 
     public void onPlayerDisconnect(@Nonnull PlayerDisconnectEvent event) {
         UUID playerUuid = event.getPlayerRef().getUuid();
-        List<CitizenData> citizens = plugin.getCitizensManager().getAllCitizens();
-
-        for (CitizenData citizen : citizens) {
-            citizen.lastLookDirections.remove(playerUuid);
-            citizen.getSequentialMessageIndex().remove(playerUuid);
-            citizen.getSequentialCommandIndex().remove(playerUuid);
-            citizen.getSequentialDeathMessageIndex().remove(playerUuid);
-            citizen.getSequentialDeathCommandIndex().remove(playerUuid);
-            citizen.getSequentialFirstInteractionMessageIndex().remove(playerUuid);
-            citizen.getSequentialFirstInteractionCommandIndex().remove(playerUuid);
-            citizen.getPlayersInProximity().remove(playerUuid);
-        }
+        plugin.getCitizensManager().clearPlayerRuntimeState(playerUuid);
     }
 }

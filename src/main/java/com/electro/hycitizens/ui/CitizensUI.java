@@ -21,6 +21,7 @@ import com.hypixel.hytale.server.core.entity.entities.Player;
 import com.hypixel.hytale.server.core.inventory.ItemStack;
 import com.hypixel.hytale.server.core.modules.entity.component.TransformComponent;
 import com.hypixel.hytale.server.core.modules.entity.teleport.Teleport;
+import com.hypixel.hytale.server.core.modules.time.WorldTimeResource;
 import com.hypixel.hytale.server.core.universe.PlayerRef;
 import com.hypixel.hytale.server.core.universe.Universe;
 import com.hypixel.hytale.server.core.universe.world.World;
@@ -29,6 +30,8 @@ import com.hypixel.hytale.server.core.universe.world.storage.EntityStore;
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
 import java.awt.*;
+import java.nio.charset.StandardCharsets;
+import java.time.LocalDateTime;
 import java.util.*;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
@@ -37,6 +40,16 @@ import java.util.function.Consumer;
 public class CitizensUI {
     private final HyCitizensPlugin plugin;
     private final Map<UUID, String> pendingFollowSelections = new ConcurrentHashMap<>();
+
+    private record NametagSettingsState(
+            String name,
+            float offset,
+            boolean hideNametag,
+            boolean modelEnabled,
+            String modelId,
+            float modelScale,
+            boolean rotateModelTowardsPlayer
+    ) {}
 
     private String generateAnimationDropdownOptions(String selectedValue, String modelId) {
         StringBuilder sb = new StringBuilder();
@@ -78,11 +91,46 @@ public class CitizensUI {
         return sb.toString();
     }
 
+    private String generateModelDropdownOptions(String selectedValue, boolean allowEmpty) {
+        StringBuilder sb = new StringBuilder();
+        if (allowEmpty) {
+            boolean noneSelected = selectedValue == null || selectedValue.isBlank();
+            sb.append("<option value=\"\"");
+            if (noneSelected) {
+                sb.append(" selected");
+            }
+            sb.append(">Select a model</option>\n");
+        }
+
+        sb.append(generateEntityDropdownOptions(selectedValue));
+        return sb.toString();
+    }
+
+    private String buildNametagSummary(String name, float nametagOffset, boolean hideNametag,
+                                       boolean modelNametagEnabled, String nametagModelId,
+                                       float nametagModelScale, boolean rotateNametagTowardsPlayer) {
+        if (hideNametag) {
+            return "Nametag hidden";
+        }
+
+        if (modelNametagEnabled) {
+            String resolvedModelId = nametagModelId == null || nametagModelId.isBlank() ? "unselected" : nametagModelId.trim();
+            return "Model nametag: " + resolvedModelId
+                    + " | Scale: " + nametagModelScale
+                    + " | Offset: " + nametagOffset
+                    + " | Rotate to players: " + (rotateNametagTowardsPlayer ? "On" : "Off");
+        }
+
+        int lineCount = splitNametagLines(name).size();
+        return "Text nametag: " + Math.max(1, lineCount) + " line(s) | Offset: " + nametagOffset;
+    }
+
     private String generateGroupDropdownOptions(String selectedValue, List<String> allGroups) {
         StringBuilder sb = new StringBuilder();
+        String normalizedSelected = normalizeGroupPath(selectedValue);
 
         // Add "None" option for no group
-        boolean noneSelected = selectedValue == null || selectedValue.isEmpty();
+        boolean noneSelected = normalizedSelected.isEmpty();
         sb.append("<option value=\"\"");
         if (noneSelected) {
             sb.append(" selected");
@@ -91,7 +139,8 @@ public class CitizensUI {
 
         // Add existing groups
         for (String groupName : allGroups) {
-            boolean isSelected = groupName.equals(selectedValue);
+            String normalizedGroup = normalizeGroupPath(groupName);
+            boolean isSelected = normalizedGroup.equals(normalizedSelected);
             sb.append("<option value=\"").append(escapeHtml(groupName)).append("\"");
             if (isSelected) {
                 sb.append(" selected");
@@ -99,6 +148,59 @@ public class CitizensUI {
             sb.append(">").append(escapeHtml(groupName)).append("</option>\n");
         }
 
+        return sb.toString();
+    }
+
+    private String generateGroupParentOptions(@Nullable String selectedParent, @Nullable String movingGroup) {
+        String normalizedSelected = normalizeGroupPath(selectedParent);
+        String normalizedMoving = normalizeGroupPath(movingGroup);
+        StringBuilder sb = new StringBuilder();
+
+        sb.append("<option value=\"\"");
+        if (normalizedSelected.isEmpty()) {
+            sb.append(" selected");
+        }
+        sb.append(">Root</option>\n");
+
+        for (String groupName : plugin.getCitizensManager().getAllGroups()) {
+            String normalizedGroup = normalizeGroupPath(groupName);
+            if (normalizedGroup.isEmpty()) {
+                continue;
+            }
+            if (!normalizedMoving.isEmpty()
+                    && (normalizedGroup.equals(normalizedMoving) || normalizedGroup.startsWith(normalizedMoving + "/"))) {
+                continue;
+            }
+
+            sb.append("<option value=\"").append(escapeHtml(normalizedGroup)).append("\"");
+            if (normalizedGroup.equals(normalizedSelected)) {
+                sb.append(" selected");
+            }
+            sb.append(">").append(escapeHtml(normalizedGroup)).append("</option>\n");
+        }
+
+        return sb.toString();
+    }
+
+    private String generateMapMarkerTypeOptions(@Nullable String selectedValue) {
+        String selected = CitizenData.normalizeMapMarkerType(selectedValue);
+        StringBuilder sb = new StringBuilder();
+        appendOption(sb, CitizenData.MAP_MARKER_TYPE_PIN, "Pin", selected.equals(CitizenData.MAP_MARKER_TYPE_PIN));
+        appendOption(sb, CitizenData.MAP_MARKER_TYPE_DOT, "Dot", selected.equals(CitizenData.MAP_MARKER_TYPE_DOT));
+        appendOption(sb, CitizenData.MAP_MARKER_TYPE_STAR, "Star", selected.equals(CitizenData.MAP_MARKER_TYPE_STAR));
+        appendOption(sb, CitizenData.MAP_MARKER_TYPE_DIAMOND, "Diamond", selected.equals(CitizenData.MAP_MARKER_TYPE_DIAMOND));
+        appendOption(sb, CitizenData.MAP_MARKER_TYPE_SQUARE, "Square", selected.equals(CitizenData.MAP_MARKER_TYPE_SQUARE));
+        appendOption(sb, CitizenData.MAP_MARKER_TYPE_QUESTION, "Question Mark", selected.equals(CitizenData.MAP_MARKER_TYPE_QUESTION));
+        appendOption(sb, CitizenData.MAP_MARKER_TYPE_EXCLAMATION, "Exclamation Mark", selected.equals(CitizenData.MAP_MARKER_TYPE_EXCLAMATION));
+        appendOption(sb, CitizenData.MAP_MARKER_TYPE_MONEY_SYMBOL, "Money Symbol", selected.equals(CitizenData.MAP_MARKER_TYPE_MONEY_SYMBOL));
+        appendOption(sb, CitizenData.MAP_MARKER_TYPE_SHOP, "Shop", selected.equals(CitizenData.MAP_MARKER_TYPE_SHOP));
+        appendOption(sb, CitizenData.MAP_MARKER_TYPE_TRADER, "Trader", selected.equals(CitizenData.MAP_MARKER_TYPE_TRADER));
+        appendOption(sb, CitizenData.MAP_MARKER_TYPE_CHEST, "Chest", selected.equals(CitizenData.MAP_MARKER_TYPE_CHEST));
+        appendOption(sb, CitizenData.MAP_MARKER_TYPE_SWORD, "Sword", selected.equals(CitizenData.MAP_MARKER_TYPE_SWORD));
+        appendOption(sb, CitizenData.MAP_MARKER_TYPE_SHIELD, "Shield", selected.equals(CitizenData.MAP_MARKER_TYPE_SHIELD));
+        appendOption(sb, CitizenData.MAP_MARKER_TYPE_HEART, "Heart", selected.equals(CitizenData.MAP_MARKER_TYPE_HEART));
+        appendOption(sb, CitizenData.MAP_MARKER_TYPE_HOME, "Home", selected.equals(CitizenData.MAP_MARKER_TYPE_HOME));
+        appendOption(sb, CitizenData.MAP_MARKER_TYPE_NPC_TYPE, "NPC Type", selected.equals(CitizenData.MAP_MARKER_TYPE_NPC_TYPE));
         return sb.toString();
     }
 
@@ -184,6 +286,71 @@ public class CitizensUI {
         return String.format(Locale.ROOT, "%02d:%02d", hour, minute);
     }
 
+    private String formatScheduleTimeRange(@Nonnull ScheduleEntry entry) {
+        if (Math.abs(entry.getStartTime24() - entry.getEndTime24()) < 0.0001) {
+            return "All day";
+        }
+        return formatTime24(entry.getStartTime24()) + " - " + formatTime24(entry.getEndTime24());
+    }
+
+    @Nullable
+    private Double getScheduleWorldTime24(@Nonnull CitizenData citizen) {
+        World world = Universe.get().getWorld(citizen.getWorldUUID());
+        if (world == null) {
+            return null;
+        }
+
+        WorldTimeResource timeResource = world.getEntityStore().getStore().getResource(WorldTimeResource.getResourceType());
+        if (timeResource == null) {
+            return null;
+        }
+
+        LocalDateTime gameDateTime = timeResource.getGameDateTime();
+        return gameDateTime.getHour() + (gameDateTime.getMinute() / 60.0);
+    }
+
+    @Nonnull
+    private String formatScheduleWorldTime(@Nullable Double time24) {
+        return time24 == null ? "Unknown" : formatTime24(time24);
+    }
+
+    @Nonnull
+    private String describeScheduleNextEntry(@Nonnull ScheduleConfig scheduleConfig, @Nullable Double time24) {
+        if (!scheduleConfig.isEnabled()) {
+            return "Enable the schedule to run entries.";
+        }
+        if (scheduleConfig.getEntries().isEmpty()) {
+            return "Add a schedule entry to start using the schedule.";
+        }
+        if (time24 == null) {
+            return "World time is unavailable, so entries cannot be selected yet.";
+        }
+
+        Optional<ScheduleEntry> activeEntry = scheduleConfig.getEntries().stream()
+                .filter(ScheduleEntry::isEnabled)
+                .filter(entry -> entry.isActiveAt(time24))
+                .sorted(Comparator.comparingInt(ScheduleEntry::getPriority).reversed())
+                .findFirst();
+        if (activeEntry.isPresent()) {
+            return "Active now: " + activeEntry.get().getName() + " (" + formatScheduleTimeRange(activeEntry.get()) + ")";
+        }
+
+        return scheduleConfig.getEntries().stream()
+                .filter(ScheduleEntry::isEnabled)
+                .min(Comparator.comparingDouble((ScheduleEntry entry) -> hoursUntil(entry.getStartTime24(), time24))
+                        .thenComparing(Comparator.comparingInt(ScheduleEntry::getPriority).reversed()))
+                .map(entry -> "Next: " + entry.getName() + " at " + formatTime24(entry.getStartTime24()))
+                .orElse("All entries are disabled.");
+    }
+
+    private double hoursUntil(double startTime24, double currentTime24) {
+        double delta = startTime24 - currentTime24;
+        if (delta < 0.0) {
+            delta += 24.0;
+        }
+        return delta;
+    }
+
     private String describeScheduleActivity(@Nonnull ScheduleEntry entry) {
         return switch (entry.getActivityType()) {
             case IDLE -> "Idle";
@@ -206,7 +373,25 @@ public class CitizensUI {
     }
 
     @Nonnull
-    private String generateScheduleStatusText(@Nonnull CitizenData citizen) {
+    private String generateScheduleStatusText(@Nonnull CitizenData citizen,
+                                              @Nonnull ScheduleConfig scheduleConfig,
+                                              @Nullable Double time24) {
+        if (!scheduleConfig.isEnabled()) {
+            return "Schedule is disabled. Enable it to let entries control movement.";
+        }
+        if (scheduleConfig.getEntries().isEmpty()) {
+            return "Schedule is enabled, but there are no entries yet.";
+        }
+        if (time24 == null) {
+            return "Schedule is enabled, but world time is unavailable.";
+        }
+        boolean hasActiveEntry = scheduleConfig.getEntries().stream()
+                .filter(ScheduleEntry::isEnabled)
+                .anyMatch(entry -> entry.isActiveAt(time24));
+        if (!hasActiveEntry && citizen.getCurrentScheduleRuntimeState() == ScheduleRuntimeState.INACTIVE) {
+            return "No entry matches the current Hytale time. The citizen is using fallback/base behavior.";
+        }
+
         String statusText = citizen.getCurrentScheduleStatusText();
         if (statusText == null || statusText.isBlank()) {
             return "Inactive";
@@ -314,18 +499,130 @@ public class CitizensUI {
         return true;
     }
 
-    private String sanitizeGroupId(String groupName) {
-        return groupName.replace(" ", "-").replace("'", "").replace("\"", "");
+    @Nonnull
+    private String groupEventId(@Nullable String groupName) {
+        String normalized = normalizeGroupPath(groupName);
+        UUID stableId = UUID.nameUUIDFromBytes(normalized.getBytes(StandardCharsets.UTF_8));
+        return "g" + stableId.toString().replace("-", "");
+    }
+
+    @Nonnull
+    private static String normalizeGroupPath(@Nullable String groupName) {
+        if (groupName == null) {
+            return "";
+        }
+
+        String normalized = groupName.trim().replace('\\', '/');
+        normalized = normalized.replaceAll("/+", "/");
+        while (normalized.startsWith("/")) {
+            normalized = normalized.substring(1);
+        }
+        while (normalized.endsWith("/")) {
+            normalized = normalized.substring(0, normalized.length() - 1);
+        }
+        return normalized.trim();
+    }
+
+    @Nonnull
+    private static String getParentGroup(@Nonnull String groupName) {
+        String normalized = normalizeGroupPath(groupName);
+        int slash = normalized.lastIndexOf('/');
+        if (slash < 0) {
+            return "";
+        }
+        return normalized.substring(0, slash);
+    }
+
+    @Nonnull
+    private static String getGroupLeafName(@Nonnull String groupName) {
+        String normalized = normalizeGroupPath(groupName);
+        int slash = normalized.lastIndexOf('/');
+        if (slash < 0) {
+            return normalized;
+        }
+        return normalized.substring(slash + 1);
+    }
+
+    @Nonnull
+    private static Set<String> collectGroupHierarchy(@Nonnull Collection<CitizenData> citizens) {
+        Set<String> result = new LinkedHashSet<>();
+        for (CitizenData citizen : citizens) {
+            String group = normalizeGroupPath(citizen.getGroup());
+            if (group.isEmpty()) {
+                continue;
+            }
+
+            StringBuilder current = new StringBuilder();
+            for (String part : group.split("/")) {
+                if (part.isBlank()) {
+                    continue;
+                }
+                if (!current.isEmpty()) {
+                    current.append('/');
+                }
+                current.append(part.trim());
+                result.add(current.toString());
+            }
+        }
+        return result;
+    }
+
+    private static boolean isDirectChildGroup(@Nonnull String groupName, @Nullable String parentGroup) {
+        String normalizedGroup = normalizeGroupPath(groupName);
+        String normalizedParent = normalizeGroupPath(parentGroup);
+        return getParentGroup(normalizedGroup).equals(normalizedParent);
+    }
+
+    private static boolean isDirectCitizenInGroup(@Nonnull CitizenData citizen, @Nullable String groupName) {
+        return normalizeGroupPath(citizen.getGroup()).equals(normalizeGroupPath(groupName));
+    }
+
+    @Nonnull
+    private static String getDisplayNameForList(@Nullable String value) {
+        String normalized = normalizeGroupPath(value);
+        if (normalized.isEmpty()) {
+            return "";
+        }
+        return getGroupLeafName(normalized);
+    }
+
+    @Nonnull
+    private static String buildChildGroupPath(@Nullable String parentGroup, @Nullable String childName) {
+        String parent = normalizeGroupPath(parentGroup);
+        String child = normalizeGroupPath(childName);
+        if (parent.isEmpty()) {
+            return child;
+        }
+        if (child.isEmpty()) {
+            return parent;
+        }
+        return parent + "/" + child;
     }
 
     private static String escapeHtml(String text) {
         if (text == null) return "";
-        return text
-                .replace("&", "&amp;")
-                .replace("<", "&lt;")
-                .replace(">", "&gt;")
-                .replace("\"", "&quot;")
-                .replace("'", "&#39;");
+        StringBuilder escaped = new StringBuilder(text.length());
+        for (int i = 0; i < text.length(); i++) {
+            char c = text.charAt(i);
+            switch (c) {
+                case '&' -> escaped.append("&amp;");
+                case '<' -> escaped.append("&lt;");
+                case '>' -> escaped.append("&gt;");
+                case '"' -> escaped.append("&quot;");
+                case '\'' -> escaped.append("&#39;");
+                case '\r' -> {
+                }
+                case '\n' -> escaped.append("&#10;");
+                default -> {
+                    if (c < 32 || c > 126) {
+                        escaped.append("&#").append((int) c).append(';');
+                    } else {
+                        escaped.append(c);
+                    }
+                }
+            }
+        }
+        return escaped.toString();
     }
 
     public static class SafeCitizen {
@@ -341,6 +638,10 @@ public class CitizensUI {
         public float getScale() { return citizen.getScale(); }
         public String getGroup() { return escapeHtml(citizen.getGroup()); }
         public float getNametagOffset() { return citizen.getNametagOffset(); }
+        public boolean isModelNametagEnabled() { return citizen.isModelNametagEnabled(); }
+        public String getNametagModelId() { return escapeHtml(citizen.getNametagModelId()); }
+        public float getNametagModelScale() { return citizen.getNametagModelScale(); }
+        public boolean isRotateNametagTowardsPlayer() { return citizen.isRotateNametagTowardsPlayer(); }
         public boolean isPlayerModel() { return citizen.isPlayerModel(); }
         public boolean isUseLiveSkin() { return citizen.isUseLiveSkin(); }
         public String getSkinUsername() { return escapeHtml(citizen.getSkinUsername()); }
@@ -350,6 +651,7 @@ public class CitizensUI {
         public boolean getFKeyInteractionEnabled() { return citizen.getFKeyInteractionEnabled(); }
         public boolean isHideNametag() { return citizen.isHideNametag(); }
         public boolean isHideNpc() { return citizen.isHideNpc(); }
+        public boolean isMapMarkerEnabled() { return citizen.isMapMarkerEnabled(); }
     }
 
     private String getSharedStyles() {
@@ -1028,7 +1330,7 @@ public class CitizensUI {
         private ListItem(boolean isGroup, String groupName, String groupId, CitizenData citizen) {
             this.isGroup = isGroup;
             this.rawGroupName = groupName;
-            this.groupName = escapeHtml(groupName);
+            this.groupName = escapeHtml(getDisplayNameForList(groupName));
             this.groupId = groupId;
             this.rawCitizen = citizen;
             this.citizen = citizen != null ? new SafeCitizen(citizen) : null;
@@ -1055,69 +1357,55 @@ public class CitizensUI {
         List<CitizenData> allCitizens = plugin.getCitizensManager().getAllCitizens();
 
         // Filter citizens by search query
-        String lowerSearchQuery = searchQuery.toLowerCase().trim();
+        String lowerSearchQuery = searchQuery.toLowerCase(Locale.ROOT).trim();
         List<CitizenData> filteredCitizens = allCitizens;
 
         if (!lowerSearchQuery.isEmpty()) {
             filteredCitizens = allCitizens.stream()
-                    .filter(c -> c.getName().toLowerCase().contains(lowerSearchQuery)
-                            || c.getId().toLowerCase().contains(lowerSearchQuery)
-                            || c.getGroup().toLowerCase().contains(lowerSearchQuery))
+                    .filter(c -> c.getName().toLowerCase(Locale.ROOT).contains(lowerSearchQuery)
+                            || c.getId().toLowerCase(Locale.ROOT).contains(lowerSearchQuery)
+                            || c.getGroup().toLowerCase(Locale.ROOT).contains(lowerSearchQuery))
                     .collect(java.util.stream.Collectors.toList());
         }
 
-        // Organize citizens by group
-        Map<String, List<CitizenData>> citizensByGroup = new LinkedHashMap<>();
-        List<CitizenData> ungroupedCitizens = new ArrayList<>();
-
-        for (CitizenData citizen : filteredCitizens) {
-            String group = citizen.getGroup();
-            if (group == null || group.isEmpty()) {
-                ungroupedCitizens.add(citizen);
-            } else {
-                citizensByGroup.computeIfAbsent(group, k -> new ArrayList<>()).add(citizen);
+        String normalizedViewingGroup = normalizeGroupPath(viewingGroup);
+        Set<String> visibleGroupHierarchy = new LinkedHashSet<>();
+        if (lowerSearchQuery.isEmpty()) {
+            visibleGroupHierarchy.addAll(plugin.getCitizensManager().getAllGroups());
+        } else {
+            for (String groupName : plugin.getCitizensManager().getAllGroups()) {
+                if (groupName.toLowerCase(Locale.ROOT).contains(lowerSearchQuery)) {
+                    visibleGroupHierarchy.add(groupName);
+                }
             }
         }
+        visibleGroupHierarchy.addAll(collectGroupHierarchy(filteredCitizens));
+        List<String> childGroups = visibleGroupHierarchy.stream()
+                .filter(group -> isDirectChildGroup(group, normalizedViewingGroup))
+                .sorted(String.CASE_INSENSITIVE_ORDER)
+                .collect(java.util.stream.Collectors.toList());
 
-        // Sort groups alphabetically
-        List<String> sortedGroups = new ArrayList<>(citizensByGroup.keySet());
-        Collections.sort(sortedGroups);
+        List<CitizenData> directCitizens = filteredCitizens.stream()
+                .filter(citizen -> isDirectCitizenInGroup(citizen, normalizedViewingGroup))
+                .sorted(Comparator.comparing(c -> c.getName().toLowerCase(Locale.ROOT)))
+                .collect(java.util.stream.Collectors.toList());
 
-        // Sort citizens within each group alphabetically
-        citizensByGroup.values().forEach(list -> list.sort(Comparator.comparing(c -> c.getName().toLowerCase())));
-        // Sort ungrouped citizens alphabetically
-        ungroupedCitizens.sort(Comparator.comparing(c -> c.getName().toLowerCase()));
-
-        // Create unified list
         List<ListItem> unifiedList = new ArrayList<>();
-        boolean isViewingSpecificGroup = viewingGroup != null && !viewingGroup.isEmpty();
+        boolean isViewingSpecificGroup = !normalizedViewingGroup.isEmpty();
 
-        if (isViewingSpecificGroup) {
-            // Viewing a specific group, show only citizens from that group
-            List<CitizenData> groupCitizens = citizensByGroup.get(viewingGroup);
-            if (groupCitizens != null) {
-                for (CitizenData citizen : groupCitizens) {
-                    unifiedList.add(ListItem.forCitizen(citizen));
+        for (String groupName : childGroups) {
+            unifiedList.add(ListItem.forGroup(groupName, groupEventId(groupName)));
+        }
+        for (CitizenData citizen : directCitizens) {
+            unifiedList.add(ListItem.forCitizen(citizen));
+        }
+
+        if (!isViewingSpecificGroup && !lowerSearchQuery.isEmpty()) {
+            for (CitizenData citizen : filteredCitizens) {
+                if (normalizeGroupPath(citizen.getGroup()).isEmpty()) {
+                    continue;
                 }
-            }
-        } else {
-            // Viewing all, show groups first, then ungrouped citizens
-            for (String groupName : sortedGroups) {
-                unifiedList.add(ListItem.forGroup(groupName, sanitizeGroupId(groupName)));
-            }
-            for (CitizenData citizen : ungroupedCitizens) {
                 unifiedList.add(ListItem.forCitizen(citizen));
-            }
-            // When searching, also show individual citizens from groups for easy access
-            if (!lowerSearchQuery.isEmpty()) {
-                for (String groupName : sortedGroups) {
-                    List<CitizenData> groupCitizens = citizensByGroup.get(groupName);
-                    if (groupCitizens != null) {
-                        for (CitizenData citizen : groupCitizens) {
-                            unifiedList.add(ListItem.forCitizen(citizen));
-                        }
-                    }
-                }
             }
         }
 
@@ -1126,9 +1414,9 @@ public class CitizensUI {
                 .setVariable("isCreateTab", currentTab == Tab.CREATE)
                 .setVariable("isManageTab", currentTab == Tab.MANAGE)
                 .setVariable("unifiedList", unifiedList)
-                .setVariable("hasCitizens", !filteredCitizens.isEmpty())
+                .setVariable("hasCitizens", !unifiedList.isEmpty())
                 .setVariable("searchQuery", escapeHtml(searchQuery))
-                .setVariable("viewingGroup", viewingGroup != null ? escapeHtml(viewingGroup) : "")
+                .setVariable("viewingGroup", escapeHtml(normalizedViewingGroup))
                 .setVariable("isViewingGroup", isViewingSpecificGroup);
 
         String html = template.process(getSharedStyles() + """
@@ -1200,12 +1488,22 @@ public class CitizensUI {
                             <button id="edit-closest-btn" class="secondary-button" style="anchor-width: 220; anchor-height: 40;">Edit Closest Citizen</button>
                             <div class="spacer-h-sm"></div>
                             <button id="get-citizen-stick-btn" class="secondary-button" style="anchor-width: 220; anchor-height: 40;">Get Citizen Stick</button>
+                            <div class="spacer-h-sm"></div>
+                            <button id="respawn-all-btn" class="secondary-button" style="anchor-width: 170; anchor-height: 40;">Respawn All</button>
+                            <div class="spacer-h-sm"></div>
+                            <button id="new-root-group-btn" class="secondary-button" style="anchor-width: 150; anchor-height: 40;">New Group</button>
                         </div>
                         
                         {{#if isViewingGroup}}
                         <!-- Viewing Specific Group -->
                         <div class="form-row">
                             <button id="back-to-all" class="secondary-button" style="anchor-width: 120;">Back</button>
+                            <div class="spacer-h-sm"></div>
+                            <button id="new-child-group-btn" class="secondary-button" style="anchor-width: 170;">New Child Group</button>
+                            <div class="spacer-h-sm"></div>
+                            <button id="move-current-group-btn" class="secondary-button" style="anchor-width: 150;">Move Group</button>
+                            <div class="spacer-h-sm"></div>
+                            <button id="respawn-current-group-btn" class="secondary-button" style="anchor-width: 160;">Respawn Group</button>
                             <div style="flex-weight: 1; layout: center;">
                                 <p style="font-size: 18px; font-weight: bold; color: #FFFFFF;">Group: {{$viewingGroup}}</p>
                             </div>
@@ -1246,6 +1544,8 @@ public class CitizensUI {
                                     <button id="view-group-{{$groupId}}" class="secondary-button small-secondary-button" style="anchor-width: 110;">View</button>
                                     <div class="spacer-h-sm"></div>
                                     <button id="rename-group-{{$groupId}}" class="secondary-button small-secondary-button" style="anchor-width: 130;">Rename</button>
+                                    <div class="spacer-h-sm"></div>
+                                    <button id="move-group-{{$groupId}}" class="secondary-button small-secondary-button" style="anchor-width: 110;">Move</button>
                                 </div>
                             </div>
                             {{/if}}
@@ -1277,15 +1577,30 @@ public class CitizensUI {
     }
 
     public void openCreateCitizenGUI(@Nonnull PlayerRef playerRef, @Nonnull Store<EntityStore> store) {
-        openCreateCitizenGUI(playerRef, store, true, "", 0, false, false, "",
+        openCreateCitizenGUI(playerRef, store, true, "", 0, false, false,
+                false, CitizenData.MAP_MARKER_TYPE_PIN, "", false, "", 1.0f, true, "",
                 1.0f, "", "", false, false, "", true, "", 25.0f);
     }
 
     public void openCreateCitizenGUI(@Nonnull PlayerRef playerRef, @Nonnull Store<EntityStore> store,
-                                     boolean isPlayerModel, String name, float nametagOffset, boolean hideNametag, boolean hideNpc,
-                                     String modelId, float scale, String permission, String permMessage, boolean useLiveSkin,
-                                     boolean preserveState, String skinUsername, boolean rotateTowardsPlayer,
-                                     String group, float lookAtDistance) {
+                                      boolean isPlayerModel, String name, float nametagOffset, boolean hideNametag, boolean hideNpc,
+                                      boolean mapMarkerEnabled, String mapMarkerType,
+                                      boolean modelNametagEnabled, String nametagModelId, float nametagModelScale, boolean rotateNametagTowardsPlayer,
+                                      String modelId, float scale, String permission, String permMessage, boolean useLiveSkin,
+                                      boolean preserveState, String skinUsername, boolean rotateTowardsPlayer,
+                                      String group, float lookAtDistance) {
+        openCreateCitizenGUI(playerRef, store, isPlayerModel, name, nametagOffset, hideNametag, hideNpc,
+                mapMarkerEnabled, mapMarkerType, "", modelNametagEnabled, nametagModelId, nametagModelScale, rotateNametagTowardsPlayer,
+                modelId, scale, permission, permMessage, useLiveSkin, preserveState, skinUsername, rotateTowardsPlayer, group, lookAtDistance);
+    }
+
+    private void openCreateCitizenGUI(@Nonnull PlayerRef playerRef, @Nonnull Store<EntityStore> store,
+                                      boolean isPlayerModel, String name, float nametagOffset, boolean hideNametag, boolean hideNpc,
+                                      boolean mapMarkerEnabled, String mapMarkerType, String mapMarkerName,
+                                      boolean modelNametagEnabled, String nametagModelId, float nametagModelScale, boolean rotateNametagTowardsPlayer,
+                                      String modelId, float scale, String permission, String permMessage, boolean useLiveSkin,
+                                      boolean preserveState, String skinUsername, boolean rotateTowardsPlayer,
+                                      String group, float lookAtDistance) {
         pendingFollowSelections.remove(playerRef.getUuid());
 
         List<String> allGroups = plugin.getCitizensManager().getAllGroups();
@@ -1294,9 +1609,10 @@ public class CitizensUI {
         TemplateProcessor template = createBaseTemplate()
                 .setVariable("isPlayerModel", isPlayerModel)
                 .setVariable("name", escapeHtml(name))
-                .setVariable("nametagOffset", nametagOffset)
-                .setVariable("hideNametag", hideNametag)
                 .setVariable("hideNpc", hideNpc)
+                .setVariable("mapMarkerEnabled", mapMarkerEnabled)
+                .setVariable("mapMarkerTypeOptions", generateMapMarkerTypeOptions(mapMarkerType))
+                .setVariable("mapMarkerName", escapeHtml(mapMarkerName))
                 .setVariable("group", escapeHtml(group))
                 .setVariable("groupOptions", groupOptionsHTML)
                 .setVariable("modelId", modelId.isEmpty() ? "PlayerTestModel_V" : modelId)
@@ -1307,11 +1623,13 @@ public class CitizensUI {
                 .setVariable("skinUsername", escapeHtml(skinUsername))
                 .setVariable("rotateTowardsPlayer", rotateTowardsPlayer)
                 .setVariable("lookAtDistance", lookAtDistance)
+                .setVariable("nametagSummary", buildNametagSummary(name, nametagOffset, hideNametag, modelNametagEnabled,
+                        nametagModelId, nametagModelScale, rotateNametagTowardsPlayer))
                 .setVariable("entityOptions", generateEntityDropdownOptions(modelId.isEmpty() ? "PlayerTestModel_V" : modelId));
 
         String html = template.process(getSharedStyles() + """
                 <div class="page-overlay">
-                    <div class="main-container decorated-container" style="anchor-width: 900; anchor-height: 820;">
+                    <div class="main-container decorated-container" style="anchor-width: 900; anchor-height: 860;">
                 
                         <!-- Header -->
                         <div class="header container-title">
@@ -1334,41 +1652,19 @@ public class CitizensUI {
                             <!-- Basic Information Section -->
                             <div class="section">
                                 {{@sectionHeader:title=Basic Information,description=Set the citizen's name and display settings}}
-                
+                 
                                 <div class="form-row" style="horizontal-align: center;">
-                                     <div class="form-col-fixed" style="anchor-width: 400;">
+                                     <div class="form-col-fixed" style="anchor-width: 460;">
                                          <div class="form-group">
                                              <p class="form-label">Citizen Name *</p>
                                              <input type="text" id="citizen-name" class="form-input" value="{{$name}}"\s
                                                     placeholder="Enter a display name" />
-                                             <p class="form-hint" style="text-align: center;">This will be displayed above the NPC</p>
                                              <div class="spacer-xs"></div>
-                                             <button id="edit-nametag-lines-btn" class="secondary-button small-secondary-button" style="anchor-width: 190;">Nametag Lines</button>
+                                             <button id="nametag-settings-btn" class="secondary-button small-secondary-button" style="anchor-width: 210;">Nametag Settings</button>
+                                             <div class="spacer-xs"></div>
+                                             <p class="form-hint" style="text-align: center;">{{$nametagSummary}}</p>
                                          </div>
                                      </div>
-                
-                                     <div class="spacer-h-md"></div>
-                
-                                     <div class="form-col-fixed" style="anchor-width: 150;">
-                                         <div class="form-group">
-                                             <p class="form-label">Nametag Offset</p>
-                                             <input type="number" id="nametag-offset" class="form-input"
-                                                    value="{{$nametagOffset}}"
-                                                    placeholder="0.0"
-                                                    min="-500" max="500" step="0.25"
-                                                    data-hyui-max-decimal-places="2" />
-                                         </div>
-                                     </div>
-                                 </div>
-                
-                                <div class="spacer-sm"></div>
-                
-                                <div class="checkbox-row">
-                                    <input type="checkbox" id="hide-nametag-check" {{#if hideNametag}}checked{{/if}} />
-                                    <div style="layout: top; flex-weight: 0; text-align: center;">
-                                        <p class="checkbox-label">Hide Nametag</p>
-                                        <p class="checkbox-description">Hide the name displayed above the citizen</p>
-                                    </div>
                                 </div>
 
                                 <div class="spacer-sm"></div>
@@ -1380,6 +1676,31 @@ public class CitizensUI {
                                         <p class="checkbox-description">Hide the NPC entity</p>
                                     </div>
                                 </div>
+                                <div class="spacer-xs"></div>
+                                <div class="checkbox-row">
+                                    <input type="checkbox" id="map-marker-check" {{#if mapMarkerEnabled}}checked{{/if}} />
+                                    <div style="layout: top; flex-weight: 0; text-align: center;">
+                                        <p class="checkbox-label">Show Map Marker</p>
+                                        <p class="checkbox-description">Add this citizen to the world map</p>
+                                    </div>
+                                </div>
+                                {{#if mapMarkerEnabled}}
+                                <div class="spacer-xs"></div>
+                                <div class="form-group" style="anchor-width: 360;">
+                                    <p class="form-label">Map Marker Type</p>
+                                    <select id="map-marker-type" data-hyui-showlabel="true">
+                                        {{{$mapMarkerTypeOptions}}}
+                                    </select>
+                                    <p class="form-hint">Used when Show Map Marker is enabled</p>
+                                </div>
+                                <div class="spacer-xs"></div>
+                                <div class="form-group" style="anchor-width: 360;">
+                                    <p class="form-label">Marker Name</p>
+                                    <input type="text" id="map-marker-name" class="form-input" value="{{$mapMarkerName}}"
+                                           placeholder="Leave empty to use citizen name" maxlength="64" />
+                                    <p class="form-hint">Leave empty to use the citizen name</p>
+                                </div>
+                                {{/if}}
                             </div>
 
                             <div class="spacer-md"></div>
@@ -1512,7 +1833,7 @@ public class CitizensUI {
                                             <input type="number" id="citizen-scale" class="form-input"
                                                    value="{{$scale}}"
                                                    placeholder="1.0"
-                                                   min="0.01" max="500" step="0.25"
+                                                   min="0.01" max="100" step="0.25"
                                                    data-hyui-max-decimal-places="2" />
                                             <p class="form-hint">Default: 1.0 (normal size)</p>
                                         </div>
@@ -1577,15 +1898,23 @@ public class CitizensUI {
                 .fromHtml(html);
 
         setupCreateCitizenListeners(page, playerRef, store, isPlayerModel, name, nametagOffset, hideNametag, hideNpc,
+                mapMarkerEnabled, mapMarkerType, mapMarkerName,
+                modelNametagEnabled, nametagModelId, nametagModelScale, rotateNametagTowardsPlayer,
                 modelId, scale, permission, permMessage, useLiveSkin, skinUsername, rotateTowardsPlayer, group, lookAtDistance);
 
         page.open(store);
     }
 
     public void openEditCitizenGUI(@Nonnull PlayerRef playerRef, @Nonnull Store<EntityStore> store, @Nonnull CitizenData citizen) {
+        openEditCitizenGUI(playerRef, store, citizen, citizen.isMapMarkerEnabled(), citizen.getMapMarkerType(), citizen.getMapMarkerName());
+    }
+
+    private void openEditCitizenGUI(@Nonnull PlayerRef playerRef, @Nonnull Store<EntityStore> store, @Nonnull CitizenData citizen,
+                                    boolean draftMapMarkerEnabled, @Nullable String draftMapMarkerType, @Nullable String draftMapMarkerName) {
         pendingFollowSelections.remove(playerRef.getUuid());
         List<String> allGroups = plugin.getCitizensManager().getAllGroups();
         String groupOptionsHTML = generateGroupDropdownOptions(citizen.getGroup(), allGroups);
+        String normalizedDraftMapMarkerType = CitizenData.normalizeMapMarkerType(draftMapMarkerType);
 
         TemplateProcessor template = createBaseTemplate()
                 .setVariable("citizen", new SafeCitizen(citizen))
@@ -1593,9 +1922,20 @@ public class CitizensUI {
                 .setVariable("useLiveSkin", citizen.isUseLiveSkin())
                 .setVariable("rotateTowardsPlayer", citizen.getRotateTowardsPlayer())
                 .setVariable("lookAtDistance", citizen.getLookAtDistance())
-                .setVariable("hideNametag", citizen.isHideNametag())
                 .setVariable("hideNpc", citizen.isHideNpc())
+                .setVariable("mapMarkerEnabled", draftMapMarkerEnabled)
+                .setVariable("mapMarkerTypeOptions", generateMapMarkerTypeOptions(normalizedDraftMapMarkerType))
+                .setVariable("mapMarkerName", escapeHtml(draftMapMarkerName != null ? draftMapMarkerName : ""))
                 .setVariable("groupOptions", groupOptionsHTML)
+                .setVariable("nametagSummary", buildNametagSummary(
+                        citizen.getName(),
+                        citizen.getNametagOffset(),
+                        citizen.isHideNametag(),
+                        citizen.isModelNametagEnabled(),
+                        citizen.getNametagModelId(),
+                        citizen.getNametagModelScale(),
+                        citizen.isRotateNametagTowardsPlayer()
+                ))
                 .setVariable("entityOptions", generateEntityDropdownOptions(citizen.getModelId()));
 
         String html = template.process(getSharedStyles() + """
@@ -1618,43 +1958,21 @@ public class CitizensUI {
                             <!-- Basic Information Section -->
                             <div class="section">
                                 {{@sectionHeader:title=Basic Information,description=Set the citizen's name and display settings}}
-                
+                 
                                 <div class="form-row" style="horizontal-align: center;">
-                                    <div class="form-col-fixed" style="anchor-width: 400;">
+                                    <div class="form-col-fixed" style="anchor-width: 460;">
                                         <div class="form-group">
                                             <p class="form-label">Citizen Name *</p>
                                             <input type="text" id="citizen-name" class="form-input" value="{{$citizen.name}}"\s
                                                    placeholder="Enter a display name" maxlength="32" />
-                                            <p class="form-hint" style="text-align: center;">This will be displayed above the NPC</p>
                                             <div class="spacer-xs"></div>
-                                            <button id="edit-nametag-lines-btn" class="secondary-button small-secondary-button" style="anchor-width: 190;">Nametag Lines</button>
-                                        </div>
-                                    </div>
-                
-                                    <div class="spacer-h-md"></div>
-                
-                                    <div class="form-col-fixed" style="anchor-width: 150;">
-                                        <div class="form-group">
-                                            <p class="form-label">Nametag Offset</p>
-                                            <input type="number" id="nametag-offset" class="form-input"
-                                                   value="{{$citizen.nametagOffset}}"
-                                                   placeholder="0.0"
-                                                   min="-500" max="500" step="0.25"
-                                                   data-hyui-max-decimal-places="2" />
+                                            <button id="nametag-settings-btn" class="secondary-button small-secondary-button" style="anchor-width: 210;">Nametag Settings</button>
+                                            <div class="spacer-xs"></div>
+                                            <p class="form-hint" style="text-align: center;">{{$nametagSummary}}</p>
                                         </div>
                                     </div>
                                 </div>
-                
-                                <div class="spacer-sm"></div>
-                
-                                <div class="checkbox-row">
-                                    <input type="checkbox" id="hide-nametag-check" {{#if hideNametag}}checked{{/if}} />
-                                    <div style="layout: top; flex-weight: 0; text-align: center;">
-                                        <p class="checkbox-label">Hide Nametag</p>
-                                        <p class="checkbox-description">Hide the name displayed above the citizen</p>
-                                    </div>
-                                </div>
-
+                 
                                 <div class="spacer-sm"></div>
 
                                 <div class="checkbox-row">
@@ -1664,6 +1982,31 @@ public class CitizensUI {
                                         <p class="checkbox-description">Hide the NPC entity</p>
                                     </div>
                                 </div>
+                                <div class="spacer-xs"></div>
+                                <div class="checkbox-row">
+                                    <input type="checkbox" id="map-marker-check" {{#if mapMarkerEnabled}}checked{{/if}} />
+                                    <div style="layout: top; flex-weight: 0; text-align: center;">
+                                        <p class="checkbox-label">Show Map Marker</p>
+                                        <p class="checkbox-description">Add this citizen to the world map</p>
+                                    </div>
+                                </div>
+                                {{#if mapMarkerEnabled}}
+                                <div class="spacer-xs"></div>
+                                <div class="form-group" style="anchor-width: 360;">
+                                    <p class="form-label">Map Marker Type</p>
+                                    <select id="map-marker-type" data-hyui-showlabel="true">
+                                        {{{$mapMarkerTypeOptions}}}
+                                    </select>
+                                    <p class="form-hint">NPC Type uses an official portrait when one matches the model</p>
+                                </div>
+                                <div class="spacer-xs"></div>
+                                <div class="form-group" style="anchor-width: 360;">
+                                    <p class="form-label">Marker Name</p>
+                                    <input type="text" id="map-marker-name" class="form-input" value="{{$mapMarkerName}}"
+                                           placeholder="Leave empty to use citizen name" maxlength="64" />
+                                    <p class="form-hint">Leave empty to use the citizen name</p>
+                                </div>
+                                {{/if}}
                             </div>
 
                             <div class="spacer-md"></div>
@@ -1802,7 +2145,7 @@ public class CitizensUI {
                                             <p class="form-label">Scale Factor *</p>
                                             <input type="number" id="citizen-scale" class="form-input"
                                                    value="{{$citizen.scale}}"
-                                                   min="0.01" max="500" step="0.25"
+                                                   min="0.01" max="100" step="0.25"
                                                    data-hyui-max-decimal-places="2" />
                                             <p class="form-hint">Default: 1.0 (normal size)</p>
                                         </div>
@@ -1851,8 +2194,23 @@ public class CitizensUI {
                 
                             <!-- Quick Actions Section -->
                             <div class="section">
-                                {{@sectionHeader:title=Quick Actions,description= }}
-                
+                                {{@sectionHeader:title=Quick Actions,description=Teleport&#44; duplicate&#44; or remove this citizen immediately}}
+
+                                <div class="form-row">
+                                    <button id="edit-tp-btn" class="secondary-button" style="anchor-width: 180; anchor-height: 44;">TP</button>
+                                    <div class="spacer-h-sm"></div>
+                                    <button id="edit-clone-btn" class="secondary-button" style="anchor-width: 180; anchor-height: 44;">Clone</button>
+                                    <div class="spacer-h-sm"></div>
+                                    <button id="edit-remove-btn" class="secondary-button" style="anchor-width: 180; anchor-height: 44;">Remove</button>
+                                </div>
+                            </div>
+
+                            <div class="spacer-md"></div>
+
+                            <!-- Configuration Section -->
+                            <div class="section">
+                                {{@sectionHeader:title=Configuration,description=Open specialized editors and apply setup changes}}
+
                                 <div class="form-row">
                                     <button id="edit-commands-btn" class="secondary-button" style="anchor-width: 200; anchor-height: 44;">Commands</button>
                                     <div class="spacer-h-sm"></div>
@@ -1874,7 +2232,7 @@ public class CitizensUI {
                                     <button id="first-interaction-btn" class="secondary-button" style="anchor-width: 240; anchor-height: 44;">First Interaction</button>
                                 </div>
                             </div>
-                
+
                             <div class="spacer-lg"></div>
                 
                         </div>
@@ -1894,7 +2252,8 @@ public class CitizensUI {
                 .withLifetime(CustomPageLifetime.CanDismiss)
                 .fromHtml(html);
 
-        setupEditCitizenListeners(page, playerRef, store, citizen);
+        setupEditCitizenListeners(page, playerRef, store, citizen, draftMapMarkerEnabled, normalizedDraftMapMarkerType,
+                draftMapMarkerName != null ? draftMapMarkerName : "");
 
         page.open(store);
     }
@@ -2223,6 +2582,15 @@ public class CitizensUI {
                 openEditCitizenGUI(playerRef, store, closest);
             });
 
+            page.addEventListener("new-root-group-btn", CustomUIEventBindingType.Activating, event ->
+                    openCreateGroupGUI(playerRef, store, ""));
+
+            page.addEventListener("respawn-all-btn", CustomUIEventBindingType.Activating, event -> {
+                int count = plugin.getCitizensManager().respawnAllCitizens(true);
+                playerRef.sendMessage(Message.raw("Respawned " + count + " citizens.").color(Color.GREEN));
+                openCitizensGUI(playerRef, store, currentTab, searchQuery, viewingGroup);
+            });
+
             page.addEventListener("get-citizen-stick-btn", CustomUIEventBindingType.Activating, event -> {
                 Ref<EntityStore> ref = playerRef.getReference();
                 if (ref == null || !ref.isValid()) {
@@ -2261,8 +2629,19 @@ public class CitizensUI {
 
             // Back button listener
             if (viewingGroup != null && !viewingGroup.isEmpty()) {
-                page.addEventListener("back-to-all", CustomUIEventBindingType.Activating, event ->
-                        openCitizensGUI(playerRef, store, Tab.MANAGE, "", null));
+                page.addEventListener("back-to-all", CustomUIEventBindingType.Activating, event -> {
+                    String parentGroup = getParentGroup(viewingGroup);
+                    openCitizensGUI(playerRef, store, Tab.MANAGE, "", parentGroup.isEmpty() ? null : parentGroup);
+                });
+                page.addEventListener("new-child-group-btn", CustomUIEventBindingType.Activating, event ->
+                        openCreateGroupGUI(playerRef, store, viewingGroup));
+                page.addEventListener("move-current-group-btn", CustomUIEventBindingType.Activating, event ->
+                        openMoveGroupGUI(playerRef, store, viewingGroup));
+                page.addEventListener("respawn-current-group-btn", CustomUIEventBindingType.Activating, event -> {
+                    int count = plugin.getCitizensManager().respawnCitizensInGroup(viewingGroup, true, true);
+                    playerRef.sendMessage(Message.raw("Respawned " + count + " citizens in this group.").color(Color.GREEN));
+                    openCitizensGUI(playerRef, store, currentTab, searchQuery, viewingGroup);
+                });
             }
 
             // Register event listeners for all items in the unified list
@@ -2275,216 +2654,231 @@ public class CitizensUI {
                             openCitizensGUI(playerRef, store, Tab.MANAGE, "", rawGroupName ));
                     page.addEventListener("rename-group-" + groupId, CustomUIEventBindingType.Activating, event ->
                             openRenameGroupGUI(playerRef, store, rawGroupName));
+                    page.addEventListener("move-group-" + groupId, CustomUIEventBindingType.Activating, event ->
+                            openMoveGroupGUI(playerRef, store, rawGroupName));
                 } else {
                     // Citizen action listeners
                     CitizenData citizen = item.getRawCitizen();
                     final String cid = citizen.getId();
 
-                    page.addEventListener("tp-" + cid, CustomUIEventBindingType.Activating, event -> {
-                        UUID citizenWorldUUID = citizen.getWorldUUID();
-
-                        if (citizenWorldUUID == null) {
-                            playerRef.sendMessage(Message.raw("Failed to teleport: Citizen has no world!").color(Color.RED));
-                            return;
-                        }
-
-                        World world = Universe.get().getWorld(citizenWorldUUID);
-                        if (world == null) {
-                            playerRef.sendMessage(Message.raw("Failed to teleport: World not found!").color(Color.RED));
-                            return;
-                        }
-
-                        Vector3d tpPos = new Vector3d(citizen.getCurrentPosition());
-
-                        // Try to teleport to the actual NPC's position
-                        if (citizen.getNpcRef() != null && citizen.getNpcRef().isValid()) {
-                            TransformComponent transform = citizen.getNpcRef().getStore().getComponent(citizen.getNpcRef(), TransformComponent.getComponentType());
-
-                            if (transform != null) {
-                                tpPos = new Vector3d(transform.getPosition());
-                            }
-                        }
-
-                        playerRef.getReference().getStore().addComponent(playerRef.getReference(),
-                                Teleport.getComponentType(), new Teleport(world, tpPos, new Vector3f(0, 0, 0)));
-
-                        playerRef.sendMessage(Message.raw("Teleported to citizen '" + citizen.getName() + "'!").color(Color.GREEN));
-                    });
+                    page.addEventListener("tp-" + cid, CustomUIEventBindingType.Activating, event ->
+                            teleportPlayerToCitizen(playerRef, citizen));
 
                     page.addEventListener("edit-" + cid, CustomUIEventBindingType.Activating, event ->
                             openEditCitizenGUI(playerRef, store, citizen));
 
                     page.addEventListener("clone-" + cid, CustomUIEventBindingType.Activating, event -> {
-                        Vector3d position = new Vector3d(playerRef.getTransform().getPosition());
-                        Vector3f rotation = new Vector3f(playerRef.getTransform().getRotation());
-
-                        UUID worldUUID = playerRef.getWorldUuid();
-                        if (worldUUID == null) {
-                            playerRef.sendMessage(Message.raw("Failed to clone citizen!").color(Color.RED));
-                            return;
+                        if (cloneCitizenToPlayer(playerRef, citizen)) {
+                            openCitizensGUI(playerRef, store, Tab.MANAGE);
                         }
-
-                        PlayerSkin playerSkin = null;
-                        if (citizen.getCachedSkin() != null) {
-                            playerSkin = new PlayerSkin(citizen.getCachedSkin());
-                        }
-
-                        List<CommandAction> clonedBaseCommands = copyCommandActions(citizen.getCommandActions());
-                        MessagesConfig sourceMessagesConfig = citizen.getMessagesConfig();
-                        List<CitizenMessage> clonedBaseMessages = copyCitizenMessages(sourceMessagesConfig.getMessages());
-
-                        CitizenData clonedCitizen = new CitizenData(
-                                UUID.randomUUID().toString(),
-                                citizen.getName(),
-                                citizen.getModelId(),
-                                worldUUID,
-                                position,
-                                rotation,
-                                citizen.getScale(),
-                                null,
-                                new ArrayList<>(),
-                                citizen.getRequiredPermission(),
-                                citizen.getNoPermissionMessage(),
-                                clonedBaseCommands,
-                                citizen.isPlayerModel(),
-                                citizen.isUseLiveSkin(),
-                                citizen.getSkinUsername(),
-                                playerSkin,
-                                citizen.getLastSkinUpdate(),
-                                citizen.getRotateTowardsPlayer()
-                        );
-
-                        clonedCitizen.setNametagOffset(citizen.getNametagOffset());
-                        clonedCitizen.setHideNametag(citizen.isHideNametag());
-                        clonedCitizen.setHideNpc(citizen.isHideNpc());
-                        clonedCitizen.setNpcHelmet(citizen.getNpcHelmet());
-                        clonedCitizen.setNpcChest(citizen.getNpcChest());
-                        clonedCitizen.setNpcGloves(citizen.getNpcGloves());
-                        clonedCitizen.setNpcLeggings(citizen.getNpcLeggings());
-                        clonedCitizen.setNpcHand(citizen.getNpcHand());
-                        clonedCitizen.setNpcOffHand(citizen.getNpcOffHand());
-                        clonedCitizen.setLookAtDistance(citizen.getLookAtDistance());
-                        clonedCitizen.setCommandSelectionMode(citizen.getCommandSelectionMode());
-
-                        // Copy behaviors and messages
-                        clonedCitizen.setAnimationBehaviors(new ArrayList<>(citizen.getAnimationBehaviors()));
-                        clonedCitizen.setMovementBehavior(new MovementBehavior(
-                                citizen.getMovementBehavior().getType(),
-                                citizen.getMovementBehavior().getWalkSpeed(),
-                                citizen.getMovementBehavior().getWanderRadius(),
-                                citizen.getMovementBehavior().getWanderWidth(),
-                                citizen.getMovementBehavior().getWanderDepth()));
-                        clonedCitizen.setMessagesConfig(new MessagesConfig(
-                                clonedBaseMessages,
-                                sourceMessagesConfig.getSelectionMode(),
-                                sourceMessagesConfig.isEnabled()));
-
-                        // Copy group
-                        clonedCitizen.setGroup(citizen.getGroup());
-
-                        // Copy attitude and damage settings
-                        clonedCitizen.setAttitude(citizen.getAttitude());
-                        clonedCitizen.setTakesDamage(citizen.isTakesDamage());
-                        clonedCitizen.setOverrideHealth(citizen.isOverrideHealth());
-                        clonedCitizen.setHealthAmount(citizen.getHealthAmount());
-                        clonedCitizen.setOverrideDamage(citizen.isOverrideDamage());
-                        clonedCitizen.setDamageAmount(citizen.getDamageAmount());
-                        clonedCitizen.setHealthRegenEnabled(citizen.isHealthRegenEnabled());
-                        clonedCitizen.setHealthRegenAmount(citizen.getHealthRegenAmount());
-                        clonedCitizen.setHealthRegenIntervalSeconds(citizen.getHealthRegenIntervalSeconds());
-                        clonedCitizen.setHealthRegenDelayAfterDamageSeconds(citizen.getHealthRegenDelayAfterDamageSeconds());
-
-                        // Copy respawn settings
-                        clonedCitizen.setRespawnOnDeath(citizen.isRespawnOnDeath());
-                        clonedCitizen.setRespawnDelaySeconds(citizen.getRespawnDelaySeconds());
-
-                        // Copy death config
-                        DeathConfig srcDc = citizen.getDeathConfig();
-                        DeathConfig clonedDc = new DeathConfig();
-                        clonedDc.setCommandSelectionMode(srcDc.getCommandSelectionMode());
-                        clonedDc.setMessageSelectionMode(srcDc.getMessageSelectionMode());
-                        clonedDc.setDropCountMin(srcDc.getDropCountMin());
-                        clonedDc.setDropCountMax(srcDc.getDropCountMax());
-                        clonedDc.setCommandCountMin(srcDc.getCommandCountMin());
-                        clonedDc.setCommandCountMax(srcDc.getCommandCountMax());
-                        clonedDc.setMessageCountMin(srcDc.getMessageCountMin());
-                        clonedDc.setMessageCountMax(srcDc.getMessageCountMax());
-                        clonedDc.setDropItems(copyDeathDropItems(srcDc.getDropItems()));
-                        clonedDc.setDeathCommands(copyCommandActions(srcDc.getDeathCommands()));
-                        clonedDc.setDeathMessages(copyCitizenMessages(srcDc.getDeathMessages()));
-                        clonedCitizen.setDeathConfig(clonedDc);
-
-                        // Copy first interaction config
-                        clonedCitizen.setFirstInteractionEnabled(citizen.isFirstInteractionEnabled());
-                        clonedCitizen.setFirstInteractionCommandSelectionMode(citizen.getFirstInteractionCommandSelectionMode());
-                        clonedCitizen.setPostFirstInteractionBehavior(citizen.getPostFirstInteractionBehavior());
-                        clonedCitizen.setRunNormalOnFirstInteraction(citizen.isRunNormalOnFirstInteraction());
-                        clonedCitizen.setFirstInteractionCommandActions(copyCommandActions(citizen.getFirstInteractionCommandActions()));
-                        MessagesConfig firstMessages = citizen.getFirstInteractionMessagesConfig();
-                        clonedCitizen.setFirstInteractionMessagesConfig(new MessagesConfig(
-                                copyCitizenMessages(firstMessages.getMessages()),
-                                firstMessages.getSelectionMode(),
-                                firstMessages.isEnabled()
-                        ));
-                        clonedCitizen.setPlayersWhoCompletedFirstInteraction(Collections.emptySet());
-
-                        // Copy config objects
-                        CombatConfig clonedCombat = new CombatConfig();
-                        clonedCombat.copyFrom(citizen.getCombatConfig());
-                        clonedCitizen.setCombatConfig(clonedCombat);
-
-                        DetectionConfig clonedDetection = new DetectionConfig();
-                        clonedDetection.copyFrom(citizen.getDetectionConfig());
-                        clonedCitizen.setDetectionConfig(clonedDetection);
-
-                        PathConfig clonedPath = new PathConfig();
-                        clonedPath.copyFrom(citizen.getPathConfig());
-                        clonedCitizen.setPathConfig(clonedPath);
-
-                        clonedCitizen.setMaxHealth(citizen.getMaxHealth());
-                        clonedCitizen.setLeashDistance(citizen.getLeashDistance());
-                        clonedCitizen.setDefaultNpcAttitude(citizen.getDefaultNpcAttitude());
-                        clonedCitizen.setApplySeparation(citizen.isApplySeparation());
-
-                        // Copy extended Template_Citizen parameters
-                        clonedCitizen.setDropList(citizen.getDropList());
-                        clonedCitizen.setRunThreshold(citizen.getRunThreshold());
-                        clonedCitizen.setWakingIdleBehaviorComponent(citizen.getWakingIdleBehaviorComponent());
-                        clonedCitizen.setDayFlavorAnimation(citizen.getDayFlavorAnimation());
-                        clonedCitizen.setDayFlavorAnimationLengthMin(citizen.getDayFlavorAnimationLengthMin());
-                        clonedCitizen.setDayFlavorAnimationLengthMax(citizen.getDayFlavorAnimationLengthMax());
-                        clonedCitizen.setAttitudeGroup(citizen.getAttitudeGroup());
-                        clonedCitizen.setNameTranslationKey(citizen.getNameTranslationKey());
-                        clonedCitizen.setBreathesInWater(citizen.isBreathesInWater());
-                        clonedCitizen.setLeashMinPlayerDistance(citizen.getLeashMinPlayerDistance());
-                        clonedCitizen.setLeashTimerMin(citizen.getLeashTimerMin());
-                        clonedCitizen.setLeashTimerMax(citizen.getLeashTimerMax());
-                        clonedCitizen.setHardLeashDistance(citizen.getHardLeashDistance());
-                        clonedCitizen.setDefaultHotbarSlot(citizen.getDefaultHotbarSlot());
-                        clonedCitizen.setRandomIdleHotbarSlot(citizen.getRandomIdleHotbarSlot());
-                        clonedCitizen.setChanceToEquipFromIdleHotbarSlot(citizen.getChanceToEquipFromIdleHotbarSlot());
-                        clonedCitizen.setDefaultOffHandSlot(citizen.getDefaultOffHandSlot());
-                        clonedCitizen.setNighttimeOffhandSlot(citizen.getNighttimeOffhandSlot());
-                        clonedCitizen.setKnockbackScale(citizen.getKnockbackScale());
-                        clonedCitizen.setWeapons(new ArrayList<>(citizen.getWeapons()));
-                        clonedCitizen.setOffHandItems(new ArrayList<>(citizen.getOffHandItems()));
-                        clonedCitizen.setCombatMessageTargetGroups(new ArrayList<>(citizen.getCombatMessageTargetGroups()));
-                        clonedCitizen.setFlockArray(new ArrayList<>(citizen.getFlockArray()));
-                        clonedCitizen.setDisableDamageGroups(new ArrayList<>(citizen.getDisableDamageGroups()));
-
-                        plugin.getCitizensManager().addCitizen(clonedCitizen, true);
-                        playerRef.sendMessage(Message.raw("Citizen '" + citizen.getName() + "' cloned at your position!").color(Color.GREEN));
-                        openCitizensGUI(playerRef, store, Tab.MANAGE);
                     });
 
                     page.addEventListener("remove-" + cid, CustomUIEventBindingType.Activating, event -> {
-                        plugin.getCitizensManager().removeCitizen(cid);
-                        playerRef.sendMessage(Message.raw("Citizen '" + citizen.getName() + "' removed!").color(Color.GREEN));
+                        removeCitizen(playerRef, citizen);
                         openCitizensGUI(playerRef, store, Tab.MANAGE);
                     });
                 }
             }
         }
+    }
+
+    private void teleportPlayerToCitizen(@Nonnull PlayerRef playerRef, @Nonnull CitizenData citizen) {
+        UUID citizenWorldUUID = citizen.getWorldUUID();
+
+        if (citizenWorldUUID == null) {
+            playerRef.sendMessage(Message.raw("Failed to teleport: Citizen has no world!").color(Color.RED));
+            return;
+        }
+
+        World world = Universe.get().getWorld(citizenWorldUUID);
+        if (world == null) {
+            playerRef.sendMessage(Message.raw("Failed to teleport: World not found!").color(Color.RED));
+            return;
+        }
+
+        Vector3d tpPos = new Vector3d(citizen.getCurrentPosition());
+
+        if (citizen.getNpcRef() != null && citizen.getNpcRef().isValid()) {
+            TransformComponent transform = citizen.getNpcRef().getStore().getComponent(citizen.getNpcRef(),
+                    TransformComponent.getComponentType());
+
+            if (transform != null) {
+                tpPos = new Vector3d(transform.getPosition());
+            }
+        }
+
+        playerRef.getReference().getStore().addComponent(playerRef.getReference(),
+                Teleport.getComponentType(), new Teleport(world, tpPos, new Vector3f(0, 0, 0)));
+
+        playerRef.sendMessage(Message.raw("Teleported to citizen '" + citizen.getName() + "'!").color(Color.GREEN));
+    }
+
+    private boolean cloneCitizenToPlayer(@Nonnull PlayerRef playerRef, @Nonnull CitizenData citizen) {
+        Vector3d position = new Vector3d(playerRef.getTransform().getPosition());
+        Vector3f rotation = new Vector3f(playerRef.getTransform().getRotation());
+
+        UUID worldUUID = playerRef.getWorldUuid();
+        if (worldUUID == null) {
+            playerRef.sendMessage(Message.raw("Failed to clone citizen!").color(Color.RED));
+            return false;
+        }
+
+        PlayerSkin playerSkin = null;
+        if (citizen.getCachedSkin() != null) {
+            playerSkin = new PlayerSkin(citizen.getCachedSkin());
+        }
+
+        List<CommandAction> clonedBaseCommands = copyCommandActions(citizen.getCommandActions());
+        MessagesConfig sourceMessagesConfig = citizen.getMessagesConfig();
+        List<CitizenMessage> clonedBaseMessages = copyCitizenMessages(sourceMessagesConfig.getMessages());
+
+        CitizenData clonedCitizen = new CitizenData(
+                UUID.randomUUID().toString(),
+                citizen.getName(),
+                citizen.getModelId(),
+                worldUUID,
+                position,
+                rotation,
+                citizen.getScale(),
+                null,
+                new ArrayList<>(),
+                citizen.getRequiredPermission(),
+                citizen.getNoPermissionMessage(),
+                clonedBaseCommands,
+                citizen.isPlayerModel(),
+                citizen.isUseLiveSkin(),
+                citizen.getSkinUsername(),
+                playerSkin,
+                citizen.getLastSkinUpdate(),
+                citizen.getRotateTowardsPlayer()
+        );
+        clonedCitizen.setCurrentPosition(new Vector3d(position));
+
+        clonedCitizen.setNametagOffset(citizen.getNametagOffset());
+        clonedCitizen.setHideNametag(citizen.isHideNametag());
+        clonedCitizen.setModelNametagEnabled(citizen.isModelNametagEnabled());
+        clonedCitizen.setNametagModelId(citizen.getNametagModelId());
+        clonedCitizen.setNametagModelScale(citizen.getNametagModelScale());
+        clonedCitizen.setRotateNametagTowardsPlayer(citizen.isRotateNametagTowardsPlayer());
+        clonedCitizen.setHideNpc(citizen.isHideNpc());
+        clonedCitizen.setMapMarkerEnabled(citizen.isMapMarkerEnabled());
+        clonedCitizen.setMapMarkerType(citizen.getMapMarkerType());
+        clonedCitizen.setMapMarkerName(citizen.getMapMarkerName());
+        clonedCitizen.setNpcHelmet(citizen.getNpcHelmet());
+        clonedCitizen.setNpcChest(citizen.getNpcChest());
+        clonedCitizen.setNpcGloves(citizen.getNpcGloves());
+        clonedCitizen.setNpcLeggings(citizen.getNpcLeggings());
+        clonedCitizen.setNpcHand(citizen.getNpcHand());
+        clonedCitizen.setNpcOffHand(citizen.getNpcOffHand());
+        clonedCitizen.setLookAtDistance(citizen.getLookAtDistance());
+        clonedCitizen.setCommandSelectionMode(citizen.getCommandSelectionMode());
+
+        clonedCitizen.setAnimationBehaviors(new ArrayList<>(citizen.getAnimationBehaviors()));
+        clonedCitizen.setMovementBehavior(new MovementBehavior(
+                citizen.getMovementBehavior().getType(),
+                citizen.getMovementBehavior().getWalkSpeed(),
+                citizen.getMovementBehavior().getWanderRadius(),
+                citizen.getMovementBehavior().getWanderWidth(),
+                citizen.getMovementBehavior().getWanderDepth()));
+        clonedCitizen.setMessagesConfig(new MessagesConfig(
+                clonedBaseMessages,
+                sourceMessagesConfig.getSelectionMode(),
+                sourceMessagesConfig.isEnabled()));
+
+        clonedCitizen.setGroup(citizen.getGroup());
+
+        clonedCitizen.setAttitude(citizen.getAttitude());
+        clonedCitizen.setTakesDamage(citizen.isTakesDamage());
+        clonedCitizen.setOverrideHealth(citizen.isOverrideHealth());
+        clonedCitizen.setHealthAmount(citizen.getHealthAmount());
+        clonedCitizen.setOverrideDamage(citizen.isOverrideDamage());
+        clonedCitizen.setDamageAmount(citizen.getDamageAmount());
+        clonedCitizen.setHealthRegenEnabled(citizen.isHealthRegenEnabled());
+        clonedCitizen.setHealthRegenAmount(citizen.getHealthRegenAmount());
+        clonedCitizen.setHealthRegenIntervalSeconds(citizen.getHealthRegenIntervalSeconds());
+        clonedCitizen.setHealthRegenDelayAfterDamageSeconds(citizen.getHealthRegenDelayAfterDamageSeconds());
+
+        clonedCitizen.setRespawnOnDeath(citizen.isRespawnOnDeath());
+        clonedCitizen.setRespawnDelaySeconds(citizen.getRespawnDelaySeconds());
+
+        DeathConfig srcDc = citizen.getDeathConfig();
+        DeathConfig clonedDc = new DeathConfig();
+        clonedDc.setCommandSelectionMode(srcDc.getCommandSelectionMode());
+        clonedDc.setMessageSelectionMode(srcDc.getMessageSelectionMode());
+        clonedDc.setDropCountMin(srcDc.getDropCountMin());
+        clonedDc.setDropCountMax(srcDc.getDropCountMax());
+        clonedDc.setCommandCountMin(srcDc.getCommandCountMin());
+        clonedDc.setCommandCountMax(srcDc.getCommandCountMax());
+        clonedDc.setMessageCountMin(srcDc.getMessageCountMin());
+        clonedDc.setMessageCountMax(srcDc.getMessageCountMax());
+        clonedDc.setDropItems(copyDeathDropItems(srcDc.getDropItems()));
+        clonedDc.setDeathCommands(copyCommandActions(srcDc.getDeathCommands()));
+        clonedDc.setDeathMessages(copyCitizenMessages(srcDc.getDeathMessages()));
+        clonedCitizen.setDeathConfig(clonedDc);
+
+        clonedCitizen.setFirstInteractionEnabled(citizen.isFirstInteractionEnabled());
+        clonedCitizen.setFirstInteractionCommandSelectionMode(citizen.getFirstInteractionCommandSelectionMode());
+        clonedCitizen.setPostFirstInteractionBehavior(citizen.getPostFirstInteractionBehavior());
+        clonedCitizen.setRunNormalOnFirstInteraction(citizen.isRunNormalOnFirstInteraction());
+        clonedCitizen.setFirstInteractionCommandActions(copyCommandActions(citizen.getFirstInteractionCommandActions()));
+        MessagesConfig firstMessages = citizen.getFirstInteractionMessagesConfig();
+        clonedCitizen.setFirstInteractionMessagesConfig(new MessagesConfig(
+                copyCitizenMessages(firstMessages.getMessages()),
+                firstMessages.getSelectionMode(),
+                firstMessages.isEnabled()
+        ));
+        clonedCitizen.setPlayersWhoCompletedFirstInteraction(Collections.emptySet());
+
+        CombatConfig clonedCombat = new CombatConfig();
+        clonedCombat.copyFrom(citizen.getCombatConfig());
+        clonedCitizen.setCombatConfig(clonedCombat);
+
+        DetectionConfig clonedDetection = new DetectionConfig();
+        clonedDetection.copyFrom(citizen.getDetectionConfig());
+        clonedCitizen.setDetectionConfig(clonedDetection);
+
+        PathConfig clonedPath = new PathConfig();
+        clonedPath.copyFrom(citizen.getPathConfig());
+        clonedCitizen.setPathConfig(clonedPath);
+
+        clonedCitizen.setMaxHealth(citizen.getMaxHealth());
+        clonedCitizen.setLeashDistance(citizen.getLeashDistance());
+        clonedCitizen.setDefaultNpcAttitude(citizen.getDefaultNpcAttitude());
+        clonedCitizen.setApplySeparation(citizen.isApplySeparation());
+
+        clonedCitizen.setDropList(citizen.getDropList());
+        clonedCitizen.setRunThreshold(citizen.getRunThreshold());
+        clonedCitizen.setWakingIdleBehaviorComponent(citizen.getWakingIdleBehaviorComponent());
+        clonedCitizen.setDayFlavorAnimation(citizen.getDayFlavorAnimation());
+        clonedCitizen.setDayFlavorAnimationLengthMin(citizen.getDayFlavorAnimationLengthMin());
+        clonedCitizen.setDayFlavorAnimationLengthMax(citizen.getDayFlavorAnimationLengthMax());
+        clonedCitizen.setAttitudeGroup(citizen.getAttitudeGroup());
+        clonedCitizen.setNameTranslationKey(citizen.getNameTranslationKey());
+        clonedCitizen.setBreathesInWater(citizen.isBreathesInWater());
+        clonedCitizen.setLeashMinPlayerDistance(citizen.getLeashMinPlayerDistance());
+        clonedCitizen.setLeashTimerMin(citizen.getLeashTimerMin());
+        clonedCitizen.setLeashTimerMax(citizen.getLeashTimerMax());
+        clonedCitizen.setHardLeashDistance(citizen.getHardLeashDistance());
+        clonedCitizen.setDefaultHotbarSlot(citizen.getDefaultHotbarSlot());
+        clonedCitizen.setRandomIdleHotbarSlot(citizen.getRandomIdleHotbarSlot());
+        clonedCitizen.setChanceToEquipFromIdleHotbarSlot(citizen.getChanceToEquipFromIdleHotbarSlot());
+        clonedCitizen.setDefaultOffHandSlot(citizen.getDefaultOffHandSlot());
+        clonedCitizen.setNighttimeOffhandSlot(citizen.getNighttimeOffhandSlot());
+        clonedCitizen.setKnockbackScale(citizen.getKnockbackScale());
+        clonedCitizen.setWeapons(new ArrayList<>(citizen.getWeapons()));
+        clonedCitizen.setOffHandItems(new ArrayList<>(citizen.getOffHandItems()));
+        clonedCitizen.setCombatMessageTargetGroups(new ArrayList<>(citizen.getCombatMessageTargetGroups()));
+        clonedCitizen.setFlockArray(new ArrayList<>(citizen.getFlockArray()));
+        clonedCitizen.setDisableDamageGroups(new ArrayList<>(citizen.getDisableDamageGroups()));
+
+        plugin.getCitizensManager().addCitizen(clonedCitizen, true);
+        playerRef.sendMessage(Message.raw("Citizen '" + citizen.getName() + "' cloned at your position!").color(Color.GREEN));
+        return true;
+    }
+
+    private void removeCitizen(@Nonnull PlayerRef playerRef, @Nonnull CitizenData citizen) {
+        plugin.getCitizensManager().removeCitizen(citizen.getId());
+        playerRef.sendMessage(Message.raw("Citizen '" + citizen.getName() + "' removed!").color(Color.GREEN));
     }
 
     private void openRenameGroupGUI(@Nonnull PlayerRef playerRef, @Nonnull Store<EntityStore> store, @Nonnull String oldGroupName) {
@@ -2550,6 +2944,138 @@ public class CitizensUI {
 
         page.addEventListener("cancel-btn", CustomUIEventBindingType.Activating, event ->
                 openCitizensGUI(playerRef, store, Tab.MANAGE));
+
+        page.open(store);
+    }
+
+    private void openCreateGroupGUI(@Nonnull PlayerRef playerRef, @Nonnull Store<EntityStore> store,
+                                    @Nullable String parentGroup) {
+        String normalizedParent = normalizeGroupPath(parentGroup);
+        TemplateProcessor template = createBaseTemplate()
+                .setVariable("parentName", normalizedParent.isEmpty() ? "Root" : escapeHtml(normalizedParent))
+                .setVariable("isChildGroup", !normalizedParent.isEmpty())
+                .setVariable("newGroupName", "");
+
+        String html = template.process(getSharedStyles() + """
+                <div class="page-overlay">
+                    <div class="main-container decorated-container" style="anchor-width: 620; anchor-height: 380;">
+                        <div class="header container-title">
+                            <div class="header-content">
+                                <p class="header-title">{{#if isChildGroup}}Create Child Group{{else}}Create Group{{/if}}</p>
+                            </div>
+                        </div>
+                        <div class="body">
+                            <p class="page-description">Parent: {{$parentName}}</p>
+                            <div class="spacer-sm"></div>
+                            <div class="section">
+                                {{@formField:id=group-name,label=Group Name,value={{$newGroupName}},placeholder=Enter group name...}}
+                                <div class="spacer-xs"></div>
+                                <p class="form-hint">Child groups are shown under their parent in the Manage tab.</p>
+                            </div>
+                        </div>
+                        <div class="footer">
+                            <button id="cancel-btn" class="secondary-button">Cancel</button>
+                            <div class="spacer-h-md"></div>
+                            <button id="save-btn" class="secondary-button" style="anchor-width: 170;">Create Group</button>
+                        </div>
+                    </div>
+                </div>
+                """);
+
+        PageBuilder page = PageBuilder.pageForPlayer(playerRef)
+                .withLifetime(CustomPageLifetime.CanDismiss)
+                .fromHtml(html);
+
+        final String[] groupName = {""};
+        page.addEventListener("group-name", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
+            groupName[0] = ctx.getValue("group-name", String.class).orElse("").trim();
+        });
+
+        page.addEventListener("save-btn", CustomUIEventBindingType.Activating, (event, ctx) -> {
+            groupName[0] = ctx.getValue("group-name", String.class).orElse(groupName[0]).trim();
+            String fullGroupName = buildChildGroupPath(normalizedParent, groupName[0]);
+            if (fullGroupName.isEmpty()) {
+                playerRef.sendMessage(Message.raw("Please enter a group name.").color(Color.RED));
+                return;
+            }
+            if (plugin.getCitizensManager().groupExists(fullGroupName)) {
+                playerRef.sendMessage(Message.raw("That group already exists.").color(Color.RED));
+                return;
+            }
+
+            plugin.getCitizensManager().createGroup(fullGroupName);
+            playerRef.sendMessage(Message.raw("Group created: '" + fullGroupName + "'.").color(Color.GREEN));
+            openCitizensGUI(playerRef, store, Tab.MANAGE, "", normalizedParent.isEmpty() ? null : normalizedParent);
+        });
+
+        page.addEventListener("cancel-btn", CustomUIEventBindingType.Activating, event ->
+                openCitizensGUI(playerRef, store, Tab.MANAGE, "", normalizedParent.isEmpty() ? null : normalizedParent));
+
+        page.open(store);
+    }
+
+    private void openMoveGroupGUI(@Nonnull PlayerRef playerRef, @Nonnull Store<EntityStore> store,
+                                  @Nonnull String groupName) {
+        String normalizedGroup = normalizeGroupPath(groupName);
+        String currentParent = getParentGroup(normalizedGroup);
+        TemplateProcessor template = createBaseTemplate()
+                .setVariable("groupName", escapeHtml(normalizedGroup))
+                .setVariable("parentOptions", generateGroupParentOptions(currentParent, normalizedGroup));
+
+        String html = template.process(getSharedStyles() + """
+                <div class="page-overlay">
+                    <div class="main-container decorated-container" style="anchor-width: 660; anchor-height: 400;">
+                        <div class="header container-title">
+                            <div class="header-content">
+                                <p class="header-title">Move Group</p>
+                            </div>
+                        </div>
+                        <div class="body">
+                            <p class="page-description">Move {{$groupName}} under another group or back to root</p>
+                            <div class="spacer-sm"></div>
+                            <div class="section">
+                                <div class="form-group">
+                                    <p class="form-label">New Parent</p>
+                                    <select id="group-parent" data-hyui-showlabel="true">
+                                        {{{$parentOptions}}}
+                                    </select>
+                                    <p class="form-hint">Choose Root to make this a top-level group.</p>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="footer">
+                            <button id="cancel-btn" class="secondary-button">Cancel</button>
+                            <div class="spacer-h-md"></div>
+                            <button id="save-btn" class="secondary-button" style="anchor-width: 160;">Move Group</button>
+                        </div>
+                    </div>
+                </div>
+                """);
+
+        PageBuilder page = PageBuilder.pageForPlayer(playerRef)
+                .withLifetime(CustomPageLifetime.CanDismiss)
+                .fromHtml(html);
+
+        final String[] selectedParent = {currentParent};
+        page.addEventListener("group-parent", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
+            selectedParent[0] = normalizeGroupPath(ctx.getValue("group-parent", String.class).orElse(""));
+        });
+
+        page.addEventListener("save-btn", CustomUIEventBindingType.Activating, (event, ctx) -> {
+            selectedParent[0] = normalizeGroupPath(ctx.getValue("group-parent", String.class).orElse(selectedParent[0]));
+            boolean moved = plugin.getCitizensManager().moveGroup(normalizedGroup, selectedParent[0]);
+            if (!moved) {
+                playerRef.sendMessage(Message.raw("Could not move group. Check for name conflicts or invalid parent group.").color(Color.RED));
+                return;
+            }
+
+            String newPath = buildChildGroupPath(selectedParent[0], getGroupLeafName(normalizedGroup));
+            playerRef.sendMessage(Message.raw("Group moved to '" + newPath + "'.").color(Color.GREEN));
+            openCitizensGUI(playerRef, store, Tab.MANAGE, "", selectedParent[0].isEmpty() ? null : selectedParent[0]);
+        });
+
+        page.addEventListener("cancel-btn", CustomUIEventBindingType.Activating, event ->
+                openCitizensGUI(playerRef, store, Tab.MANAGE, "", currentParent.isEmpty() ? null : currentParent));
 
         page.open(store);
     }
@@ -2683,10 +3209,252 @@ public class CitizensUI {
         page.open(store);
     }
 
+    private void openNametagSettingsGUI(@Nonnull PlayerRef playerRef, @Nonnull Store<EntityStore> store,
+                                        @Nonnull String currentName, float currentNametagOffset,
+                                        boolean currentHideNametag, boolean currentModelNametagEnabled,
+                                        @Nonnull String currentNametagModelId, float currentNametagModelScale,
+                                        boolean currentRotateNametagTowardsPlayer,
+                                        @Nonnull Consumer<NametagSettingsState> onDone,
+                                        @Nonnull Runnable onCancel) {
+        List<String> lines = splitNametagLines(currentName);
+
+        TemplateProcessor template = createBaseTemplate()
+                .setVariable("hideNametag", currentHideNametag)
+                .setVariable("modelEnabled", currentModelNametagEnabled)
+                .setVariable("nametagOffset", currentNametagOffset)
+                .setVariable("nametagModelId", currentNametagModelId)
+                .setVariable("nametagModelScale", currentNametagModelScale)
+                .setVariable("rotateModelTowardsPlayer", currentRotateNametagTowardsPlayer)
+                .setVariable("lineCount", lines.size())
+                .setVariable("nametagSummary", buildNametagSummary(
+                        currentName,
+                        currentNametagOffset,
+                        currentHideNametag,
+                        currentModelNametagEnabled,
+                        currentNametagModelId,
+                        currentNametagModelScale,
+                        currentRotateNametagTowardsPlayer
+                ))
+                .setVariable("modelOptions", generateModelDropdownOptions(currentNametagModelId, true));
+
+        String html = template.process(getSharedStyles() + """
+                <div class="page-overlay">
+                    <div class="main-container decorated-container" style="anchor-width: 760; anchor-height: 760;">
+                        <div class="header container-title">
+                            <div class="header-content">
+                                <p class="header-title">Nametag Settings</p>
+                            </div>
+                        </div>
+                        <div class="body" data-hyui-scrollbar-style='"Common.ui" "DefaultScrollbarStyle"' style="layout-mode: TopScrolling;">
+                            <p class="page-description">{{$nametagSummary}}</p>
+                            <div class="spacer-sm"></div>
+
+                            <div class="section">
+                                {{@sectionHeader:title=Display Mode,description=Choose between text lines or a model nametag}}
+                                <div class="toggle-group">
+                                    <button id="nametag-mode-text" class="secondary-button toggle-btn{{#if !modelEnabled}} toggle-active{{/if}}" style="anchor-width: 320; anchor-height: 48;">Text Nametag</button>
+                                    <button id="nametag-mode-model" class="secondary-button toggle-btn{{#if modelEnabled}} toggle-active{{/if}}" style="anchor-width: 320; anchor-height: 48;">Model Nametag</button>
+                                </div>
+                            </div>
+
+                            <div class="spacer-md"></div>
+
+                            <div class="section">
+                                {{@sectionHeader:title=General,description=Shared nametag options}}
+                                <div class="form-row" style="horizontal-align: center;">
+                                    <div class="form-col-fixed" style="anchor-width: 180;">
+                                        <div class="form-group">
+                                            <p class="form-label">Nametag Offset</p>
+                                            <input type="number" id="nametag-offset" class="form-input"
+                                                   value="{{$nametagOffset}}"
+                                                   placeholder="0.0"
+                                                   min="-500" max="500" step="0.25"
+                                                   data-hyui-max-decimal-places="2" />
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="spacer-sm"></div>
+
+                                <div class="checkbox-row">
+                                    <input type="checkbox" id="hide-nametag-check" {{#if hideNametag}}checked{{/if}} />
+                                    <div style="layout: top; flex-weight: 0; text-align: center;">
+                                        <p class="checkbox-label">Hide Nametag</p>
+                                        <p class="checkbox-description">Disable any text or model above the citizen</p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="spacer-md"></div>
+
+                            {{#if modelEnabled}}
+                            <div class="section">
+                                {{@sectionHeader:title=Model,description=Pick the model used instead of text}}
+                                <div class="card">
+                                    <div class="card-body">
+                                        <div class="form-group">
+                                            <p class="form-label" style="text-align: center;">Select Model</p>
+                                            <select id="nametag-model-dropdown" value="{{$nametagModelId}}" data-hyui-showlabel="true">
+                                                {{$modelOptions}}
+                                            </select>
+                                            <p class="form-hint" style="text-align: center;">The dropdown includes every loaded model asset</p>
+                                        </div>
+
+                                        <div class="spacer-sm"></div>
+                                        <div class="divider"></div>
+                                        <div class="spacer-sm"></div>
+
+                                        <div class="form-group">
+                                            <p class="form-label" style="text-align: center;">Or Enter A Model ID</p>
+                                            <input type="text" id="nametag-model-id" class="form-input" value="{{$nametagModelId}}"
+                                                   placeholder="e.g., Sheep, PlayerTestModel_V" maxlength="96" style="anchor-width: 260;" />
+                                        </div>
+
+                                        <div class="spacer-sm"></div>
+
+                                        <div class="form-row" style="horizontal-align: center;">
+                                            <div style="anchor-width: 220;">
+                                                {{@numberField:id=nametag-model-scale,label=Model Scale,value={{$nametagModelScale}},placeholder=1.0,min=0.01,max=100,step=0.1,decimals=2}}
+                                            </div>
+                                        </div>
+
+                                        <div class="spacer-sm"></div>
+
+                                        <div class="checkbox-row">
+                                            <input type="checkbox" id="rotate-nametag-towards-player" {{#if rotateModelTowardsPlayer}}checked{{/if}} />
+                                            <div style="layout: top; flex-weight: 0; text-align: center;">
+                                                <p class="checkbox-label">Rotate Model Towards Players</p>
+                                                <p class="checkbox-description">Rotates the model towards the player</p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            {{else}}
+                            <div class="section">
+                                {{@sectionHeader:title=Text Lines,description=Manage the lines shown when using text nametags}}
+                                <div class="card">
+                                    <div class="card-body" style="layout: top; horizontal-align: center;">
+                                        <p class="form-hint" style="text-align: center;">{{$lineCount}} configured line(s)</p>
+                                        <div class="spacer-xs"></div>
+                                        <button id="edit-nametag-lines-btn" class="secondary-button" style="anchor-width: 220;">Edit Text Lines</button>
+                                    </div>
+                                </div>
+                            </div>
+                            {{/if}}
+
+                            <div class="spacer-lg"></div>
+                        </div>
+                        <div class="footer">
+                            <button id="cancel-btn" class="secondary-button">Cancel</button>
+                            <div class="spacer-h-md"></div>
+                            <button id="done-btn" class="secondary-button btn-wide">Done</button>
+                        </div>
+                    </div>
+                </div>
+                """);
+
+        PageBuilder page = PageBuilder.pageForPlayer(playerRef)
+                .withLifetime(CustomPageLifetime.CanDismiss)
+                .fromHtml(html);
+
+        final String[] editedName = {currentName};
+        final float[] nametagOffset = {currentNametagOffset};
+        final boolean[] hideNametag = {currentHideNametag};
+        final boolean[] modelEnabled = {currentModelNametagEnabled};
+        final String[] nametagModelId = {currentNametagModelId};
+        final float[] nametagModelScale = {currentNametagModelScale};
+        final boolean[] rotateModelTowardsPlayer = {currentRotateNametagTowardsPlayer};
+
+        page.addEventListener("nametag-mode-text", CustomUIEventBindingType.Activating, event ->
+                openNametagSettingsGUI(playerRef, store, editedName[0], nametagOffset[0], hideNametag[0],
+                        false, nametagModelId[0], nametagModelScale[0], rotateModelTowardsPlayer[0], onDone, onCancel));
+
+        page.addEventListener("nametag-mode-model", CustomUIEventBindingType.Activating, event ->
+                openNametagSettingsGUI(playerRef, store, editedName[0], nametagOffset[0], hideNametag[0],
+                        true, nametagModelId[0], nametagModelScale[0], rotateModelTowardsPlayer[0], onDone, onCancel));
+
+        page.addEventListener("nametag-offset", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
+            ctx.getValue("nametag-offset", Double.class).ifPresent(val -> nametagOffset[0] = val.floatValue());
+            if (nametagOffset[0] == 0.0f) {
+                ctx.getValue("nametag-offset", String.class).ifPresent(val -> {
+                    try {
+                        nametagOffset[0] = Float.parseFloat(val);
+                    } catch (NumberFormatException ignored) {
+                    }
+                });
+            }
+        });
+
+        page.addEventListener("hide-nametag-check", CustomUIEventBindingType.ValueChanged, (event, ctx) ->
+                hideNametag[0] = ctx.getValue("hide-nametag-check", Boolean.class).orElse(false));
+
+        if (currentModelNametagEnabled) {
+            page.addEventListener("nametag-model-id", CustomUIEventBindingType.ValueChanged, (event, ctx) ->
+                    nametagModelId[0] = ctx.getValue("nametag-model-id", String.class).orElse(""));
+
+            page.addEventListener("nametag-model-dropdown", CustomUIEventBindingType.ValueChanged, (event, ctx) ->
+                    ctx.getValue("nametag-model-dropdown", String.class).ifPresent(val -> nametagModelId[0] = val));
+
+            try {
+                page.addEventListener("nametag-model-scale", CustomUIEventBindingType.ValueChanged, (event, ctx) ->
+                        ctx.getValue("nametag-model-scale", Double.class)
+                                .ifPresent(val -> nametagModelScale[0] = Math.max(0.01f, val.floatValue())));
+            } catch (IllegalArgumentException ignored) {
+            }
+
+            page.addEventListener("rotate-nametag-towards-player", CustomUIEventBindingType.ValueChanged, (event, ctx) ->
+                    rotateModelTowardsPlayer[0] = ctx.getValue("rotate-nametag-towards-player", Boolean.class).orElse(true));
+        } else {
+            page.addEventListener("edit-nametag-lines-btn", CustomUIEventBindingType.Activating, event ->
+                    openNametagLinesGUI(
+                            playerRef,
+                            store,
+                            editedName[0],
+                            updatedName -> openNametagSettingsGUI(playerRef, store, updatedName, nametagOffset[0], hideNametag[0],
+                                    modelEnabled[0], nametagModelId[0], nametagModelScale[0], rotateModelTowardsPlayer[0], onDone, onCancel),
+                            () -> openNametagSettingsGUI(playerRef, store, editedName[0], nametagOffset[0], hideNametag[0],
+                                    modelEnabled[0], nametagModelId[0], nametagModelScale[0], rotateModelTowardsPlayer[0], onDone, onCancel)
+                    ));
+        }
+
+        page.addEventListener("done-btn", CustomUIEventBindingType.Activating, event -> {
+            String trimmedModelId = nametagModelId[0].trim();
+            if (modelEnabled[0]) {
+                if (trimmedModelId.isEmpty()) {
+                    playerRef.sendMessage(Message.raw("Please select or enter a nametag model ID.").color(Color.RED));
+                    return;
+                }
+
+                if (ModelAsset.getAssetMap().getAsset(trimmedModelId) == null) {
+                    playerRef.sendMessage(Message.raw("That nametag model could not be found.").color(Color.RED));
+                    return;
+                }
+            }
+
+            onDone.accept(new NametagSettingsState(
+                    editedName[0],
+                    nametagOffset[0],
+                    hideNametag[0],
+                    modelEnabled[0],
+                    trimmedModelId,
+                    Math.max(0.01f, nametagModelScale[0]),
+                    rotateModelTowardsPlayer[0]
+            ));
+        });
+
+        page.addEventListener("cancel-btn", CustomUIEventBindingType.Activating, event -> onCancel.run());
+
+        page.open(store);
+    }
+
     private void setupCreateCitizenListeners(PageBuilder page, PlayerRef playerRef, Store<EntityStore> store,
-                                             boolean initialIsPlayerModel, String initialName, float initialNametagOffset,
-                                             boolean initialHideNametag, boolean initialHideNpc, String initialModelId, float initialScale,
-                                             String initialPermission, String initialPermMessage, boolean initialUseLiveSkin,
+                                              boolean initialIsPlayerModel, String initialName, float initialNametagOffset,
+                                              boolean initialHideNametag, boolean initialHideNpc,
+                                              boolean initialMapMarkerEnabled, String initialMapMarkerType, String initialMapMarkerName,
+                                              boolean initialModelNametagEnabled, String initialNametagModelId,
+                                              float initialNametagModelScale, boolean initialRotateNametagTowardsPlayer,
+                                             String initialModelId, float initialScale, String initialPermission, String initialPermMessage, boolean initialUseLiveSkin,
                                              String initialSkinUsername, boolean initialRotateTowardsPlayer,
                                              String initialGroup, float initialLookAtDistance) {
         final List<CommandAction> tempActions = new ArrayList<>();
@@ -2694,8 +3462,15 @@ public class CitizensUI {
         final float[] nametagOffset = {initialNametagOffset};
         final boolean[] hideNametag = {initialHideNametag};
         final boolean[] hideNpc = {initialHideNpc};
+        final boolean[] mapMarkerEnabled = {initialMapMarkerEnabled};
+        final String[] mapMarkerType = {CitizenData.normalizeMapMarkerType(initialMapMarkerType)};
+        final String[] mapMarkerName = {initialMapMarkerName != null ? initialMapMarkerName : ""};
+        final boolean[] modelNametagEnabled = {initialModelNametagEnabled};
+        final String[] currentNametagModelId = {initialNametagModelId};
+        final float[] currentNametagModelScale = {initialNametagModelScale};
+        final boolean[] rotateNametagTowardsPlayer = {initialRotateNametagTowardsPlayer};
         final String[] currentModelId = {initialModelId.isEmpty() ? "PlayerTestModel_V" : initialModelId};
-        final float[] currentScale = {initialScale};
+        final float[] currentScale = {Math.max(0.01f, Math.min(100.0f, initialScale))};
         final String[] currentPermission = {initialPermission};
         final String[] currentPermMessage = {initialPermMessage};
         final boolean[] isPlayerModel = {initialIsPlayerModel};
@@ -2729,6 +3504,9 @@ public class CitizensUI {
 
             page.addEventListener("live-skin-check", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
                 useLiveSkin[0] = ctx.getValue("live-skin-check", Boolean.class).orElse(false);
+                if (CitizenData.isGeneratedSkinUsername(skinUsername[0])) {
+                    useLiveSkin[0] = false;
+                }
             });
 
             page.addEventListener("get-player-skin-btn", CustomUIEventBindingType.Activating, event -> {
@@ -2742,6 +3520,7 @@ public class CitizensUI {
                     PlayerSkin randomSkin = CosmeticsModule.get().generateRandomSkin(RandomUtil.getSecureRandom());
                     cachedSkin[0] = randomSkin;
                     skinUsername[0] = "random_" + UUID.randomUUID().toString().substring(0, 8);
+                    useLiveSkin[0] = false;
                     playerRef.sendMessage(Message.raw("Random skin generated successfully!").color(Color.GREEN));
                 } catch (Exception e) {
                     playerRef.sendMessage(Message.raw("Failed to generate random skin: " + e.getMessage()).color(Color.RED));
@@ -2761,56 +3540,73 @@ public class CitizensUI {
             // Defensive guard in case an older cached UI layout without this field is still open.
         }
 
-        page.addEventListener("edit-nametag-lines-btn", CustomUIEventBindingType.Activating, event -> {
-            openNametagLinesGUI(
-                    playerRef,
-                    store,
-                    currentName[0],
-                    updatedName -> openCreateCitizenGUI(
-                            playerRef, store, isPlayerModel[0], updatedName, nametagOffset[0], hideNametag[0], hideNpc[0],
-                            currentModelId[0], currentScale[0], currentPermission[0], currentPermMessage[0], useLiveSkin[0], true,
-                            skinUsername[0], rotateTowardsPlayer[0], currentGroup[0], lookAtDistance[0]
-                    ),
-                    () -> openCreateCitizenGUI(
-                            playerRef, store, isPlayerModel[0], currentName[0], nametagOffset[0], hideNametag[0], hideNpc[0],
-                            currentModelId[0], currentScale[0], currentPermission[0], currentPermMessage[0], useLiveSkin[0], true,
-                            skinUsername[0], rotateTowardsPlayer[0], currentGroup[0], lookAtDistance[0]
-                    )
-            );
-        });
-
-        page.addEventListener("nametag-offset", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
-            ctx.getValue("nametag-offset", Double.class)
-                    .ifPresent(val -> nametagOffset[0] = val.floatValue());
-
-            if (nametagOffset[0] == 0.0f) {
-                ctx.getValue("nametag-offset", String.class)
-                        .ifPresent(val -> {
-                            try {
-                                nametagOffset[0] = Float.parseFloat(val);
-                            } catch (NumberFormatException e) {
-                            }
-                        });
-            }
-        });
-
-        page.addEventListener("hide-nametag-check", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
-            hideNametag[0] = ctx.getValue("hide-nametag-check", Boolean.class).orElse(false);
-        });
+        page.addEventListener("nametag-settings-btn", CustomUIEventBindingType.Activating, event ->
+                openNametagSettingsGUI(
+                        playerRef,
+                        store,
+                        currentName[0],
+                        nametagOffset[0],
+                        hideNametag[0],
+                        modelNametagEnabled[0],
+                        currentNametagModelId[0],
+                        currentNametagModelScale[0],
+                        rotateNametagTowardsPlayer[0],
+                        updated -> openCreateCitizenGUI(
+                                playerRef, store, isPlayerModel[0], updated.name(), updated.offset(), updated.hideNametag(), hideNpc[0],
+                                mapMarkerEnabled[0], mapMarkerType[0], mapMarkerName[0],
+                                updated.modelEnabled(), updated.modelId(), updated.modelScale(), updated.rotateModelTowardsPlayer(),
+                                currentModelId[0], currentScale[0], currentPermission[0], currentPermMessage[0], useLiveSkin[0], true,
+                                skinUsername[0], rotateTowardsPlayer[0], currentGroup[0], lookAtDistance[0]
+                        ),
+                        () -> openCreateCitizenGUI(
+                                playerRef, store, isPlayerModel[0], currentName[0], nametagOffset[0], hideNametag[0], hideNpc[0],
+                                mapMarkerEnabled[0], mapMarkerType[0], mapMarkerName[0],
+                                modelNametagEnabled[0], currentNametagModelId[0], currentNametagModelScale[0], rotateNametagTowardsPlayer[0],
+                                currentModelId[0], currentScale[0], currentPermission[0], currentPermMessage[0], useLiveSkin[0], true,
+                                skinUsername[0], rotateTowardsPlayer[0], currentGroup[0], lookAtDistance[0]
+                        )
+                ));
 
         page.addEventListener("hide-npc-check", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
             hideNpc[0] = ctx.getValue("hide-npc-check", Boolean.class).orElse(false);
         });
 
+        page.addEventListener("map-marker-check", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
+            boolean enabled = ctx.getValue("map-marker-check", Boolean.class).orElse(false);
+            if (mapMarkerEnabled[0]) {
+                mapMarkerName[0] = ctx.getValue("map-marker-name", String.class).orElse(mapMarkerName[0]);
+            }
+            if (enabled == mapMarkerEnabled[0]) {
+                return;
+            }
+
+            mapMarkerEnabled[0] = enabled;
+            openCreateCitizenGUI(playerRef, store, isPlayerModel[0], currentName[0], nametagOffset[0], hideNametag[0], hideNpc[0],
+                    mapMarkerEnabled[0], mapMarkerType[0], mapMarkerName[0],
+                    modelNametagEnabled[0], currentNametagModelId[0], currentNametagModelScale[0], rotateNametagTowardsPlayer[0],
+                    currentModelId[0], currentScale[0], currentPermission[0], currentPermMessage[0], useLiveSkin[0], true,
+                    skinUsername[0], rotateTowardsPlayer[0], currentGroup[0], lookAtDistance[0]);
+        });
+
+        if (mapMarkerEnabled[0]) {
+            page.addEventListener("map-marker-type", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
+                mapMarkerType[0] = CitizenData.normalizeMapMarkerType(
+                        ctx.getValue("map-marker-type", String.class).orElse(CitizenData.MAP_MARKER_TYPE_PIN));
+            });
+            page.addEventListener("map-marker-name", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
+                mapMarkerName[0] = ctx.getValue("map-marker-name", String.class).orElse("");
+            });
+        }
+
         page.addEventListener("citizen-scale", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
             ctx.getValue("citizen-scale", Double.class)
-                    .ifPresent(val -> currentScale[0] = val.floatValue());
+                    .ifPresent(val -> currentScale[0] = Math.max(0.01f, Math.min(100.0f, val.floatValue())));
 
             if (currentScale[0] == 1.0f) {
                 ctx.getValue("citizen-scale", String.class)
                         .ifPresent(val -> {
                             try {
-                                currentScale[0] = Float.parseFloat(val);
+                                currentScale[0] = Math.max(0.01f, Math.min(100.0f, Float.parseFloat(val)));
                             } catch (NumberFormatException e) {
                             }
                         });
@@ -2839,18 +3635,39 @@ public class CitizensUI {
         });
 
         page.addEventListener("type-player", CustomUIEventBindingType.Activating, (event, ctx) -> {
-            openCreateCitizenGUI(playerRef, store, true, currentName[0], nametagOffset[0], hideNametag[0], hideNpc[0], currentModelId[0],
+            if (mapMarkerEnabled[0]) {
+                mapMarkerType[0] = CitizenData.normalizeMapMarkerType(
+                        ctx.getValue("map-marker-type", String.class).orElse(mapMarkerType[0]));
+                mapMarkerName[0] = ctx.getValue("map-marker-name", String.class).orElse(mapMarkerName[0]);
+            }
+            openCreateCitizenGUI(playerRef, store, true, currentName[0], nametagOffset[0], hideNametag[0], hideNpc[0],
+                    mapMarkerEnabled[0], mapMarkerType[0], mapMarkerName[0],
+                    modelNametagEnabled[0], currentNametagModelId[0], currentNametagModelScale[0], rotateNametagTowardsPlayer[0], currentModelId[0],
                     currentScale[0], currentPermission[0], currentPermMessage[0], useLiveSkin[0], true,
                     skinUsername[0], rotateTowardsPlayer[0], currentGroup[0], lookAtDistance[0]);
         });
 
         page.addEventListener("type-entity", CustomUIEventBindingType.Activating, (event, ctx) -> {
-            openCreateCitizenGUI(playerRef, store, false, currentName[0], nametagOffset[0], hideNametag[0], hideNpc[0], currentModelId[0],
+            if (mapMarkerEnabled[0]) {
+                mapMarkerType[0] = CitizenData.normalizeMapMarkerType(
+                        ctx.getValue("map-marker-type", String.class).orElse(mapMarkerType[0]));
+                mapMarkerName[0] = ctx.getValue("map-marker-name", String.class).orElse(mapMarkerName[0]);
+            }
+            openCreateCitizenGUI(playerRef, store, false, currentName[0], nametagOffset[0], hideNametag[0], hideNpc[0],
+                    mapMarkerEnabled[0], mapMarkerType[0], mapMarkerName[0],
+                    modelNametagEnabled[0], currentNametagModelId[0], currentNametagModelScale[0], rotateNametagTowardsPlayer[0], currentModelId[0],
                     currentScale[0], currentPermission[0], currentPermMessage[0], useLiveSkin[0], true,
                     skinUsername[0], rotateTowardsPlayer[0], currentGroup[0], lookAtDistance[0]);
         });
 
-        page.addEventListener("create-btn", CustomUIEventBindingType.Activating, event -> {
+        page.addEventListener("create-btn", CustomUIEventBindingType.Activating, (event, ctx) -> {
+            mapMarkerEnabled[0] = ctx.getValue("map-marker-check", Boolean.class).orElse(mapMarkerEnabled[0]);
+            if (mapMarkerEnabled[0]) {
+                mapMarkerType[0] = CitizenData.normalizeMapMarkerType(
+                        ctx.getValue("map-marker-type", String.class).orElse(mapMarkerType[0]));
+                mapMarkerName[0] = ctx.getValue("map-marker-name", String.class).orElse(mapMarkerName[0]);
+            }
+
             String name = currentName[0].trim();
 
             if (name.isEmpty()) {
@@ -2905,7 +3722,14 @@ public class CitizensUI {
 
             citizen.setNametagOffset(nametagOffset[0]);
             citizen.setHideNametag(hideNametag[0]);
+            citizen.setModelNametagEnabled(modelNametagEnabled[0]);
+            citizen.setNametagModelId(currentNametagModelId[0].trim());
+            citizen.setNametagModelScale(currentNametagModelScale[0]);
+            citizen.setRotateNametagTowardsPlayer(rotateNametagTowardsPlayer[0]);
             citizen.setHideNpc(hideNpc[0]);
+            citizen.setMapMarkerEnabled(mapMarkerEnabled[0]);
+            citizen.setMapMarkerType(mapMarkerType[0]);
+            citizen.setMapMarkerName(mapMarkerName[0]);
             citizen.setGroup(currentGroup[0]);
             citizen.setLookAtDistance(lookAtDistance[0]);
             plugin.getCitizensManager().autoResolveAttackType(citizen);
@@ -2947,13 +3771,21 @@ public class CitizensUI {
     }
 
     private void setupEditCitizenListeners(PageBuilder page, PlayerRef playerRef, Store<EntityStore> store,
-                                           CitizenData citizen) {
+                                           CitizenData citizen, boolean initialMapMarkerEnabled, String initialMapMarkerType,
+                                           String initialMapMarkerName) {
         final String[] currentName = {citizen.getName()};
         final float[] nametagOffset = {citizen.getNametagOffset()};
         final boolean[] hideNametag = {citizen.isHideNametag()};
         final boolean[] hideNpc = {citizen.isHideNpc()};
+        final boolean[] mapMarkerEnabled = {initialMapMarkerEnabled};
+        final String[] mapMarkerType = {CitizenData.normalizeMapMarkerType(initialMapMarkerType)};
+        final String[] mapMarkerName = {initialMapMarkerName != null ? initialMapMarkerName : ""};
+        final boolean[] modelNametagEnabled = {citizen.isModelNametagEnabled()};
+        final String[] currentNametagModelId = {citizen.getNametagModelId()};
+        final float[] currentNametagModelScale = {citizen.getNametagModelScale()};
+        final boolean[] rotateNametagTowardsPlayer = {citizen.isRotateNametagTowardsPlayer()};
         final String[] currentModelId = {citizen.getModelId()};
-        final float[] currentScale = {citizen.getScale()};
+        final float[] currentScale = {Math.max(0.01f, Math.min(100.0f, citizen.getScale()))};
         final String[] currentPermission = {citizen.getRequiredPermission()};
         final String[] currentPermMessage = {citizen.getNoPermissionMessage()};
         final boolean[] isPlayerModel = {citizen.isPlayerModel()};
@@ -3000,6 +3832,9 @@ public class CitizensUI {
 
             page.addEventListener("live-skin-check", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
                 useLiveSkin[0] = ctx.getValue("live-skin-check", Boolean.class).orElse(false);
+                if (CitizenData.isGeneratedSkinUsername(skinUsername[0])) {
+                    useLiveSkin[0] = false;
+                }
             });
 
             page.addEventListener("get-player-skin-btn", CustomUIEventBindingType.Activating, event -> {
@@ -3013,6 +3848,7 @@ public class CitizensUI {
                     PlayerSkin randomSkin = CosmeticsModule.get().generateRandomSkin(RandomUtil.getSecureRandom());
                     cachedSkin[0] = randomSkin;
                     skinUsername[0] = "random_" + UUID.randomUUID().toString().substring(0, 8);
+                    useLiveSkin[0] = false;
                     playerRef.sendMessage(Message.raw("Random skin generated successfully!").color(Color.GREEN));
                 } catch (Exception e) {
                     playerRef.sendMessage(Message.raw("Failed to generate random skin: " + e.getMessage()).color(Color.RED));
@@ -3039,52 +3875,73 @@ public class CitizensUI {
             // Defensive guard in case an older cached UI layout without this field is still open.
         }
 
-        page.addEventListener("edit-nametag-lines-btn", CustomUIEventBindingType.Activating, event -> {
-            openNametagLinesGUI(
-                    playerRef,
-                    store,
-                    citizen.getName(),
-                    updatedName -> {
-                        citizen.setName(updatedName);
-                        plugin.getCitizensManager().updateCitizenHologram(citizen, true);
-                        openEditCitizenGUI(playerRef, store, citizen);
-                    },
-                    () -> openEditCitizenGUI(playerRef, store, citizen)
-            );
-        });
-
-        page.addEventListener("nametag-offset", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
-            ctx.getValue("nametag-offset", Double.class)
-                    .ifPresent(val -> nametagOffset[0] = val.floatValue());
-
-            if (nametagOffset[0] == 0.0f) {
-                ctx.getValue("nametag-offset", String.class)
-                        .ifPresent(val -> {
-                            try {
-                                nametagOffset[0] = Float.parseFloat(val);
-                            } catch (NumberFormatException e) {
-                            }
-                        });
-            }
-        });
-
-        page.addEventListener("hide-nametag-check", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
-            hideNametag[0] = ctx.getValue("hide-nametag-check", Boolean.class).orElse(false);
-        });
+        page.addEventListener("nametag-settings-btn", CustomUIEventBindingType.Activating, event ->
+                openNametagSettingsGUI(
+                        playerRef,
+                        store,
+                        currentName[0],
+                        nametagOffset[0],
+                        hideNametag[0],
+                        modelNametagEnabled[0],
+                        currentNametagModelId[0],
+                        currentNametagModelScale[0],
+                        rotateNametagTowardsPlayer[0],
+                        updated -> {
+                            currentName[0] = updated.name();
+                            nametagOffset[0] = updated.offset();
+                            hideNametag[0] = updated.hideNametag();
+                            modelNametagEnabled[0] = updated.modelEnabled();
+                            currentNametagModelId[0] = updated.modelId();
+                            currentNametagModelScale[0] = updated.modelScale();
+                            rotateNametagTowardsPlayer[0] = updated.rotateModelTowardsPlayer();
+                            citizen.setName(currentName[0]);
+                            citizen.setNametagOffset(nametagOffset[0]);
+                            citizen.setHideNametag(hideNametag[0]);
+                            citizen.setModelNametagEnabled(modelNametagEnabled[0]);
+                            citizen.setNametagModelId(currentNametagModelId[0]);
+                            citizen.setNametagModelScale(currentNametagModelScale[0]);
+                            citizen.setRotateNametagTowardsPlayer(rotateNametagTowardsPlayer[0]);
+                            openEditCitizenGUI(playerRef, store, citizen, mapMarkerEnabled[0], mapMarkerType[0], mapMarkerName[0]);
+                        },
+                        () -> openEditCitizenGUI(playerRef, store, citizen, mapMarkerEnabled[0], mapMarkerType[0], mapMarkerName[0])
+                ));
 
         page.addEventListener("hide-npc-check", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
             hideNpc[0] = ctx.getValue("hide-npc-check", Boolean.class).orElse(false);
         });
 
+        page.addEventListener("map-marker-check", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
+            boolean enabled = ctx.getValue("map-marker-check", Boolean.class).orElse(false);
+            if (mapMarkerEnabled[0]) {
+                mapMarkerName[0] = ctx.getValue("map-marker-name", String.class).orElse(mapMarkerName[0]);
+            }
+            if (enabled == mapMarkerEnabled[0]) {
+                return;
+            }
+
+            mapMarkerEnabled[0] = enabled;
+            openEditCitizenGUI(playerRef, store, citizen, mapMarkerEnabled[0], mapMarkerType[0], mapMarkerName[0]);
+        });
+
+        if (mapMarkerEnabled[0]) {
+            page.addEventListener("map-marker-type", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
+                mapMarkerType[0] = CitizenData.normalizeMapMarkerType(
+                        ctx.getValue("map-marker-type", String.class).orElse(CitizenData.MAP_MARKER_TYPE_PIN));
+            });
+            page.addEventListener("map-marker-name", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
+                mapMarkerName[0] = ctx.getValue("map-marker-name", String.class).orElse("");
+            });
+        }
+
         page.addEventListener("citizen-scale", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
             ctx.getValue("citizen-scale", Double.class)
-                    .ifPresent(val -> currentScale[0] = val.floatValue());
+                    .ifPresent(val -> currentScale[0] = Math.max(0.01f, Math.min(100.0f, val.floatValue())));
 
             if (currentScale[0] == 1.0f) {
                 ctx.getValue("citizen-scale", String.class)
                         .ifPresent(val -> {
                             try {
-                                currentScale[0] = Float.parseFloat(val);
+                                currentScale[0] = Math.max(0.01f, Math.min(100.0f, Float.parseFloat(val)));
                             } catch (NumberFormatException e) {
                             }
                         });
@@ -3100,15 +3957,36 @@ public class CitizensUI {
         });
 
         page.addEventListener("type-player", CustomUIEventBindingType.Activating, (event, ctx) -> {
+            if (mapMarkerEnabled[0]) {
+                mapMarkerType[0] = CitizenData.normalizeMapMarkerType(
+                        ctx.getValue("map-marker-type", String.class).orElse(mapMarkerType[0]));
+                mapMarkerName[0] = ctx.getValue("map-marker-name", String.class).orElse(mapMarkerName[0]);
+            }
             isPlayerModel[0] = true;
             citizen.setPlayerModel(true);
-            openEditCitizenGUI(playerRef, store, citizen);
+            openEditCitizenGUI(playerRef, store, citizen, mapMarkerEnabled[0], mapMarkerType[0], mapMarkerName[0]);
         });
 
         page.addEventListener("type-entity", CustomUIEventBindingType.Activating, (event, ctx) -> {
+            if (mapMarkerEnabled[0]) {
+                mapMarkerType[0] = CitizenData.normalizeMapMarkerType(
+                        ctx.getValue("map-marker-type", String.class).orElse(mapMarkerType[0]));
+                mapMarkerName[0] = ctx.getValue("map-marker-name", String.class).orElse(mapMarkerName[0]);
+            }
             isPlayerModel[0] = false;
             citizen.setPlayerModel(false);
-            openEditCitizenGUI(playerRef, store, citizen);
+            openEditCitizenGUI(playerRef, store, citizen, mapMarkerEnabled[0], mapMarkerType[0], mapMarkerName[0]);
+        });
+
+        page.addEventListener("edit-tp-btn", CustomUIEventBindingType.Activating, event ->
+                teleportPlayerToCitizen(playerRef, citizen));
+
+        page.addEventListener("edit-clone-btn", CustomUIEventBindingType.Activating, event ->
+                cloneCitizenToPlayer(playerRef, citizen));
+
+        page.addEventListener("edit-remove-btn", CustomUIEventBindingType.Activating, event -> {
+            removeCitizen(playerRef, citizen);
+            openCitizensGUI(playerRef, store, Tab.MANAGE);
         });
 
         page.addEventListener("edit-commands-btn", CustomUIEventBindingType.Activating, event -> {
@@ -3211,7 +4089,14 @@ public class CitizensUI {
             openFirstInteractionConfigGUI(playerRef, store, citizen);
         });
 
-        page.addEventListener("save-btn", CustomUIEventBindingType.Activating, event -> {
+        page.addEventListener("save-btn", CustomUIEventBindingType.Activating, (event, ctx) -> {
+            mapMarkerEnabled[0] = ctx.getValue("map-marker-check", Boolean.class).orElse(mapMarkerEnabled[0]);
+            if (mapMarkerEnabled[0]) {
+                mapMarkerType[0] = CitizenData.normalizeMapMarkerType(
+                        ctx.getValue("map-marker-type", String.class).orElse(mapMarkerType[0]));
+                mapMarkerName[0] = ctx.getValue("map-marker-name", String.class).orElse(mapMarkerName[0]);
+            }
+
             String name = currentName[0].trim();
 
             if (name.isEmpty()) {
@@ -3253,7 +4138,14 @@ public class CitizensUI {
             citizen.setSkinUsername(skinUsername[0].trim());
             citizen.setNametagOffset(nametagOffset[0]);
             citizen.setHideNametag(hideNametag[0]);
+            citizen.setModelNametagEnabled(modelNametagEnabled[0]);
+            citizen.setNametagModelId(currentNametagModelId[0].trim());
+            citizen.setNametagModelScale(currentNametagModelScale[0]);
+            citizen.setRotateNametagTowardsPlayer(rotateNametagTowardsPlayer[0]);
             citizen.setHideNpc(hideNpc[0]);
+            citizen.setMapMarkerEnabled(mapMarkerEnabled[0]);
+            citizen.setMapMarkerType(mapMarkerType[0]);
+            citizen.setMapMarkerName(mapMarkerName[0]);
             citizen.setGroup(currentGroup[0]);
 
             if (isPlayerModel[0]) {
@@ -3269,11 +4161,7 @@ public class CitizensUI {
                     plugin.getCitizensManager().updateCitizen(citizen, true);
                     playerRef.sendMessage(Message.raw("Citizen '" + name + "' updated!").color(Color.GREEN));
                     openCitizensGUI(playerRef, store, Tab.MANAGE);
-                } else if (skinUsername[0].trim().startsWith("random_") && citizen.getCachedSkin() != null) {
-                    plugin.getCitizensManager().updateCitizen(citizen, true);
-                    playerRef.sendMessage(Message.raw("Citizen '" + name + "' updated!").color(Color.GREEN));
-                    openCitizensGUI(playerRef, store, Tab.MANAGE);
-                } else if (skinUsername[0].trim().startsWith("custom_") && citizen.getCachedSkin() != null) {
+                } else if (CitizenData.isGeneratedSkinUsername(skinUsername[0].trim()) && citizen.getCachedSkin() != null) {
                     plugin.getCitizensManager().updateCitizen(citizen, true);
                     playerRef.sendMessage(Message.raw("Citizen '" + name + "' updated!").color(Color.GREEN));
                     openCitizensGUI(playerRef, store, Tab.MANAGE);
@@ -4049,6 +4937,7 @@ public class CitizensUI {
         page.addEventListener("toggle-damage", CustomUIEventBindingType.Activating, event -> {
             citizen.setTakesDamage(!citizen.isTakesDamage());
             plugin.getCitizensManager().saveCitizen(citizen);
+            plugin.getCitizensManager().updateDamageInvulnerability(citizen);
             openBehaviorsGUI(playerRef, store, citizen);
         });
 
@@ -4906,7 +5795,7 @@ public class CitizensUI {
 
         String html = template.process(getSharedStyles() + """
                 <div class="page-overlay">
-                    <div class="main-container decorated-container" style="anchor-width: 680; anchor-height: 700;">
+                    <div class="main-container decorated-container" style="anchor-width: 680; anchor-height: 760;">
 
                         <!-- Header -->
                         <div class="header container-title">
@@ -4926,7 +5815,11 @@ public class CitizensUI {
                                 {{@sectionHeader:title=Message Text}}
                                 <input type="text" id="message-input" class="form-input" value="{{$message}}"
                                        placeholder="Enter message text with optional color codes..." />
-                                <p class="form-hint">Colors: {RED}, {GREEN}, {#HEX}. Rich text: **bold**, *italic*, [label](https://example.com). Variables: {PlayerName}, {CitizenName}, {NpcX}, {NpcY}, {NpcZ}.</p>
+                                <p class="form-hint">Colors: {RED}, {GREEN}, {#HEX}.</p>
+                                <div class="spacer-xs"></div>
+                                <p class="form-hint">Rich text: **bold**, *italic*, [label](https://example.com).</p>
+                                <div class="spacer-xs"></div>
+                                <p class="form-hint">Variables: {PlayerName}, {CitizenName}, {NpcX}, {NpcY}, {NpcZ}.</p>
                             </div>
 
                             <div class="spacer-md"></div>
@@ -5623,7 +6516,7 @@ public class CitizensUI {
 
         String html = template.process(getSharedStyles() + """
                 <div class="page-overlay">
-                    <div class="main-container decorated-container" style="anchor-width: 680; anchor-height: 700;">
+                    <div class="main-container decorated-container" style="anchor-width: 680; anchor-height: 760;">
                         <div class="header container-title">
                             <div class="header-content">
                                 <p class="header-title">{{#if isNew}}Add First Message{{else}}Edit First Message{{/if}}</p>
@@ -5639,7 +6532,7 @@ public class CitizensUI {
                                 <div class="spacer-xs"></div>
                                 <p class="form-hint">Rich text: **bold**, *italic*, [label](https://example.com).</p>
                                 <div class="spacer-xs"></div>
-                                <p class="form-hint">Colors: Variables: {PlayerName}, {CitizenName}, {NpcX}, {NpcY}, {NpcZ}.</p>
+                                <p class="form-hint">Variables: {PlayerName}, {CitizenName}, {NpcX}, {NpcY}, {NpcZ}.</p>
                             </div>
                             <div class="spacer-md"></div>
                             <div class="section">
@@ -7675,6 +8568,7 @@ public class CitizensUI {
             citizen.setScheduleConfig(new ScheduleConfig());
         }
         final ScheduleConfig scheduleConfig = citizen.getScheduleConfig();
+        Double scheduleTime24 = getScheduleWorldTime24(citizen);
 
         Map<String, String> locationNames = new HashMap<>();
         for (ScheduleLocation location : scheduleConfig.getLocations()) {
@@ -7692,7 +8586,7 @@ public class CitizensUI {
 
             locationsHtml.append("""
                                     <div class="list-item">
-                                        <div style="flex-weight: 1;">
+                                        <div style="layout: top; flex-weight: 1;">
                                             <div>
                                                 <p style="font-size: 14; font-weight: bold;">%s%s</p>
                                             </div>
@@ -7703,13 +8597,13 @@ public class CitizensUI {
                                                 <p style="font-size: 12; color: #888888;">%s</p>
                                             </div>
                                         </div>
-                                        <button id="schedule-default-location-%d" class="secondary-button" style="anchor-width: 120;">%s</button>
+                                        <button id="schedule-default-location-%d" class="secondary-button" style="anchor-width: 145;">%s</button>
                                         <div class="spacer-h-xs"></div>
-                                        <button id="schedule-update-location-%d" class="secondary-button" style="anchor-width: 120;">Update Pos</button>
+                                        <button id="schedule-update-location-%d" class="secondary-button" style="anchor-width: 180;">Update Position</button>
                                         <div class="spacer-h-xs"></div>
-                                        <button id="schedule-rename-location-%d" class="secondary-button" style="anchor-width: 100;">Rename</button>
+                                        <button id="schedule-rename-location-%d" class="secondary-button" style="anchor-width: 120;">Rename</button>
                                         <div class="spacer-h-xs"></div>
-                                        <button id="schedule-delete-location-%d" class="secondary-button" style="anchor-width: 100;">Delete</button>
+                                        <button id="schedule-delete-location-%d" class="secondary-button" style="anchor-width: 120;">Delete</button>
                                     </div>
                                     <div class="spacer-xs"></div>
                                     """.formatted(
@@ -7730,7 +8624,7 @@ public class CitizensUI {
         for (int i = 0; i < entries.size(); i++) {
             ScheduleEntry entry = entries.get(i);
             String locationName = locationNames.getOrDefault(entry.getLocationId(), "No location");
-            String timeLabel = formatTime24(entry.getStartTime24()) + " - " + formatTime24(entry.getEndTime24());
+            String timeLabel = formatScheduleTimeRange(entry);
             String activityLabel = describeScheduleActivity(entry);
             if (entry.getActivityType() == ScheduleActivityType.FOLLOW_CITIZEN && !entry.getFollowCitizenId().isEmpty()) {
                 CitizenData followTarget = plugin.getCitizensManager().getCitizen(entry.getFollowCitizenId());
@@ -7742,7 +8636,7 @@ public class CitizensUI {
 
             entriesHtml.append("""
                                     <div class="list-item">
-                                        <div style="flex-weight: 1;">
+                                        <div style="layout: top; flex-weight: 1;">
                                             <div>
                                                 <p style="font-size: 14; font-weight: bold;">%s%s</p>
                                             </div>
@@ -7755,15 +8649,15 @@ public class CitizensUI {
                                         </div>
                                         <button id="schedule-edit-entry-%d" class="secondary-button" style="anchor-width: 90;">Edit</button>
                                         <div class="spacer-h-xs"></div>
-                                        <button id="schedule-duplicate-entry-%d" class="secondary-button" style="anchor-width: 100;">Duplicate</button>
+                                        <button id="schedule-duplicate-entry-%d" class="secondary-button" style="anchor-width: 135;">Duplicate</button>
                                         <div class="spacer-h-xs"></div>
-                                        <button id="schedule-toggle-entry-%d" class="secondary-button" style="anchor-width: 95;">%s</button>
+                                        <button id="schedule-toggle-entry-%d" class="secondary-button" style="anchor-width: 120;">%s</button>
                                         <div class="spacer-h-xs"></div>
-                                        <button id="schedule-move-up-entry-%d" class="secondary-button" style="anchor-width: 60;">Up</button>
+                                        <button id="schedule-move-up-entry-%d" class="secondary-button" style="anchor-width: 90;">Up</button>
                                         <div class="spacer-h-xs"></div>
-                                        <button id="schedule-move-down-entry-%d" class="secondary-button" style="anchor-width: 70;">Down</button>
+                                        <button id="schedule-move-down-entry-%d" class="secondary-button" style="anchor-width: 100;">Down</button>
                                         <div class="spacer-h-xs"></div>
-                                        <button id="schedule-delete-entry-%d" class="secondary-button" style="anchor-width: 90;">Delete</button>
+                                        <button id="schedule-delete-entry-%d" class="secondary-button" style="anchor-width: 110;">Delete</button>
                                     </div>
                                     <div class="spacer-xs"></div>
                                     """.formatted(
@@ -7790,16 +8684,16 @@ public class CitizensUI {
                 .setVariable("scheduleEnabled", scheduleConfig.isEnabled())
                 .setVariable("runtimeState", citizen.getCurrentScheduleRuntimeState().name())
                 .setVariable("currentEntryName", escapeHtml(currentEntryName))
-                .setVariable("statusText", escapeHtml(generateScheduleStatusText(citizen)))
+                .setVariable("scheduleTimeText", escapeHtml(formatScheduleWorldTime(scheduleTime24)))
+                .setVariable("statusText", escapeHtml(generateScheduleStatusText(citizen, scheduleConfig, scheduleTime24)))
+                .setVariable("nextEntryText", escapeHtml(describeScheduleNextEntry(scheduleConfig, scheduleTime24)))
                 .setVariable("fallbackModeText", escapeHtml(describeScheduleFallbackMode(scheduleConfig.getFallbackMode())))
-                .setVariable("locationsHtml", locationsHtml.toString())
-                .setVariable("entriesHtml", entriesHtml.toString())
                 .setVariable("hasLocations", !locations.isEmpty())
                 .setVariable("hasEntries", !entries.isEmpty());
 
         String html = template.process(getSharedStyles() + """
                 <div class="page-overlay">
-                    <div class="main-container decorated-container" style="anchor-width: 980; anchor-height: 1040;">
+                    <div class="main-container decorated-container" style="anchor-width: 1180; anchor-height: 1040;">
 
                         <div class="header container-title">
                             <div class="header-content">
@@ -7816,9 +8710,12 @@ public class CitizensUI {
                                 <div class="stats-grid" style="layout: left;">
                                     {{@statCard:value={{$runtimeState}},label=State}}
                                     {{@statCard:value={{$currentEntryName}},label=Current Entry}}
+                                    {{@statCard:value={{$scheduleTimeText}},label=Hytale Time}}
                                 </div>
                                 <div class="spacer-xs"></div>
                                 {{@infoBox:text={{$statusText}}}}
+                                <div class="spacer-xs"></div>
+                                {{@infoBox:text={{$nextEntryText}}}}
                             </div>
 
                             <div class="spacer-sm"></div>
@@ -7856,13 +8753,13 @@ public class CitizensUI {
                             <div class="section">
                                 {{@sectionHeader:title=Locations,description=Named places this citizen can travel to during the day}}
                                 {{#if hasLocations}}
-                                {{{$locationsHtml}}}
+                                <!--SCHEDULE_LOCATIONS-->
                                 {{else}}
                                 <p style="color: #8b949e; font-size: 12; text-align: center;">No schedule locations yet. Add one from your current position.</p>
                                 <div class="spacer-xs"></div>
                                 {{/if}}
                                 <div style="layout: center;">
-                                    <button id="schedule-add-location" class="secondary-button" style="anchor-width: 240;">Add Location At My Position</button>
+                                    <button id="schedule-add-location" class="secondary-button" style="anchor-width: 340;">Add Location At My Position</button>
                                 </div>
                             </div>
 
@@ -7871,7 +8768,7 @@ public class CitizensUI {
                             <div class="section">
                                 {{@sectionHeader:title=Entries,description=Time blocks that define where the citizen goes and what it does there}}
                                 {{#if hasEntries}}
-                                {{{$entriesHtml}}}
+                                <!--SCHEDULE_ENTRIES-->
                                 {{else}}
                                 <p style="color: #8b949e; font-size: 12; text-align: center;">No schedule entries yet. Create one to start using the system.</p>
                                 <div class="spacer-xs"></div>
@@ -7887,7 +8784,9 @@ public class CitizensUI {
                         </div>
                     </div>
                 </div>
-                """);
+                """)
+                .replace("<!--SCHEDULE_LOCATIONS-->", locationsHtml.toString())
+                .replace("<!--SCHEDULE_ENTRIES-->", entriesHtml.toString());
 
         PageBuilder page = PageBuilder.pageForPlayer(playerRef)
                 .withLifetime(CustomPageLifetime.CanDismiss)
@@ -7996,8 +8895,8 @@ public class CitizensUI {
             ScheduleEntry newEntry = new ScheduleEntry();
             newEntry.setId(UUID.randomUUID().toString());
             newEntry.setName("New Entry");
-            newEntry.setStartTime24(8.0);
-            newEntry.setEndTime24(12.0);
+            newEntry.setStartTime24(0.0);
+            newEntry.setEndTime24(0.0);
             if (!scheduleConfig.getLocations().isEmpty()) {
                 newEntry.setLocationId(scheduleConfig.getLocations().get(0).getId());
             }
@@ -8194,7 +9093,7 @@ public class CitizensUI {
                         </div>
 
                         <div class="body" data-hyui-scrollbar-style='"Common.ui" "DefaultScrollbarStyle"' style="layout-mode: TopScrolling;">
-                            <p class="page-description">Schedule entries use Hytale's 0-24 hour clock. Overnight ranges such as 22.0 to 6.0 are supported.</p>
+                            <p class="page-description">Schedule entries use Hytale's 0-24 hour clock. Set start and end to the same time for an all-day entry.</p>
                             <div class="spacer-sm"></div>
 
                             <div class="section">
@@ -8471,7 +9370,7 @@ public class CitizensUI {
 
         String html = template.process(getSharedStyles() + """
                 <div class="page-overlay">
-                    <div class="main-container decorated-container" style="anchor-width: 680; anchor-height: 520;">
+                    <div class="main-container decorated-container" style="anchor-width: 680; anchor-height: 580;">
 
                         <div class="header container-title">
                             <div class="header-content">
@@ -8491,7 +9390,7 @@ public class CitizensUI {
                                 <div class="spacer-xs"></div>
                                 <p class="form-hint">Rich text: **bold**, *italic*, [label](https://example.com).</p>
                                 <div class="spacer-xs"></div>
-                                <p class="form-hint">Colors: Variables: {PlayerName}, {CitizenName}, {NpcX}, {NpcY}, {NpcZ}.</p>
+                                <p class="form-hint">Variables: {PlayerName}, {CitizenName}, {NpcX}, {NpcY}, {NpcZ}.</p>
                             </div>
 
                             <div class="spacer-md"></div>
@@ -8587,7 +9486,7 @@ public class CitizensUI {
             PatrolPath path = allPaths.get(i);
             pathsHtml.append("""
                                     <div class="list-item">
-                                        <div style="flex-weight: 1;">
+                                        <div style="layout: top; flex-weight: 1;">
                                             <div>
                                                 <p style="font-size: 14; font-weight: bold;">%s</p>
                                             </div>

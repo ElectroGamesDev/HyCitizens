@@ -254,6 +254,11 @@ public class CitizenInteraction {
 
     static public void handleInteraction(@Nonnull CitizenData citizen, @Nonnull PlayerRef playerRef,
                                          @Nonnull String interactionSource) {
+        if (HyCitizensPlugin.get().getCitizensManager().isCitizenInCombat(citizen)) {
+            playerRef.sendMessage(Message.raw("This citizen is busy in combat.").color(Color.RED));
+            return;
+        }
+
         CitizenInteractEvent interactEvent = new CitizenInteractEvent(citizen, playerRef);
         HyCitizensPlugin.get().getCitizensManager().fireCitizenInteractEvent(interactEvent);
 
@@ -492,7 +497,7 @@ public class CitizenInteraction {
                 .replaceAll(Matcher.quoteReplacement(playerRef.getUsername()));
         text = CITIZEN_NAME_PATTERN
                 .matcher(text)
-                .replaceAll(Matcher.quoteReplacement(citizen.getName()));
+                .replaceAll(Matcher.quoteReplacement(formatCitizenNamePlaceholder(citizen)));
         text = NPC_X_PATTERN
                 .matcher(text)
                 .replaceAll(Matcher.quoteReplacement(npcX));
@@ -503,5 +508,13 @@ public class CitizenInteraction {
                 .matcher(text)
                 .replaceAll(Matcher.quoteReplacement(npcZ));
         return text;
+    }
+
+    @Nonnull
+    private static String formatCitizenNamePlaceholder(@Nonnull CitizenData citizen) {
+        return citizen.getName()
+                .replace("\\n", " ")
+                .replace('\r', ' ')
+                .replace('\n', ' ');
     }
 }

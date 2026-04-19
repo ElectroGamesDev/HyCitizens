@@ -1,35 +1,49 @@
 package com.electro.hycitizens.listeners;
 
 import com.electro.hycitizens.HyCitizensPlugin;
+import com.electro.hycitizens.components.CitizenNpcIdentityComponent;
 import com.electro.hycitizens.models.CitizenData;
+import com.hypixel.hytale.component.Holder;
 import com.hypixel.hytale.component.Ref;
 import com.hypixel.hytale.component.Store;
 import com.hypixel.hytale.component.query.Query;
 import com.hypixel.hytale.math.util.ChunkUtil;
 import com.hypixel.hytale.math.vector.Vector3d;
+import com.hypixel.hytale.server.core.asset.type.model.config.Model;
 import com.hypixel.hytale.server.core.HytaleServer;
+import com.hypixel.hytale.server.core.entity.UUIDComponent;
+import com.hypixel.hytale.server.core.modules.entity.component.PersistentModel;
+import com.hypixel.hytale.server.core.universe.Universe;
 import com.hypixel.hytale.server.core.universe.world.World;
+import com.hypixel.hytale.server.core.universe.world.chunk.EntityChunk;
 import com.hypixel.hytale.server.core.universe.world.chunk.WorldChunk;
+import com.hypixel.hytale.server.core.universe.world.storage.ChunkStore;
 import com.hypixel.hytale.server.core.universe.world.events.ChunkPreLoadProcessEvent;
 import com.hypixel.hytale.server.core.universe.world.storage.EntityStore;
 import com.hypixel.hytale.server.npc.entities.NPCEntity;
 
 import javax.annotation.Nonnull;
+import javax.annotation.Nullable;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.CompletableFuture;
 
 import static com.hypixel.hytale.logger.HytaleLogger.getLogger;
 
 public class ChunkPreLoadListener {
     private static final long NPC_RESOLVE_TIMEOUT_MS = 15_000L;
     private static final long NPC_RESOLVE_RETRY_MS = 500L;
+    private static final float MIN_MODEL_SCALE = 0.01f;
 
     private final HyCitizensPlugin plugin;
-    private final Set<String> citizensBeingProcessed = ConcurrentHashMap.newKeySet();
     private final Set<String> citizensPendingNpcResolution = ConcurrentHashMap.newKeySet();
 
     public ChunkPreLoadListener(@Nonnull HyCitizensPlugin plugin) {
@@ -41,43 +55,135 @@ public class ChunkPreLoadListener {
         long eventChunkIndex = event.getChunk().getIndex();
         UUID worldUUID = world.getWorldConfig().getUuid();
 
+        sanitizeChunkPersistentModels(event);
         plugin.getCitizensManager().processPendingNpcRemovals(world, eventChunkIndex);
         plugin.getCitizensManager().processPendingHologramRemovals(world, eventChunkIndex);
 
-        // Collect citizens that belong to this chunk, then return from the event
-        for (CitizenData citizen : plugin.getCitizensManager().getAllCitizens()) {
-            if (!worldUUID.equals(citizen.getWorldUUID()))
-                continue;
-
-            if (citizen.isAwaitingRespawn()) {
-                continue;
-            }
-
-            // Skip citizens that were just created (within last 10 seconds) to prevent double spawning
-            long timeSinceCreation = System.currentTimeMillis() - citizen.getCreatedAt();
-            if (timeSinceCreation < 10000) {
-                continue;
-            }
-
-            // Match either persisted current position or base spawn position.
-            Vector3d currentPosition = citizen.getCurrentPosition() != null ? citizen.getCurrentPosition() : citizen.getPosition();
-            long currentChunkIndex = ChunkUtil.indexChunkFromBlock(currentPosition.x, currentPosition.z);
-            Vector3d basePosition = citizen.getPosition();
-            long baseChunkIndex = ChunkUtil.indexChunkFromBlock(basePosition.x, basePosition.z);
-            if (eventChunkIndex != currentChunkIndex && eventChunkIndex != baseChunkIndex) {
-                continue;
-            }
-
-            // Skip citizens that are already being spawned by another code path
-            if (plugin.getCitizensManager().isCitizenSpawning(citizen.getId())) {
-                continue;
-            }
-
+        for (CitizenData citizen : collectChunkCitizens(event, worldUUID, eventChunkIndex)) {
             // Hand off the heavy work to run outside the event
             HytaleServer.SCHEDULED_EXECUTOR.schedule(() -> {
                 processCitizenAsync(world, citizen, eventChunkIndex);
             }, 0, TimeUnit.MILLISECONDS);
         }
+    }
+
+    @Nonnull
+    private Set<CitizenData> collectChunkCitizens(@Nonnull ChunkPreLoadProcessEvent event,
+                                                  @Nonnull UUID worldUUID,
+                                                  long eventChunkIndex) {
+        Set<CitizenData> candidates = new LinkedHashSet<>();
+        List<CitizenData> worldCitizens = new ArrayList<>();
+        Map<UUID, CitizenData> citizensByNpcUuid = new HashMap<>();
+
+        for (CitizenData citizen : plugin.getCitizensManager().getAllCitizens()) {
+            if (!shouldProcessCitizen(worldUUID, citizen)) {
+                continue;
+            }
+
+            worldCitizens.add(citizen);
+
+            UUID spawnedUuid = citizen.getSpawnedUUID();
+            if (spawnedUuid != null) {
+                citizensByNpcUuid.put(spawnedUuid, citizen);
+            }
+
+            if (isCitizenTrackedInChunk(citizen, eventChunkIndex)) {
+                candidates.add(citizen);
+            }
+        }
+
+        Holder<ChunkStore> chunkHolder = event.getHolder();
+        if (chunkHolder == null) {
+            return candidates;
+        }
+
+        EntityChunk entityChunk = chunkHolder.getComponent(EntityChunk.getComponentType());
+        if (entityChunk == null) {
+            return candidates;
+        }
+
+        for (Holder<EntityStore> entityHolder : entityChunk.getEntityHolders()) {
+            CitizenData matchedCitizen = resolveChunkEntityCitizen(entityHolder, worldCitizens, citizensByNpcUuid);
+            if (matchedCitizen != null) {
+                candidates.add(matchedCitizen);
+            }
+        }
+
+        return candidates;
+    }
+
+    private boolean shouldProcessCitizen(@Nonnull UUID worldUUID, @Nonnull CitizenData citizen) {
+        if (!worldUUID.equals(citizen.getWorldUUID())) {
+            return false;
+        }
+
+        if (citizen.isAwaitingRespawn()) {
+            return false;
+        }
+
+        long timeSinceCreation = System.currentTimeMillis() - citizen.getCreatedAt();
+        if (timeSinceCreation < 10000) {
+            return false;
+        }
+
+        return !plugin.getCitizensManager().isCitizenSpawning(citizen.getId());
+    }
+
+    private boolean isCitizenTrackedInChunk(@Nonnull CitizenData citizen, long chunkIndex) {
+        Vector3d currentPosition = citizen.getCurrentPosition() != null ? citizen.getCurrentPosition() : citizen.getPosition();
+        long currentChunkIndex = ChunkUtil.indexChunkFromBlock(currentPosition.x, currentPosition.z);
+        if (chunkIndex == currentChunkIndex) {
+            return true;
+        }
+
+        Vector3d basePosition = citizen.getPosition();
+        long baseChunkIndex = ChunkUtil.indexChunkFromBlock(basePosition.x, basePosition.z);
+        return chunkIndex == baseChunkIndex;
+    }
+
+    @Nullable
+    private CitizenData resolveChunkEntityCitizen(@Nullable Holder<EntityStore> entityHolder,
+                                                  @Nonnull List<CitizenData> worldCitizens,
+                                                  @Nonnull Map<UUID, CitizenData> citizensByNpcUuid) {
+        if (entityHolder == null) {
+            return null;
+        }
+
+        NPCEntity npc = entityHolder.getComponent(NPCEntity.getComponentType());
+        if (npc == null || npc.getRole() == null) {
+            return null;
+        }
+
+        CitizenNpcIdentityComponent identityComponent =
+                entityHolder.getComponent(CitizenNpcIdentityComponent.getComponentType());
+        if (identityComponent != null) {
+            for (CitizenData citizen : worldCitizens) {
+                if (citizen.getId().equals(identityComponent.getCitizenId())) {
+                    return citizen;
+                }
+            }
+        }
+
+        UUIDComponent uuidComponent = entityHolder.getComponent(UUIDComponent.getComponentType());
+        if (uuidComponent != null) {
+            CitizenData matchedByUuid = citizensByNpcUuid.get(uuidComponent.getUuid());
+            if (matchedByUuid != null) {
+                return matchedByUuid;
+            }
+        }
+
+        String roleName = npc.getRole().getRoleName();
+        if (roleName == null || !roleName.startsWith("HyCitizens_")) {
+            return null;
+        }
+
+        for (CitizenData citizen : worldCitizens) {
+            if (roleName.startsWith("HyCitizens_" + citizen.getId() + "_")) {
+                return citizen;
+            }
+        }
+
+        return null;
     }
 
     private void processCitizenAsync(World world, CitizenData citizen, long chunkIndex) {
@@ -93,13 +199,7 @@ public class ChunkPreLoadListener {
                     return;
                 }
 
-                Ref<EntityStore> entityRef = null;
-                if (citizen.getSpawnedUUID() != null) {
-                    // Not reliable
-                    //entityRef = world.getEntityRef(citizen.getSpawnedUUID());
-
-                    entityRef = checkIfNpcExists(world.getEntityStore().getStore(), citizen);
-                }
+                Ref<EntityStore> entityRef = checkIfNpcExists(world.getEntityStore().getStore(), citizen);
 
                 if (entityRef == null || !entityRef.isValid()) {
                     resolveOrSpawnCitizenNPC(world, citizen, true);
@@ -107,9 +207,6 @@ public class ChunkPreLoadListener {
                     onCitizenEntityResolved(citizen, entityRef);
                 }
             });
-
-            // Schedule delayed hologram check for chunk already loaded case
-            scheduleHologramCheck(world, citizen, chunkIndex);
 
             return;
         }
@@ -119,8 +216,6 @@ public class ChunkPreLoadListener {
         final ScheduledFuture<?>[] futureRef = new ScheduledFuture<?>[1];
         boolean[] spawned = { false };
         boolean[] queued = { false };
-        boolean[] hologramCheckScheduled = { false };
-
         futureRef[0] = HytaleServer.SCHEDULED_EXECUTOR.scheduleAtFixedRate(() -> {
             if (citizen.isAwaitingRespawn()) {
                 futureRef[0].cancel(false);
@@ -155,13 +250,7 @@ public class ChunkPreLoadListener {
                             return;
                         }
 
-                        Ref<EntityStore> entityRef = null;
-                        if (citizen.getSpawnedUUID() != null) {
-                            // Not reliable
-                            //entityRef = world.getEntityRef(citizen.getSpawnedUUID());
-
-                            entityRef = checkIfNpcExists(world.getEntityStore().getStore(), citizen);
-                        }
+                        Ref<EntityStore> entityRef = checkIfNpcExists(world.getEntityStore().getStore(), citizen);
 
                         // If the chunk loads, try to spawn the citizen if it doesn't exist
                         if (entityRef == null || !entityRef .isValid()) {
@@ -171,11 +260,6 @@ public class ChunkPreLoadListener {
                         }
                     });
 
-                    // Schedule delayed hologram check after timeout spawn
-                    if (!hologramCheckScheduled[0]) {
-                        hologramCheckScheduled[0] = true;
-                        scheduleHologramCheck(world, citizen, chunkIndex);
-                    }
                 }
 
                 return;
@@ -201,13 +285,7 @@ public class ChunkPreLoadListener {
                 spawned[0] = true;
                 futureRef[0].cancel(false);
 
-                Ref<EntityStore> entityRef = null;
-                if (citizen.getSpawnedUUID() != null) {
-                    // Not relaible
-                    //entityRef = world.getEntityRef(citizen.getSpawnedUUID());
-
-                    entityRef = checkIfNpcExists(world.getEntityStore().getStore(), citizen);
-                }
+                Ref<EntityStore> entityRef = checkIfNpcExists(world.getEntityStore().getStore(), citizen);
 
                 // If the chunk is loaded, try to spawn the citizen if it doesn't exist
                 if (entityRef == null || !entityRef.isValid()) {
@@ -216,11 +294,6 @@ public class ChunkPreLoadListener {
                     onCitizenEntityResolved(citizen, entityRef);
                 }
 
-                // Schedule delayed hologram check after periodic spawn
-                if (!hologramCheckScheduled[0]) {
-                    hologramCheckScheduled[0] = true;
-                    scheduleHologramCheck(world, citizen, chunkIndex);
-                }
             });
 
         }, 0, 250, TimeUnit.MILLISECONDS);
@@ -231,19 +304,15 @@ public class ChunkPreLoadListener {
             return;
         }
 
-        UUID storedUuid = citizen.getSpawnedUUID();
-        if (storedUuid == null) {
-            plugin.getCitizensManager().spawnCitizenNPC(citizen, save);
+        Ref<EntityStore> currentRef = checkIfNpcExists(world.getEntityStore().getStore(), citizen);
+        if (currentRef != null && currentRef.isValid()) {
+            onCitizenEntityResolved(citizen, currentRef);
             return;
         }
 
-        // Not reliable
-        //Ref<EntityStore> currentRef = world.getEntityRef(storedUuid);
-
-        Ref<EntityStore> currentRef = checkIfNpcExists(world.getEntityStore().getStore(), citizen);
-
-        if (currentRef != null && currentRef.isValid()) {
-            onCitizenEntityResolved(citizen, currentRef);
+        UUID storedUuid = citizen.getSpawnedUUID();
+        if (storedUuid == null) {
+            plugin.getCitizensManager().spawnCitizenNPC(citizen, save);
             return;
         }
 
@@ -273,20 +342,14 @@ public class ChunkPreLoadListener {
                 return;
             }
 
-            UUID retryUuid = citizen.getSpawnedUUID();
-            if (retryUuid != null) {
-                // Not reliable
-                //Ref<EntityStore> resolvedRef = world.getEntityRef(retryUuid);
-
-                Ref<EntityStore> resolvedRef = checkIfNpcExists(world.getEntityStore().getStore(), citizen);
-                if (resolvedRef != null && resolvedRef.isValid()) {
-                    if (futureRef[0] != null) {
-                        futureRef[0].cancel(false);
-                    }
-                    citizensPendingNpcResolution.remove(citizen.getId());
-                    onCitizenEntityResolved(citizen, resolvedRef);
-                    return;
+            Ref<EntityStore> resolvedRef = checkIfNpcExists(world.getEntityStore().getStore(), citizen);
+            if (resolvedRef != null && resolvedRef.isValid()) {
+                if (futureRef[0] != null) {
+                    futureRef[0].cancel(false);
                 }
+                citizensPendingNpcResolution.remove(citizen.getId());
+                onCitizenEntityResolved(citizen, resolvedRef);
+                return;
             }
 
             if (System.currentTimeMillis() - resolutionStart < NPC_RESOLVE_TIMEOUT_MS) {
@@ -298,8 +361,8 @@ public class ChunkPreLoadListener {
             }
             citizensPendingNpcResolution.remove(citizen.getId());
 
-            // UUID is stale after retry timeout; allow a fresh spawn with a new UUID.
-            plugin.getCitizensManager().clearCitizenEntityBinding(citizen);
+            // UUID is stale after retry timeout
+            plugin.getCitizensManager().clearCitizenEntityRef(citizen);
             plugin.getCitizensManager().spawnCitizenNPC(citizen, save);
         }), NPC_RESOLVE_RETRY_MS, NPC_RESOLVE_RETRY_MS, TimeUnit.MILLISECONDS);
     }
@@ -309,121 +372,72 @@ public class ChunkPreLoadListener {
             return;
         }
 
-        plugin.getCitizensManager().bindCitizenEntityBinding(citizen, entityRef);
-
-        if (!plugin.getCitizensManager().refreshSpawnedCitizenAppearance(citizen) && citizen.isPlayerModel()) {
-            plugin.getCitizensManager().updateCitizenSkin(citizen, true);
-        }
-
-        plugin.getCitizensManager().setInteractionComponent(entityRef.getStore(), entityRef, citizen);
-        plugin.getCitizensManager().refreshNpcNameplate(citizen);
-        plugin.getCitizensManager().triggerAnimations(citizen, "DEFAULT");
-        plugin.getCitizensManager().updateCitizenNPCItems(citizen);
-        plugin.getCitizensManager().getScheduleManager().refreshCitizen(citizen);
+        plugin.getCitizensManager().restoreResolvedCitizenState(citizen, entityRef, true);
 
         String pluginPatrolPath = citizen.getPathConfig().getPluginPatrolPath();
-        if (!pluginPatrolPath.isEmpty()) {
+        if (!pluginPatrolPath.isEmpty()
+                && plugin.getCitizensManager().getPatrolManager() != null
+                && !plugin.getCitizensManager().getPatrolManager().isPatrolling(citizen.getId())) {
             plugin.getCitizensManager().startCitizenPatrol(citizen.getId(), pluginPatrolPath);
         }
     }
 
-    private void scheduleHologramCheck(World world, CitizenData citizen, long chunkIndex) {
-        // Check if this citizen is already being processed
-        if (!citizensBeingProcessed.add(citizen.getId())) {
-            // Already being processed, skip
+    private void sanitizeChunkPersistentModels(@Nonnull ChunkPreLoadProcessEvent event) {
+        Holder<ChunkStore> chunkHolder = event.getHolder();
+        if (chunkHolder == null) {
             return;
         }
 
-        long hologramCheckStart = System.currentTimeMillis();
-        final ScheduledFuture<?>[] hologramFutureRef = new ScheduledFuture<?>[1];
-        boolean[] hologramChecked = { false };
+        EntityChunk entityChunk = chunkHolder.getComponent(EntityChunk.getComponentType());
+        if (entityChunk == null) {
+            return;
+        }
 
-        hologramFutureRef[0] = HytaleServer.SCHEDULED_EXECUTOR.scheduleAtFixedRate(() -> {
-            if (hologramChecked[0]) {
-                hologramFutureRef[0].cancel(false);
-                citizensBeingProcessed.remove(citizen.getId());
-                return;
+        int repairedCount = 0;
+        for (Holder<EntityStore> entityHolder : entityChunk.getEntityHolders()) {
+            if (entityHolder == null) {
+                continue;
             }
 
-            long hologramElapsedMs = System.currentTimeMillis() - hologramCheckStart;
-
-            WorldChunk loadedChunk = world.getChunkIfLoaded(chunkIndex);
-
-            // Timeout after 15 seconds total or until the chunk is loaded
-            if (hologramElapsedMs >= 15_000 || loadedChunk != null) {
-                hologramFutureRef[0].cancel(false);
-                citizensBeingProcessed.remove(citizen.getId());
-
-                // Timeout reached, spawn hologram if still needed
-                world.execute(() -> {
-                    WorldChunk chunk = world.getChunkIfLoaded(chunkIndex);
-                    if (chunk == null) {
-                        return;
-                    }
-
-                    if (!plugin.getCitizensManager().shouldUseSeparateNametagEntities(citizen)) {
-                        plugin.getCitizensManager().updateSpawnedCitizenHologram(citizen, true);
-                        return;
-                    }
-
-                    if (plugin.getCitizensManager().migrateLegacyCitizenHologramEntities(world, citizen)
-                            || plugin.getCitizensManager().rebindCitizenHologramEntities(world, citizen)) {
-                        plugin.getCitizensManager().updateSpawnedCitizenHologram(citizen, true);
-                        return;
-                    }
-
-                    boolean shouldSpawnHologram = citizen.getHologramLineUuids() == null || citizen.getHologramLineUuids().isEmpty();
-                    if (!shouldSpawnHologram) {
-                        for (UUID uuid : citizen.getHologramLineUuids()) {
-                            if (uuid == null || world.getEntityRef(uuid) == null) {
-                                shouldSpawnHologram = true;
-                                break;
-                            }
-                        }
-                    }
-
-                    if (shouldSpawnHologram) {
-                        plugin.getCitizensManager().spawnCitizenHologram(citizen, true);
-                    }
-                });
-
-                return;
+            PersistentModel persistentModel = entityHolder.getComponent(PersistentModel.getComponentType());
+            if (persistentModel == null) {
+                continue;
             }
 
-            // Check if hologram entities are loaded
-            world.execute(() -> {
-                WorldChunk chunk = world.getChunkIfLoaded(chunkIndex);
-                if (chunk == null) {
-                    return;
-                }
+            Model.ModelReference modelReference = persistentModel.getModelReference();
+            if (modelReference == null) {
+                entityHolder.tryRemoveComponent(PersistentModel.getComponentType());
+                repairedCount++;
+                continue;
+            }
 
-                if (!plugin.getCitizensManager().shouldUseSeparateNametagEntities(citizen)) {
-                    plugin.getCitizensManager().updateSpawnedCitizenHologram(citizen, true);
-                    hologramChecked[0] = true;
-                    hologramFutureRef[0].cancel(false);
-                    citizensBeingProcessed.remove(citizen.getId());
-                    return;
-                }
+            float scale = modelReference.getScale();
+            if (Float.isFinite(scale) && scale > 0.0f && scale <= 100.0f) {
+                continue;
+            }
 
-                if (plugin.getCitizensManager().migrateLegacyCitizenHologramEntities(world, citizen)
-                        || plugin.getCitizensManager().rebindCitizenHologramEntities(world, citizen)) {
-                    plugin.getCitizensManager().updateSpawnedCitizenHologram(citizen, true);
-                    hologramChecked[0] = true;
-                    hologramFutureRef[0].cancel(false);
-                    citizensBeingProcessed.remove(citizen.getId());
-                    return;
-                }
+            String modelAssetId = modelReference.getModelAssetId();
+            if (modelAssetId == null || modelAssetId.isEmpty()) {
+                entityHolder.tryRemoveComponent(PersistentModel.getComponentType());
+            } else {
+                entityHolder.putComponent(
+                        PersistentModel.getComponentType(),
+                        new PersistentModel(new Model.ModelReference(
+                                modelAssetId,
+                                Float.isFinite(scale) && scale > 0.0f ? 100.0f : MIN_MODEL_SCALE,
+                                modelReference.getRandomAttachmentIds(),
+                                modelReference.isStaticModel()
+                        ))
+                );
+            }
+            repairedCount++;
+        }
 
-                if (citizen.getHologramLineUuids() == null || citizen.getHologramLineUuids().isEmpty()) {
-                    // No hologram UUIDs stored, spawn new hologram
-                    plugin.getCitizensManager().spawnCitizenHologram(citizen, true);
-                    hologramChecked[0] = true;
-                    hologramFutureRef[0].cancel(false);
-                    citizensBeingProcessed.remove(citizen.getId());
-                }
-            });
-
-        }, 100, 500, TimeUnit.MILLISECONDS);
+        if (repairedCount > 0) {
+            entityChunk.markNeedsSaving();
+            getLogger().atWarning().log("Repaired " + repairedCount + " invalid PersistentModel scale values while loading chunk "
+                    + event.getChunk().getX() + ", " + event.getChunk().getZ() + " in world '" + event.getChunk().getWorld().getName() + "'.");
+        }
     }
 
     Ref<EntityStore> checkIfNpcExists(Store<EntityStore> store, CitizenData citizen) {
@@ -431,7 +445,6 @@ public class ChunkPreLoadListener {
         Query<EntityStore> query = NPCEntity.getComponentType();
         CompletableFuture<Ref<EntityStore>> found = new CompletableFuture<>();
 
-        // Todo: Switch to a custom citizen component so we don't rely on roles
         store.forEachEntityParallel(query, (index, archetypeChunk, cb) -> {
             if (found.isDone()) {
                 return;
@@ -444,6 +457,20 @@ public class ChunkPreLoadListener {
 
             NPCEntity npc = archetypeChunk.getComponent(index, NPCEntity.getComponentType());
             if (npc == null || npc.getRole() == null) {
+                return;
+            }
+
+            CitizenNpcIdentityComponent identityComponent =
+                    archetypeChunk.getComponent(index, CitizenNpcIdentityComponent.getComponentType());
+            if (identityComponent != null && citizen.getId().equals(identityComponent.getCitizenId())) {
+                found.complete(otherRef);
+                return;
+            }
+
+            UUIDComponent uuidComponent = archetypeChunk.getComponent(index, UUIDComponent.getComponentType());
+            if (citizen.getSpawnedUUID() != null && uuidComponent != null
+                    && citizen.getSpawnedUUID().equals(uuidComponent.getUuid())) {
+                found.complete(otherRef);
                 return;
             }
 

@@ -111,6 +111,9 @@ public class PatrolManager {
         if (citizen == null || citizen.getNpcRef() == null || !citizen.getNpcRef().isValid()) {
             return;
         }
+        if (citizen.isAwaitingRespawn() || citizensManager.isCitizenSpawning(citizen.getId())) {
+            return;
+        }
 
         World world = Universe.get().getWorld(citizen.getWorldUUID());
         if (world == null) {
@@ -209,7 +212,7 @@ public class PatrolManager {
 
         switch (recoveryStage) {
             case 0 -> {
-                getLogger().atInfo().log("Patrol soft reset for citizen '" + citizen.getId() + "' at waypoint " + waypointIndex + " after " + (now - session.lastProgressAtMs) + "ms without progress.");
+                //getLogger().atInfo().log("Patrol soft reset for citizen '" + citizen.getId() + "' at waypoint " + waypointIndex + " after " + (now - session.lastProgressAtMs) + "ms without progress.");
                 Ref<EntityStore> targetRef = ensureMoveTarget(citizen, world, path.getWaypoints().get(waypointIndex).toVector3d());
                 if (targetRef != null && targetRef.isValid()) {
                     TransformComponent targetTransform = targetRef.getStore().getComponent(targetRef, TransformComponent.getComponentType());
@@ -220,7 +223,7 @@ public class PatrolManager {
             }
             case 1 -> {
                 int nearestIndex = findNearestWaypointIndex(path, npcPosition);
-                getLogger().atInfo().log("Patrol route reset for citizen '" + citizen.getId() + "' to waypoint " + nearestIndex + " after repeated stall.");
+                //getLogger().atInfo().log("Patrol route reset for citizen '" + citizen.getId() + "' to waypoint " + nearestIndex + " after repeated stall.");
                 restartPatrolInternal(citizen, world, path, nearestIndex, true);
                 PatrolSession restartedSession = activeSessions.get(citizen.getId());
                 if (restartedSession != null) {
@@ -229,7 +232,7 @@ public class PatrolManager {
                 }
             }
             default -> {
-                getLogger().atWarning().log("Patrol teleport reset for citizen '" + citizen.getId() + "' after repeated stall. Returning to spawn and restarting patrol.");
+                //getLogger().atWarning().log("Patrol teleport reset for citizen '" + citizen.getId() + "' after repeated stall. Returning to spawn and restarting patrol.");
                 citizensManager.teleportCitizenToSpawn(citizen);
                 restartPatrolInternal(citizen, world, path, 0, true);
                 PatrolSession restartedSession = activeSessions.get(citizen.getId());
@@ -410,6 +413,32 @@ public class PatrolManager {
         npcEntity.setLeashPoint(targetTransform.getPosition());
     }
 
+    public boolean citizenMayNeedMoveTarget(@Nonnull CitizenData citizen) {
+        if ("PATROL".equals(citizen.getMovementBehavior().getType())) {
+            return true;
+        }
+        if ("FOLLOW_CITIZEN".equals(citizen.getMovementBehavior().getType())
+                && !citizen.getFollowCitizenId().trim().isEmpty()) {
+            return true;
+        }
+        return citizen.getScheduleConfig().isEnabled();
+    }
+
+    public void ensureMoveTargetNow(@Nonnull CitizenData citizen, @Nonnull World world, @Nullable Vector3d position) {
+        if (!citizenMayNeedMoveTarget(citizen)) {
+            return;
+        }
+        if (citizen.getNpcRef() == null || !citizen.getNpcRef().isValid()) {
+            return;
+        }
+
+        Vector3d targetPosition = position;
+        if (targetPosition == null) {
+            targetPosition = citizen.getCurrentPosition() != null ? citizen.getCurrentPosition() : citizen.getPosition();
+        }
+        ensureMoveTarget(citizen, world, new Vector3d(targetPosition.x, targetPosition.y, targetPosition.z));
+    }
+
     private void cleanupMoveTarget(@Nonnull CitizenData citizen, @Nonnull World world) {
         Ref<EntityStore> targetRef = moveTargets.remove(citizen.getId());
         if (targetRef == null) {
@@ -432,6 +461,9 @@ public class PatrolManager {
 
         CitizenData citizen = citizensManager.getCitizen(citizenId);
         if (citizen == null || citizen.getNpcRef() == null || !citizen.getNpcRef().isValid()) {
+            return;
+        }
+        if (citizen.isAwaitingRespawn() || citizensManager.isCitizenSpawning(citizen.getId())) {
             return;
         }
 
@@ -473,6 +505,9 @@ public class PatrolManager {
         if (citizen == null || citizen.getNpcRef() == null || !citizen.getNpcRef().isValid()) {
             return;
         }
+        if (citizen.isAwaitingRespawn() || citizensManager.isCitizenSpawning(citizen.getId())) {
+            return;
+        }
 
         World world = Universe.get().getWorld(citizen.getWorldUUID());
         if (world == null) {
@@ -489,6 +524,9 @@ public class PatrolManager {
     public void updateMoveTargetPosition(@Nonnull String citizenId, @Nonnull Vector3d position) {
         CitizenData citizen = citizensManager.getCitizen(citizenId);
         if (citizen == null || citizen.getNpcRef() == null || !citizen.getNpcRef().isValid()) {
+            return;
+        }
+        if (citizen.isAwaitingRespawn() || citizensManager.isCitizenSpawning(citizen.getId())) {
             return;
         }
 
