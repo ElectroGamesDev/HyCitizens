@@ -254,6 +254,11 @@ public class CitizenInteraction {
 
     static public void handleInteraction(@Nonnull CitizenData citizen, @Nonnull PlayerRef playerRef,
                                          @Nonnull String interactionSource) {
+        if (HyCitizensPlugin.get().getCitizensManager().isCitizenInCombat(citizen)) {
+            playerRef.sendMessage(Message.raw("This citizen is busy in combat.").color(Color.RED));
+            return;
+        }
+
         CitizenInteractEvent interactEvent = new CitizenInteractEvent(citizen, playerRef);
         HyCitizensPlugin.get().getCitizensManager().fireCitizenInteractEvent(interactEvent);
 

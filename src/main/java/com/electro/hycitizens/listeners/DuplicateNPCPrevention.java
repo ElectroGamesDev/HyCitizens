@@ -1,5 +1,6 @@
 package com.electro.hycitizens.listeners;
 
+import com.electro.hycitizens.components.CitizenBindingComponent;
 import com.hypixel.hytale.component.AddReason;
 import com.hypixel.hytale.component.CommandBuffer;
 import com.hypixel.hytale.component.ComponentType;
@@ -26,6 +27,8 @@ public class DuplicateNPCPrevention extends RefSystem<EntityStore> {
 
     @Nonnull
     private final ComponentType<EntityStore, NPCEntity> npcComponentType = NPCEntity.getComponentType();
+    @Nonnull
+    private final ComponentType<EntityStore, CitizenBindingComponent> citizenBindingComponentType = CitizenBindingComponent.getComponentType();
 
     @Nonnull
     private final Query<EntityStore> query = this.npcComponentType;
@@ -46,15 +49,10 @@ public class DuplicateNPCPrevention extends RefSystem<EntityStore> {
         }
 
         String roleName = role.getRoleName();
-        if (roleName == null) {
+        String citizenKey = extractCitizenKey(ref, store, roleName);
+        if (citizenKey == null) {
             return;
         }
-
-        if (!isTrackedCitizenRole(roleName)) {
-            return;
-        }
-
-        String citizenKey = extractCitizenKey(roleName);
 
         Ref<EntityStore> existingRef = this.activeCitizenRoles.get(citizenKey);
         if (existingRef != null && existingRef.isValid() && !existingRef.equals(ref)) {
@@ -78,15 +76,10 @@ public class DuplicateNPCPrevention extends RefSystem<EntityStore> {
         }
 
         String roleName = role.getRoleName();
-        if (roleName == null) {
+        String citizenKey = extractCitizenKey(ref, store, roleName);
+        if (citizenKey == null) {
             return;
         }
-
-        if (!isTrackedCitizenRole(roleName)) {
-            return;
-        }
-
-        String citizenKey = extractCitizenKey(roleName);
 
         Ref<EntityStore> existingRef = this.activeCitizenRoles.get(citizenKey);
         if (existingRef != null && existingRef.equals(ref)) {
@@ -104,8 +97,18 @@ public class DuplicateNPCPrevention extends RefSystem<EntityStore> {
         return roleName.startsWith("HyCitizens_") || roleName.startsWith("Citizens_");
     }
 
-    @Nonnull
-    private String extractCitizenKey(@Nonnull String roleName) {
+    private String extractCitizenKey(@Nonnull Ref<EntityStore> ref,
+                                     @Nonnull Store<EntityStore> store,
+                                     String roleName) {
+        CitizenBindingComponent bindingComponent = store.getComponent(ref, this.citizenBindingComponentType);
+        if (bindingComponent != null && !bindingComponent.getCitizenId().isBlank()) {
+            return bindingComponent.getCitizenId();
+        }
+
+        if (roleName == null || !isTrackedCitizenRole(roleName)) {
+            return null;
+        }
+
         Matcher matcher = UUID_PATTERN.matcher(roleName);
         return matcher.find() ? matcher.group() : roleName;
     }

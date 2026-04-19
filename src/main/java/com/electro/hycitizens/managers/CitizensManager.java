@@ -1,6 +1,7 @@
 package com.electro.hycitizens.managers;
 
 import com.electro.hycitizens.HyCitizensPlugin;
+import com.electro.hycitizens.components.CitizenBindingComponent;
 import com.electro.hycitizens.components.CitizenNametagComponent;
 import com.electro.hycitizens.events.CitizenAddedEvent;
 import com.electro.hycitizens.events.CitizenAddedListener;
@@ -134,6 +135,7 @@ public class CitizensManager {
     private final Map<String, FollowSession> standaloneFollowSessions = new ConcurrentHashMap<>();
     private final Map<String, WanderRecoveryState> wanderRecoveryStates = new ConcurrentHashMap<>();
     private final Map<String, ScheduledFuture<?>> pendingNpcSpawnRetryTasks = new ConcurrentHashMap<>();
+    private final Map<String, ScheduledFuture<?>> pendingRespawnTasks = new ConcurrentHashMap<>();
     private PatrolManager patrolManager;
     private ScheduleManager scheduleManager;
     private ThreadedScheduler followCitizenTask = new ThreadedScheduler();
@@ -158,6 +160,7 @@ public class CitizensManager {
         startFollowCitizenScheduler();
         this.scheduleManager = new ScheduleManager(this);
         startMovementUnstickScheduler();
+        scheduleLoadedRespawns();
     }
 
     private void startSkinUpdateScheduler() {
@@ -481,6 +484,25 @@ public class CitizensManager {
                 return;
             }
 
+            CitizenBindingComponent bindingComponent = archetypeChunk.getComponent(index, CitizenBindingComponent.getComponentType());
+            if (bindingComponent != null && citizen.getId().equals(bindingComponent.getCitizenId())) {
+                Ref<EntityStore> ref = archetypeChunk.getReferenceTo(index);
+                if (ref != null && ref.isValid()) {
+                    foundRef[0] = ref;
+                }
+                return;
+            }
+
+            UUIDComponent uuidComponent = archetypeChunk.getComponent(index, UUIDComponent.getComponentType());
+            if (citizen.getSpawnedUUID() != null && uuidComponent != null
+                    && citizen.getSpawnedUUID().equals(uuidComponent.getUuid())) {
+                Ref<EntityStore> ref = archetypeChunk.getReferenceTo(index);
+                if (ref != null && ref.isValid()) {
+                    foundRef[0] = ref;
+                }
+                return;
+            }
+
             String roleName = npc.getRole().getRoleName();
             if (roleName == null || !roleName.startsWith(rolePrefix)) {
                 return;
@@ -615,6 +637,8 @@ public class CitizensManager {
         if (positionSaveTask != null && !positionSaveTask.isCancelled()) {
             positionSaveTask.cancel(false);
         }
+        pendingRespawnTasks.values().forEach(task -> task.cancel(false));
+        pendingRespawnTasks.clear();
 
         if (patrolManager != null) {
             patrolManager.shutdown();
@@ -869,6 +893,7 @@ public class CitizensManager {
         // Load respawn settings
         citizenData.setRespawnOnDeath(config.getBoolean(basePath + ".respawn-on-death", true));
         citizenData.setRespawnDelaySeconds(config.getFloat(basePath + ".respawn-delay", 5.0f));
+        citizenData.setRespawnReadyAtMillis(config.getLong(basePath + ".respawn-ready-at", 0L));
 
         // Load group (backwards compatible - defaults to empty string)
         citizenData.setGroup(config.getString(basePath + ".group", ""));
@@ -1329,6 +1354,7 @@ public class CitizensManager {
             // Save respawn settings
             config.set(basePath + ".respawn-on-death", citizen.isRespawnOnDeath());
             config.set(basePath + ".respawn-delay", citizen.getRespawnDelaySeconds());
+            config.set(basePath + ".respawn-ready-at", citizen.getRespawnReadyAtMillis());
 
             // Save group
             config.set(basePath + ".group", citizen.getGroup());
@@ -1772,6 +1798,8 @@ public class CitizensManager {
         citizen.setNpcRef(ref);
         cancelPendingNpcSpawnRetry(citizen.getId());
 
+        ref.getStore().putComponent(ref, CitizenBindingComponent.getComponentType(), new CitizenBindingComponent(citizen.getId()));
+
         UUIDComponent uuidComponent = ref.getStore().getComponent(ref, UUIDComponent.getComponentType());
         if (uuidComponent != null) {
             citizen.setSpawnedUUID(uuidComponent.getUuid());
@@ -1781,6 +1809,116 @@ public class CitizensManager {
     public void clearCitizenEntityBinding(@Nonnull CitizenData citizen) {
         citizen.setSpawnedUUID(null);
         citizen.setNpcRef(null);
+    }
+
+    private void cancelPendingRespawn(@Nonnull String citizenId) {
+        ScheduledFuture<?> pendingTask = pendingRespawnTasks.remove(citizenId);
+        if (pendingTask != null) {
+            pendingTask.cancel(false);
+        }
+    }
+
+    public void scheduleCitizenRespawn(@Nonnull CitizenData citizen, long delayMs) {
+        cancelPendingRespawn(citizen.getId());
+
+        long clampedDelayMs = Math.max(0L, delayMs);
+        citizen.markAwaitingRespawnUntil(System.currentTimeMillis() + clampedDelayMs);
+        saveCitizen(citizen);
+
+        ScheduledFuture<?> task = HytaleServer.SCHEDULED_EXECUTOR.schedule(() -> {
+            pendingRespawnTasks.remove(citizen.getId());
+            citizen.setAwaitingRespawn(false);
+            saveCitizen(citizen);
+
+            World world = Universe.get().getWorld(citizen.getWorldUUID());
+            if (world == null) {
+                return;
+            }
+
+            world.execute(() -> spawnCitizen(citizen, true));
+        }, clampedDelayMs, TimeUnit.MILLISECONDS);
+
+        pendingRespawnTasks.put(citizen.getId(), task);
+    }
+
+    private void scheduleLoadedRespawns() {
+        long now = System.currentTimeMillis();
+        List<CitizenData> overdueRespawns = new ArrayList<>();
+        for (CitizenData citizen : citizens.values()) {
+            long readyAt = citizen.getRespawnReadyAtMillis();
+            if (readyAt <= 0L) {
+                continue;
+            }
+
+            if (readyAt <= now) {
+                overdueRespawns.add(citizen);
+                continue;
+            }
+
+            scheduleCitizenRespawn(citizen, readyAt - now);
+        }
+
+        if (!overdueRespawns.isEmpty()) {
+            respawnCitizenSnapshot(overdueRespawns, true);
+        }
+    }
+
+    public int respawnAllCitizens(boolean save) {
+        return respawnCitizenSnapshot(new ArrayList<>(citizens.values()), save);
+    }
+
+    public int respawnCitizensInGroup(@Nullable String groupName, boolean includeChildren, boolean save) {
+        String normalizedGroup = normalizeRespawnGroupPath(groupName);
+        if (normalizedGroup.isEmpty()) {
+            return respawnAllCitizens(save);
+        }
+
+        List<CitizenData> snapshot = citizens.values().stream()
+                .filter(citizen -> {
+                    String citizenGroup = normalizeRespawnGroupPath(citizen.getGroup());
+                    return citizenGroup.equals(normalizedGroup)
+                            || (includeChildren && citizenGroup.startsWith(normalizedGroup + "/"));
+                })
+                .collect(Collectors.toList());
+        return respawnCitizenSnapshot(snapshot, save);
+    }
+
+    private int respawnCitizenSnapshot(@Nonnull List<CitizenData> snapshot, boolean save) {
+        int queuedRespawns = 0;
+        for (CitizenData citizen : snapshot) {
+            cancelPendingRespawn(citizen.getId());
+            citizen.setAwaitingRespawn(false);
+
+            World world = Universe.get().getWorld(citizen.getWorldUUID());
+            if (world == null) {
+                if (save) {
+                    saveCitizen(citizen);
+                }
+                continue;
+            }
+
+            world.execute(() -> updateSpawnedCitizen(citizen, save));
+            queuedRespawns++;
+        }
+
+        return queuedRespawns;
+    }
+
+    @Nonnull
+    private static String normalizeRespawnGroupPath(@Nullable String groupName) {
+        if (groupName == null) {
+            return "";
+        }
+
+        String normalized = groupName.trim().replace("\\", "/");
+        normalized = normalized.replaceAll("/+", "/");
+        while (normalized.startsWith("/")) {
+            normalized = normalized.substring(1);
+        }
+        while (normalized.endsWith("/")) {
+            normalized = normalized.substring(0, normalized.length() - 1);
+        }
+        return normalized.trim();
     }
 
     private void cancelPendingNpcSpawnRetry(@Nonnull String citizenId) {
@@ -1913,6 +2051,30 @@ public class CitizensManager {
         spawnCitizenNPCInternal(citizen, save, 0);
     }
 
+    @Nullable
+    private Model createFallbackSpawnModel(@Nonnull CitizenData citizen, @Nonnull String roleName, float scale) {
+        if (citizen.isPlayerModel() || "Player".equals(citizen.getModelId())) {
+            return null;
+        }
+
+        if (!roleGenerator.getFallbackRoleName(citizen).equals(roleName)) {
+            return null;
+        }
+
+        ModelAsset modelAsset = ModelAsset.getAssetMap().getAsset(citizen.getModelId());
+        if (modelAsset == null) {
+            getLogger().atWarning().log("Unable to create fallback model for citizen '" + citizen.getId() + "': unknown model '" + citizen.getModelId() + "'.");
+            return null;
+        }
+
+        try {
+            return Model.createStaticScaledModel(modelAsset, scale);
+        } catch (Exception e) {
+            getLogger().atWarning().log("Unable to create fallback model for citizen '" + citizen.getId() + "': " + e.getMessage());
+            return null;
+        }
+    }
+
     private void spawnCitizenNPCInternal(@Nonnull CitizenData citizen, boolean save, int attempt) {
         if (citizen.isAwaitingRespawn()) {
             return;
@@ -1955,14 +2117,15 @@ public class CitizensManager {
         float scale = Math.max((float)0.01, citizen.getScale());
 
         String roleName = resolveSpawnRoleName(citizen);
+        Model fallbackSpawnModel = createFallbackSpawnModel(citizen, roleName, scale);
 
-        // Pass null for model so the NPC role handles model resolution. This fixes issues with some models like Kweebecs.
+        // Let generated roles resolve models, but provide an explicit model when temporarily using the generic fallback role.
         Pair<Ref<EntityStore>, NPCEntity> npc = NPCPlugin.get().spawnEntity(
                 world.getEntityStore().getStore(),
                 NPCPlugin.get().getIndex(roleName),
                 citizen.getPosition(),
                 citizen.getRotation(),
-                null,
+                fallbackSpawnModel,
                 (npcComponent, holder, store) -> npcComponent.setInitialModelScale(scale),
                 null
         );
@@ -2028,8 +2191,23 @@ public class CitizensManager {
         float scale = Math.max((float)0.01, citizen.getScale());
         Model playerModel;
 
+        if (skinToUse != null && !SkinUtilities.isValidSkin(skinToUse)) {
+            getLogger().atWarning().log("Citizen '" + citizen.getId() + "' has an invalid cached skin. Using the default skin for this spawn.");
+            skinToUse = SkinUtilities.createDefaultSkin();
+        }
+
         if (skinToUse != null) {
-            playerModel = CosmeticsModule.get().createModel(skinToUse, scale);
+            try {
+                playerModel = CosmeticsModule.get().createModel(skinToUse, scale);
+            } catch (Exception e) {
+                getLogger().atWarning().log("Failed to create player skin model for citizen '" + citizen.getId() + "': " + e.getMessage());
+                skinToUse = SkinUtilities.createDefaultSkin();
+                try {
+                    playerModel = CosmeticsModule.get().createModel(skinToUse, scale);
+                } catch (Exception fallbackError) {
+                    playerModel = null;
+                }
+            }
         } else {
             Map<String, String> randomAttachmentIds = new HashMap<>();
             playerModel = new Model.ModelReference("Player", scale, randomAttachmentIds).toModel();
@@ -2481,8 +2659,19 @@ public class CitizensManager {
     }
 
     private void applyPlayerModelAppearance(@Nonnull Ref<EntityStore> npcRef, @Nonnull CitizenData citizen, @Nonnull PlayerSkin skin) {
+        if (!SkinUtilities.isValidSkin(skin)) {
+            getLogger().atWarning().log("Skipped invalid skin while restoring appearance for citizen '" + citizen.getId() + "'.");
+            return;
+        }
+
         float scale = Math.max(0.01f, citizen.getScale());
-        Model newModel = CosmeticsModule.get().createModel(skin, scale);
+        Model newModel;
+        try {
+            newModel = CosmeticsModule.get().createModel(skin, scale);
+        } catch (Exception e) {
+            getLogger().atWarning().log("Failed to create skin model while restoring appearance for citizen '" + citizen.getId() + "': " + e.getMessage());
+            return;
+        }
         if (newModel == null) {
             getLogger().atWarning().log("Failed to create skin model while restoring appearance for citizen '" + citizen.getId() + "'.");
             return;
@@ -2593,32 +2782,44 @@ public class CitizensManager {
     }
 
     public void applySkinPreview(CitizenData citizen, PlayerSkin skin) {
+        if (!SkinUtilities.isValidSkin(skin)) {
+            getLogger().atWarning().log("Skipped invalid skin preview for citizen '" + citizen.getId() + "'.");
+            return;
+        }
+
         if (citizen.getSpawnedUUID() != null) {
             World world = Universe.get().getWorld(citizen.getWorldUUID());
             if (world != null) {
                 Ref<EntityStore> npcRef = world.getEntityRef(citizen.getSpawnedUUID());
                 if (npcRef != null && npcRef.isValid()) {
                     world.execute(() -> {
-                        PlayerSkinComponent skinComponent = new PlayerSkinComponent(skin);
-                        npcRef.getStore().putComponent(npcRef, PlayerSkinComponent.getComponentType(), skinComponent);
-
                         float scale = Math.max((float) 0.01, citizen.getScale());
-                        Model newModel = CosmeticsModule.get().createModel(skin, scale);
-                        if (newModel != null) {
-                            ModelComponent modelComponent = new ModelComponent(newModel);
-                            npcRef.getStore().putComponent(npcRef, ModelComponent.getComponentType(), modelComponent);
+                        Model newModel;
+                        try {
+                            newModel = CosmeticsModule.get().createModel(skin, scale);
+                        } catch (Exception e) {
+                            getLogger().atWarning().log("Failed to create skin model while previewing skin for citizen '" + citizen.getId() + "': " + e.getMessage());
+                            return;
                         }
 
+                        if (newModel == null) {
+                            getLogger().atWarning().log("Failed to create skin model while previewing skin for citizen '" + citizen.getId() + "'.");
+                            return;
+                        }
+
+                        PlayerSkinComponent skinComponent = new PlayerSkinComponent(skin);
+                        npcRef.getStore().putComponent(npcRef, PlayerSkinComponent.getComponentType(), skinComponent);
+                        ModelComponent modelComponent = new ModelComponent(newModel);
+                        npcRef.getStore().putComponent(npcRef, ModelComponent.getComponentType(), modelComponent);
+
                         PersistentModel persistentModel = npcRef.getStore().getComponent(npcRef, PersistentModel.getComponentType());
-                        if (persistentModel != null && newModel != null) {
+                        if (persistentModel != null) {
                             persistentModel.setModelReference(new Model.ModelReference(
                                     newModel.getModelAssetId(),
                                     scale,
                                     newModel.getRandomAttachmentIds(),
                                     newModel.getAnimationSetMap() == null
                             ));
-                        } else if (newModel == null) {
-                            getLogger().atWarning().log("Failed to create skin model while previewing skin for citizen '" + citizen.getId() + "'.");
                         }
                     });
                 }
@@ -3259,6 +3460,32 @@ public class CitizensManager {
         }
 
         citizen.setHologramLineUuids(migratedUuids);
+        return true;
+    }
+
+    public boolean hasAllSpawnedCitizenHologramEntities(@Nonnull World world, @Nonnull CitizenData citizen) {
+        List<UUID> hologramUuids = citizen.getHologramLineUuids();
+        int desiredEntityCount = getDesiredNametagEntityCount(citizen);
+        if (desiredEntityCount <= 0) {
+            return true;
+        }
+
+        if (hologramUuids == null || hologramUuids.size() < desiredEntityCount) {
+            return false;
+        }
+
+        for (int i = 0; i < desiredEntityCount; i++) {
+            UUID uuid = hologramUuids.get(i);
+            if (uuid == null) {
+                return false;
+            }
+
+            Ref<EntityStore> ref = world.getEntityRef(uuid);
+            if (ref == null || !ref.isValid()) {
+                return false;
+            }
+        }
+
         return true;
     }
 
@@ -4000,6 +4227,25 @@ public class CitizensManager {
     @Nonnull
     public ScheduleManager getScheduleManager() {
         return scheduleManager;
+    }
+
+    public boolean isCitizenInCombat(@Nonnull CitizenData citizen) {
+        Ref<EntityStore> npcRef = citizen.getNpcRef();
+        if (npcRef == null || !npcRef.isValid()) {
+            return false;
+        }
+
+        try {
+            NPCEntity npcEntity = npcRef.getStore().getComponent(npcRef, NPCEntity.getComponentType());
+            if (npcEntity == null || npcEntity.getRole() == null || npcEntity.getRole().getStateSupport() == null) {
+                return false;
+            }
+
+            String stateName = npcEntity.getRole().getStateSupport().getStateName();
+            return stateName != null && stateName.toLowerCase(Locale.ROOT).contains("combat");
+        } catch (Exception e) {
+            return false;
+        }
     }
 
     public void autoResolveAttackType(@Nonnull CitizenData citizen) {
