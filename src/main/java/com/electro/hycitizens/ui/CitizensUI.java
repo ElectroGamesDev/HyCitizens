@@ -4837,6 +4837,7 @@ public class CitizensUI {
         page.addEventListener("toggle-damage", CustomUIEventBindingType.Activating, event -> {
             citizen.setTakesDamage(!citizen.isTakesDamage());
             plugin.getCitizensManager().saveCitizen(citizen);
+            plugin.getCitizensManager().updateDamageInvulnerability(citizen);
             openBehaviorsGUI(playerRef, store, citizen);
         });
 

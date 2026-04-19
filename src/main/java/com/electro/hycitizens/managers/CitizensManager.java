@@ -2001,9 +2001,7 @@ public class CitizensManager {
             saveCitizen(citizen);
         }
 
-        if (!citizen.isTakesDamage() || "PASSIVE".equals(citizen.getAttitude())) {
-            store.addComponent(ref, Invulnerable.getComponentType());
-        }
+        applyDamageInvulnerability(store, ref, citizen);
 
         applyHealthOverride(ref, citizen);
 
@@ -2101,9 +2099,7 @@ public class CitizensManager {
             saveCitizen(citizen);
         }
 
-        if (!citizen.isTakesDamage() || "PASSIVE".equals(citizen.getAttitude())) {
-            store.addComponent(ref, Invulnerable.getComponentType());
-        }
+        applyDamageInvulnerability(store, ref, citizen);
 
         applyHealthOverride(ref, citizen);
 
@@ -4164,6 +4160,25 @@ public class CitizensManager {
             }
             current.append(part.trim());
             groups.add(current.toString());
+        }
+    }
+
+    public void updateDamageInvulnerability(@Nonnull CitizenData citizen) {
+        Ref<EntityStore> ref = citizen.getNpcRef();
+        if (ref == null || !ref.isValid()) {
+            return;
+        }
+
+        applyDamageInvulnerability(ref.getStore(), ref, citizen);
+    }
+
+    private void applyDamageInvulnerability(@Nonnull Store<EntityStore> store,
+                                            @Nonnull Ref<EntityStore> ref,
+                                            @Nonnull CitizenData citizen) {
+        if (citizen.isTakesDamage()) {
+            store.removeComponentIfExists(ref, Invulnerable.getComponentType());
+        } else {
+            store.addComponent(ref, Invulnerable.getComponentType());
         }
     }
 

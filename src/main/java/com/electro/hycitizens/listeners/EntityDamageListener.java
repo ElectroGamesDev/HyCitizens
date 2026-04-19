@@ -83,8 +83,7 @@ public class EntityDamageListener extends DamageEventSystem {
                 return;
             }
 
-            // Passive citizens always cancel damage - they never enter combat
-            boolean cancelDamage = !targetCitizen.isTakesDamage() || "PASSIVE".equals(targetCitizen.getAttitude());
+            boolean cancelDamage = !targetCitizen.isTakesDamage();
 
             // Trigger ON_ATTACK animations regardless of damage setting
             HyCitizensPlugin.get().getCitizensManager().triggerAnimations(targetCitizen, "ON_ATTACK");
