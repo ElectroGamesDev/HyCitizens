@@ -447,7 +447,7 @@ public class EntityDeathListener extends DeathSystems.OnDeathSystem {
         }
         text = CITIZEN_NAME_PATTERN
                 .matcher(text)
-                .replaceAll(Matcher.quoteReplacement(citizen.getName()));
+                .replaceAll(Matcher.quoteReplacement(formatCitizenNamePlaceholder(citizen)));
         text = NPC_X_PATTERN
                 .matcher(text)
                 .replaceAll(Matcher.quoteReplacement(npcX));
@@ -462,5 +462,13 @@ public class EntityDeathListener extends DeathSystems.OnDeathSystem {
 
     private boolean containsPlayerPlaceholder(@Nonnull String text) {
         return PLAYER_NAME_PATTERN.matcher(text).find();
+    }
+
+    @Nonnull
+    private static String formatCitizenNamePlaceholder(@Nonnull CitizenData citizen) {
+        return citizen.getName()
+                .replace("\\n", " ")
+                .replace('\r', ' ')
+                .replace('\n', ' ');
     }
 }

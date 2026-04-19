@@ -22,6 +22,23 @@ import static com.hypixel.hytale.logger.HytaleLogger.getLogger;
 
 public class CitizenData {
     private static final float MIN_MODEL_SCALE = 0.01f;
+    private static final float MAX_MODEL_SCALE = 100.0f;
+    public static final String MAP_MARKER_TYPE_PIN = "PIN";
+    public static final String MAP_MARKER_TYPE_DOT = "DOT";
+    public static final String MAP_MARKER_TYPE_STAR = "STAR";
+    public static final String MAP_MARKER_TYPE_DIAMOND = "DIAMOND";
+    public static final String MAP_MARKER_TYPE_SQUARE = "SQUARE";
+    public static final String MAP_MARKER_TYPE_QUESTION = "QUESTION";
+    public static final String MAP_MARKER_TYPE_EXCLAMATION = "EXCLAMATION";
+    public static final String MAP_MARKER_TYPE_MONEY_SYMBOL = "MONEY_SYMBOL";
+    public static final String MAP_MARKER_TYPE_SHOP = "SHOP";
+    public static final String MAP_MARKER_TYPE_TRADER = "TRADER";
+    public static final String MAP_MARKER_TYPE_CHEST = "CHEST";
+    public static final String MAP_MARKER_TYPE_SWORD = "SWORD";
+    public static final String MAP_MARKER_TYPE_SHIELD = "SHIELD";
+    public static final String MAP_MARKER_TYPE_HEART = "HEART";
+    public static final String MAP_MARKER_TYPE_HOME = "HOME";
+    public static final String MAP_MARKER_TYPE_NPC_TYPE = "NPC_TYPE";
 
     private final String id;
     private String name;
@@ -52,6 +69,9 @@ public class CitizenData {
     private boolean rotateNametagTowardsPlayer = true;
     private boolean fKeyInteractionEnabled;
     private boolean forceFKeyInteractionText;
+    private boolean mapMarkerEnabled = false;
+    private String mapMarkerType = MAP_MARKER_TYPE_PIN;
+    private String mapMarkerName = "";
 
     // Item-related fields
     private String npcHelmet;
@@ -190,8 +210,8 @@ public class CitizenData {
         this.spawnedUUID = npcUUID;
         this.hologramLineUuids = hologramLineUuids != null ? new ArrayList<>(hologramLineUuids) : new ArrayList<>();
         this.isPlayerModel = isPlayerModel;
-        this.useLiveSkin = useLiveSkin;
         this.skinUsername = skinUsername != null ? skinUsername : "";
+        this.useLiveSkin = useLiveSkin && !isGeneratedSkinUsername(this.skinUsername);
         this.cachedSkin = cachedSkin;
         this.lastSkinUpdate = lastSkinUpdate;
         this.createdAt = 0;
@@ -366,7 +386,7 @@ public class CitizenData {
     }
 
     public void setUseLiveSkin(boolean useLiveSkin) {
-        this.useLiveSkin = useLiveSkin;
+        this.useLiveSkin = useLiveSkin && !isGeneratedSkinUsername(this.skinUsername);
     }
 
     @Nonnull
@@ -376,6 +396,9 @@ public class CitizenData {
 
     public void setSkinUsername(@Nullable String skinUsername) {
         this.skinUsername = skinUsername != null ? skinUsername : "";
+        if (isGeneratedSkinUsername(this.skinUsername)) {
+            this.useLiveSkin = false;
+        }
     }
 
     public Ref<EntityStore> getNpcRef() {
@@ -495,7 +518,14 @@ public class CitizenData {
         if (!Float.isFinite(scale) || scale <= 0.0f) {
             return MIN_MODEL_SCALE;
         }
-        return Math.max(MIN_MODEL_SCALE, scale);
+        return Math.max(MIN_MODEL_SCALE, Math.min(MAX_MODEL_SCALE, scale));
+    }
+
+    public static boolean isGeneratedSkinUsername(@Nullable String skinUsername) {
+        if (skinUsername == null) {
+            return false;
+        }
+        return skinUsername.startsWith("random_") || skinUsername.startsWith("custom_");
     }
 
     @Nullable
@@ -539,6 +569,63 @@ public class CitizenData {
 
     public boolean getForceFKeyInteractionText() {
         return forceFKeyInteractionText;
+    }
+
+    public void setMapMarkerEnabled(boolean enabled) {
+        this.mapMarkerEnabled = enabled;
+    }
+
+    public boolean isMapMarkerEnabled() {
+        return mapMarkerEnabled;
+    }
+
+    public void setMapMarkerType(@Nullable String type) {
+        this.mapMarkerType = normalizeMapMarkerType(type);
+    }
+
+    @Nonnull
+    public String getMapMarkerType() {
+        return normalizeMapMarkerType(mapMarkerType);
+    }
+
+    public void setMapMarkerName(@Nullable String name) {
+        this.mapMarkerName = name != null ? name.trim() : "";
+    }
+
+    @Nonnull
+    public String getMapMarkerName() {
+        return mapMarkerName != null ? mapMarkerName : "";
+    }
+
+    @Nonnull
+    public static String normalizeMapMarkerType(@Nullable String type) {
+        if (type == null || type.isBlank()) {
+            return MAP_MARKER_TYPE_PIN;
+        }
+
+        String normalized = type.trim().toUpperCase(java.util.Locale.ROOT).replace('-', '_').replace(' ', '_');
+        if (normalized.equals("MONEY_BAG")) {
+            return MAP_MARKER_TYPE_MONEY_SYMBOL;
+        }
+
+        if (normalized.equals(MAP_MARKER_TYPE_DOT)
+                || normalized.equals(MAP_MARKER_TYPE_STAR)
+                || normalized.equals(MAP_MARKER_TYPE_DIAMOND)
+                || normalized.equals(MAP_MARKER_TYPE_SQUARE)
+                || normalized.equals(MAP_MARKER_TYPE_QUESTION)
+                || normalized.equals(MAP_MARKER_TYPE_EXCLAMATION)
+                || normalized.equals(MAP_MARKER_TYPE_MONEY_SYMBOL)
+                || normalized.equals(MAP_MARKER_TYPE_SHOP)
+                || normalized.equals(MAP_MARKER_TYPE_TRADER)
+                || normalized.equals(MAP_MARKER_TYPE_CHEST)
+                || normalized.equals(MAP_MARKER_TYPE_SWORD)
+                || normalized.equals(MAP_MARKER_TYPE_SHIELD)
+                || normalized.equals(MAP_MARKER_TYPE_HEART)
+                || normalized.equals(MAP_MARKER_TYPE_HOME)
+                || normalized.equals(MAP_MARKER_TYPE_NPC_TYPE)) {
+            return normalized;
+        }
+        return MAP_MARKER_TYPE_PIN;
     }
 
     @Nonnull
@@ -799,7 +886,24 @@ public class CitizenData {
     }
 
     public void setGroup(@Nullable String group) {
-        this.group = group != null ? group : "";
+        this.group = normalizeGroupPath(group);
+    }
+
+    @Nonnull
+    private static String normalizeGroupPath(@Nullable String group) {
+        if (group == null) {
+            return "";
+        }
+
+        String normalized = group.trim().replace('\\', '/');
+        normalized = normalized.replaceAll("/+", "/");
+        while (normalized.startsWith("/")) {
+            normalized = normalized.substring(1);
+        }
+        while (normalized.endsWith("/")) {
+            normalized = normalized.substring(0, normalized.length() - 1);
+        }
+        return normalized.trim();
     }
 
     public boolean isFollowCitizenEnabled() {

@@ -468,7 +468,7 @@ public class ChunkPreLoadListener {
             }
 
             float scale = modelReference.getScale();
-            if (Float.isFinite(scale) && scale > 0.0f) {
+            if (Float.isFinite(scale) && scale > 0.0f && scale <= 100.0f) {
                 continue;
             }
 
@@ -480,7 +480,7 @@ public class ChunkPreLoadListener {
                         PersistentModel.getComponentType(),
                         new PersistentModel(new Model.ModelReference(
                                 modelAssetId,
-                                MIN_MODEL_SCALE,
+                                Float.isFinite(scale) && scale > 0.0f ? 100.0f : MIN_MODEL_SCALE,
                                 modelReference.getRandomAttachmentIds(),
                                 modelReference.isStaticModel()
                         ))

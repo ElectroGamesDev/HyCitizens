@@ -492,7 +492,7 @@ public class CitizenInteraction {
                 .replaceAll(Matcher.quoteReplacement(playerRef.getUsername()));
         text = CITIZEN_NAME_PATTERN
                 .matcher(text)
-                .replaceAll(Matcher.quoteReplacement(citizen.getName()));
+                .replaceAll(Matcher.quoteReplacement(formatCitizenNamePlaceholder(citizen)));
         text = NPC_X_PATTERN
                 .matcher(text)
                 .replaceAll(Matcher.quoteReplacement(npcX));
@@ -503,5 +503,13 @@ public class CitizenInteraction {
                 .matcher(text)
                 .replaceAll(Matcher.quoteReplacement(npcZ));
         return text;
+    }
+
+    @Nonnull
+    private static String formatCitizenNamePlaceholder(@Nonnull CitizenData citizen) {
+        return citizen.getName()
+                .replace("\\n", " ")
+                .replace('\r', ' ')
+                .replace('\n', ' ');
     }
 }

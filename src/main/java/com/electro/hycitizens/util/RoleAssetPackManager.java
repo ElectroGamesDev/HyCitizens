@@ -43,8 +43,6 @@ public class RoleAssetPackManager {
                         Files.write(configPath, gson.toJson(config).getBytes(StandardCharsets.UTF_8));
                     }
                 }
-            } else {
-                getLogger().atWarning().log("config.json not found, skipping mod registration check.");
             }
 
             if (!Files.exists(manifestPath)) {
@@ -52,7 +50,7 @@ public class RoleAssetPackManager {
                         "  \"Group\": \"electro\",\n" +
                         "  \"Name\": \"HyCitizensRoles\",\n" +
                         "  \"Version\": \"1.0.0\",\n" +
-                        "  \"ServerVersion\": \"2026.02.19-1a311a592\",\n" +
+                        "  \"ServerVersion\": \"2026.03.26-89796e57b\",\n" +
                         "  \"Description\": \"Generated asset pack for HyCitizens.\",\n" +
                         "  \"Authors\": [\n" +
                         "    {\n" +
@@ -85,6 +83,17 @@ public class RoleAssetPackManager {
                 getLogger().atWarning().log("================================================================================");
 
                 HytaleServer.get().shutdownServer();
+            }
+            else {
+                String content = new String(Files.readAllBytes(manifestPath), StandardCharsets.UTF_8);
+
+                if (!content.contains("\"ServerVersion\": \"2026.03.26-89796e57b\"")) {
+                    content = content.replaceAll(
+                            "\"ServerVersion\":\\s*\"[^\"]*\"",
+                            "\"ServerVersion\": \"2026.03.26-89796e57b\""
+                    );
+                    Files.write(manifestPath, content.getBytes(StandardCharsets.UTF_8));
+                }
             }
         } catch (IOException e) {
             getLogger().atSevere().log("Could not create role asset pack manager. " + e.getMessage());

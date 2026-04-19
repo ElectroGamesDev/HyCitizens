@@ -29,6 +29,7 @@ import com.hypixel.hytale.server.core.universe.world.storage.EntityStore;
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
 import java.awt.*;
+import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
@@ -124,9 +125,10 @@ public class CitizensUI {
 
     private String generateGroupDropdownOptions(String selectedValue, List<String> allGroups) {
         StringBuilder sb = new StringBuilder();
+        String normalizedSelected = normalizeGroupPath(selectedValue);
 
         // Add "None" option for no group
-        boolean noneSelected = selectedValue == null || selectedValue.isEmpty();
+        boolean noneSelected = normalizedSelected.isEmpty();
         sb.append("<option value=\"\"");
         if (noneSelected) {
             sb.append(" selected");
@@ -135,7 +137,8 @@ public class CitizensUI {
 
         // Add existing groups
         for (String groupName : allGroups) {
-            boolean isSelected = groupName.equals(selectedValue);
+            String normalizedGroup = normalizeGroupPath(groupName);
+            boolean isSelected = normalizedGroup.equals(normalizedSelected);
             sb.append("<option value=\"").append(escapeHtml(groupName)).append("\"");
             if (isSelected) {
                 sb.append(" selected");
@@ -143,6 +146,59 @@ public class CitizensUI {
             sb.append(">").append(escapeHtml(groupName)).append("</option>\n");
         }
 
+        return sb.toString();
+    }
+
+    private String generateGroupParentOptions(@Nullable String selectedParent, @Nullable String movingGroup) {
+        String normalizedSelected = normalizeGroupPath(selectedParent);
+        String normalizedMoving = normalizeGroupPath(movingGroup);
+        StringBuilder sb = new StringBuilder();
+
+        sb.append("<option value=\"\"");
+        if (normalizedSelected.isEmpty()) {
+            sb.append(" selected");
+        }
+        sb.append(">Root</option>\n");
+
+        for (String groupName : plugin.getCitizensManager().getAllGroups()) {
+            String normalizedGroup = normalizeGroupPath(groupName);
+            if (normalizedGroup.isEmpty()) {
+                continue;
+            }
+            if (!normalizedMoving.isEmpty()
+                    && (normalizedGroup.equals(normalizedMoving) || normalizedGroup.startsWith(normalizedMoving + "/"))) {
+                continue;
+            }
+
+            sb.append("<option value=\"").append(escapeHtml(normalizedGroup)).append("\"");
+            if (normalizedGroup.equals(normalizedSelected)) {
+                sb.append(" selected");
+            }
+            sb.append(">").append(escapeHtml(normalizedGroup)).append("</option>\n");
+        }
+
+        return sb.toString();
+    }
+
+    private String generateMapMarkerTypeOptions(@Nullable String selectedValue) {
+        String selected = CitizenData.normalizeMapMarkerType(selectedValue);
+        StringBuilder sb = new StringBuilder();
+        appendOption(sb, CitizenData.MAP_MARKER_TYPE_PIN, "Pin", selected.equals(CitizenData.MAP_MARKER_TYPE_PIN));
+        appendOption(sb, CitizenData.MAP_MARKER_TYPE_DOT, "Dot", selected.equals(CitizenData.MAP_MARKER_TYPE_DOT));
+        appendOption(sb, CitizenData.MAP_MARKER_TYPE_STAR, "Star", selected.equals(CitizenData.MAP_MARKER_TYPE_STAR));
+        appendOption(sb, CitizenData.MAP_MARKER_TYPE_DIAMOND, "Diamond", selected.equals(CitizenData.MAP_MARKER_TYPE_DIAMOND));
+        appendOption(sb, CitizenData.MAP_MARKER_TYPE_SQUARE, "Square", selected.equals(CitizenData.MAP_MARKER_TYPE_SQUARE));
+        appendOption(sb, CitizenData.MAP_MARKER_TYPE_QUESTION, "Question Mark", selected.equals(CitizenData.MAP_MARKER_TYPE_QUESTION));
+        appendOption(sb, CitizenData.MAP_MARKER_TYPE_EXCLAMATION, "Exclamation Mark", selected.equals(CitizenData.MAP_MARKER_TYPE_EXCLAMATION));
+        appendOption(sb, CitizenData.MAP_MARKER_TYPE_MONEY_SYMBOL, "Money Symbol", selected.equals(CitizenData.MAP_MARKER_TYPE_MONEY_SYMBOL));
+        appendOption(sb, CitizenData.MAP_MARKER_TYPE_SHOP, "Shop", selected.equals(CitizenData.MAP_MARKER_TYPE_SHOP));
+        appendOption(sb, CitizenData.MAP_MARKER_TYPE_TRADER, "Trader", selected.equals(CitizenData.MAP_MARKER_TYPE_TRADER));
+        appendOption(sb, CitizenData.MAP_MARKER_TYPE_CHEST, "Chest", selected.equals(CitizenData.MAP_MARKER_TYPE_CHEST));
+        appendOption(sb, CitizenData.MAP_MARKER_TYPE_SWORD, "Sword", selected.equals(CitizenData.MAP_MARKER_TYPE_SWORD));
+        appendOption(sb, CitizenData.MAP_MARKER_TYPE_SHIELD, "Shield", selected.equals(CitizenData.MAP_MARKER_TYPE_SHIELD));
+        appendOption(sb, CitizenData.MAP_MARKER_TYPE_HEART, "Heart", selected.equals(CitizenData.MAP_MARKER_TYPE_HEART));
+        appendOption(sb, CitizenData.MAP_MARKER_TYPE_HOME, "Home", selected.equals(CitizenData.MAP_MARKER_TYPE_HOME));
+        appendOption(sb, CitizenData.MAP_MARKER_TYPE_NPC_TYPE, "NPC Type", selected.equals(CitizenData.MAP_MARKER_TYPE_NPC_TYPE));
         return sb.toString();
     }
 
@@ -358,18 +414,130 @@ public class CitizensUI {
         return true;
     }
 
-    private String sanitizeGroupId(String groupName) {
-        return groupName.replace(" ", "-").replace("'", "").replace("\"", "");
+    @Nonnull
+    private String groupEventId(@Nullable String groupName) {
+        String normalized = normalizeGroupPath(groupName);
+        UUID stableId = UUID.nameUUIDFromBytes(normalized.getBytes(StandardCharsets.UTF_8));
+        return "g" + stableId.toString().replace("-", "");
+    }
+
+    @Nonnull
+    private static String normalizeGroupPath(@Nullable String groupName) {
+        if (groupName == null) {
+            return "";
+        }
+
+        String normalized = groupName.trim().replace('\\', '/');
+        normalized = normalized.replaceAll("/+", "/");
+        while (normalized.startsWith("/")) {
+            normalized = normalized.substring(1);
+        }
+        while (normalized.endsWith("/")) {
+            normalized = normalized.substring(0, normalized.length() - 1);
+        }
+        return normalized.trim();
+    }
+
+    @Nonnull
+    private static String getParentGroup(@Nonnull String groupName) {
+        String normalized = normalizeGroupPath(groupName);
+        int slash = normalized.lastIndexOf('/');
+        if (slash < 0) {
+            return "";
+        }
+        return normalized.substring(0, slash);
+    }
+
+    @Nonnull
+    private static String getGroupLeafName(@Nonnull String groupName) {
+        String normalized = normalizeGroupPath(groupName);
+        int slash = normalized.lastIndexOf('/');
+        if (slash < 0) {
+            return normalized;
+        }
+        return normalized.substring(slash + 1);
+    }
+
+    @Nonnull
+    private static Set<String> collectGroupHierarchy(@Nonnull Collection<CitizenData> citizens) {
+        Set<String> result = new LinkedHashSet<>();
+        for (CitizenData citizen : citizens) {
+            String group = normalizeGroupPath(citizen.getGroup());
+            if (group.isEmpty()) {
+                continue;
+            }
+
+            StringBuilder current = new StringBuilder();
+            for (String part : group.split("/")) {
+                if (part.isBlank()) {
+                    continue;
+                }
+                if (!current.isEmpty()) {
+                    current.append('/');
+                }
+                current.append(part.trim());
+                result.add(current.toString());
+            }
+        }
+        return result;
+    }
+
+    private static boolean isDirectChildGroup(@Nonnull String groupName, @Nullable String parentGroup) {
+        String normalizedGroup = normalizeGroupPath(groupName);
+        String normalizedParent = normalizeGroupPath(parentGroup);
+        return getParentGroup(normalizedGroup).equals(normalizedParent);
+    }
+
+    private static boolean isDirectCitizenInGroup(@Nonnull CitizenData citizen, @Nullable String groupName) {
+        return normalizeGroupPath(citizen.getGroup()).equals(normalizeGroupPath(groupName));
+    }
+
+    @Nonnull
+    private static String getDisplayNameForList(@Nullable String value) {
+        String normalized = normalizeGroupPath(value);
+        if (normalized.isEmpty()) {
+            return "";
+        }
+        return getGroupLeafName(normalized);
+    }
+
+    @Nonnull
+    private static String buildChildGroupPath(@Nullable String parentGroup, @Nullable String childName) {
+        String parent = normalizeGroupPath(parentGroup);
+        String child = normalizeGroupPath(childName);
+        if (parent.isEmpty()) {
+            return child;
+        }
+        if (child.isEmpty()) {
+            return parent;
+        }
+        return parent + "/" + child;
     }
 
     private static String escapeHtml(String text) {
         if (text == null) return "";
-        return text
-                .replace("&", "&amp;")
-                .replace("<", "&lt;")
-                .replace(">", "&gt;")
-                .replace("\"", "&quot;")
-                .replace("'", "&#39;");
+        StringBuilder escaped = new StringBuilder(text.length());
+        for (int i = 0; i < text.length(); i++) {
+            char c = text.charAt(i);
+            switch (c) {
+                case '&' -> escaped.append("&amp;");
+                case '<' -> escaped.append("&lt;");
+                case '>' -> escaped.append("&gt;");
+                case '"' -> escaped.append("&quot;");
+                case '\'' -> escaped.append("&#39;");
+                case '\r' -> {
+                }
+                case '\n' -> escaped.append("&#10;");
+                default -> {
+                    if (c < 32 || c > 126) {
+                        escaped.append("&#").append((int) c).append(';');
+                    } else {
+                        escaped.append(c);
+                    }
+                }
+            }
+        }
+        return escaped.toString();
     }
 
     public static class SafeCitizen {
@@ -398,6 +566,7 @@ public class CitizensUI {
         public boolean getFKeyInteractionEnabled() { return citizen.getFKeyInteractionEnabled(); }
         public boolean isHideNametag() { return citizen.isHideNametag(); }
         public boolean isHideNpc() { return citizen.isHideNpc(); }
+        public boolean isMapMarkerEnabled() { return citizen.isMapMarkerEnabled(); }
     }
 
     private String getSharedStyles() {
@@ -1076,7 +1245,7 @@ public class CitizensUI {
         private ListItem(boolean isGroup, String groupName, String groupId, CitizenData citizen) {
             this.isGroup = isGroup;
             this.rawGroupName = groupName;
-            this.groupName = escapeHtml(groupName);
+            this.groupName = escapeHtml(getDisplayNameForList(groupName));
             this.groupId = groupId;
             this.rawCitizen = citizen;
             this.citizen = citizen != null ? new SafeCitizen(citizen) : null;
@@ -1103,69 +1272,55 @@ public class CitizensUI {
         List<CitizenData> allCitizens = plugin.getCitizensManager().getAllCitizens();
 
         // Filter citizens by search query
-        String lowerSearchQuery = searchQuery.toLowerCase().trim();
+        String lowerSearchQuery = searchQuery.toLowerCase(Locale.ROOT).trim();
         List<CitizenData> filteredCitizens = allCitizens;
 
         if (!lowerSearchQuery.isEmpty()) {
             filteredCitizens = allCitizens.stream()
-                    .filter(c -> c.getName().toLowerCase().contains(lowerSearchQuery)
-                            || c.getId().toLowerCase().contains(lowerSearchQuery)
-                            || c.getGroup().toLowerCase().contains(lowerSearchQuery))
+                    .filter(c -> c.getName().toLowerCase(Locale.ROOT).contains(lowerSearchQuery)
+                            || c.getId().toLowerCase(Locale.ROOT).contains(lowerSearchQuery)
+                            || c.getGroup().toLowerCase(Locale.ROOT).contains(lowerSearchQuery))
                     .collect(java.util.stream.Collectors.toList());
         }
 
-        // Organize citizens by group
-        Map<String, List<CitizenData>> citizensByGroup = new LinkedHashMap<>();
-        List<CitizenData> ungroupedCitizens = new ArrayList<>();
-
-        for (CitizenData citizen : filteredCitizens) {
-            String group = citizen.getGroup();
-            if (group == null || group.isEmpty()) {
-                ungroupedCitizens.add(citizen);
-            } else {
-                citizensByGroup.computeIfAbsent(group, k -> new ArrayList<>()).add(citizen);
+        String normalizedViewingGroup = normalizeGroupPath(viewingGroup);
+        Set<String> visibleGroupHierarchy = new LinkedHashSet<>();
+        if (lowerSearchQuery.isEmpty()) {
+            visibleGroupHierarchy.addAll(plugin.getCitizensManager().getAllGroups());
+        } else {
+            for (String groupName : plugin.getCitizensManager().getAllGroups()) {
+                if (groupName.toLowerCase(Locale.ROOT).contains(lowerSearchQuery)) {
+                    visibleGroupHierarchy.add(groupName);
+                }
             }
         }
+        visibleGroupHierarchy.addAll(collectGroupHierarchy(filteredCitizens));
+        List<String> childGroups = visibleGroupHierarchy.stream()
+                .filter(group -> isDirectChildGroup(group, normalizedViewingGroup))
+                .sorted(String.CASE_INSENSITIVE_ORDER)
+                .collect(java.util.stream.Collectors.toList());
 
-        // Sort groups alphabetically
-        List<String> sortedGroups = new ArrayList<>(citizensByGroup.keySet());
-        Collections.sort(sortedGroups);
+        List<CitizenData> directCitizens = filteredCitizens.stream()
+                .filter(citizen -> isDirectCitizenInGroup(citizen, normalizedViewingGroup))
+                .sorted(Comparator.comparing(c -> c.getName().toLowerCase(Locale.ROOT)))
+                .collect(java.util.stream.Collectors.toList());
 
-        // Sort citizens within each group alphabetically
-        citizensByGroup.values().forEach(list -> list.sort(Comparator.comparing(c -> c.getName().toLowerCase())));
-        // Sort ungrouped citizens alphabetically
-        ungroupedCitizens.sort(Comparator.comparing(c -> c.getName().toLowerCase()));
-
-        // Create unified list
         List<ListItem> unifiedList = new ArrayList<>();
-        boolean isViewingSpecificGroup = viewingGroup != null && !viewingGroup.isEmpty();
+        boolean isViewingSpecificGroup = !normalizedViewingGroup.isEmpty();
 
-        if (isViewingSpecificGroup) {
-            // Viewing a specific group, show only citizens from that group
-            List<CitizenData> groupCitizens = citizensByGroup.get(viewingGroup);
-            if (groupCitizens != null) {
-                for (CitizenData citizen : groupCitizens) {
-                    unifiedList.add(ListItem.forCitizen(citizen));
+        for (String groupName : childGroups) {
+            unifiedList.add(ListItem.forGroup(groupName, groupEventId(groupName)));
+        }
+        for (CitizenData citizen : directCitizens) {
+            unifiedList.add(ListItem.forCitizen(citizen));
+        }
+
+        if (!isViewingSpecificGroup && !lowerSearchQuery.isEmpty()) {
+            for (CitizenData citizen : filteredCitizens) {
+                if (normalizeGroupPath(citizen.getGroup()).isEmpty()) {
+                    continue;
                 }
-            }
-        } else {
-            // Viewing all, show groups first, then ungrouped citizens
-            for (String groupName : sortedGroups) {
-                unifiedList.add(ListItem.forGroup(groupName, sanitizeGroupId(groupName)));
-            }
-            for (CitizenData citizen : ungroupedCitizens) {
                 unifiedList.add(ListItem.forCitizen(citizen));
-            }
-            // When searching, also show individual citizens from groups for easy access
-            if (!lowerSearchQuery.isEmpty()) {
-                for (String groupName : sortedGroups) {
-                    List<CitizenData> groupCitizens = citizensByGroup.get(groupName);
-                    if (groupCitizens != null) {
-                        for (CitizenData citizen : groupCitizens) {
-                            unifiedList.add(ListItem.forCitizen(citizen));
-                        }
-                    }
-                }
             }
         }
 
@@ -1174,9 +1329,9 @@ public class CitizensUI {
                 .setVariable("isCreateTab", currentTab == Tab.CREATE)
                 .setVariable("isManageTab", currentTab == Tab.MANAGE)
                 .setVariable("unifiedList", unifiedList)
-                .setVariable("hasCitizens", !filteredCitizens.isEmpty())
+                .setVariable("hasCitizens", !unifiedList.isEmpty())
                 .setVariable("searchQuery", escapeHtml(searchQuery))
-                .setVariable("viewingGroup", viewingGroup != null ? escapeHtml(viewingGroup) : "")
+                .setVariable("viewingGroup", escapeHtml(normalizedViewingGroup))
                 .setVariable("isViewingGroup", isViewingSpecificGroup);
 
         String html = template.process(getSharedStyles() + """
@@ -1248,12 +1403,18 @@ public class CitizensUI {
                             <button id="edit-closest-btn" class="secondary-button" style="anchor-width: 220; anchor-height: 40;">Edit Closest Citizen</button>
                             <div class="spacer-h-sm"></div>
                             <button id="get-citizen-stick-btn" class="secondary-button" style="anchor-width: 220; anchor-height: 40;">Get Citizen Stick</button>
+                            <div class="spacer-h-sm"></div>
+                            <button id="new-root-group-btn" class="secondary-button" style="anchor-width: 170; anchor-height: 40;">New Group</button>
                         </div>
                         
                         {{#if isViewingGroup}}
                         <!-- Viewing Specific Group -->
                         <div class="form-row">
                             <button id="back-to-all" class="secondary-button" style="anchor-width: 120;">Back</button>
+                            <div class="spacer-h-sm"></div>
+                            <button id="new-child-group-btn" class="secondary-button" style="anchor-width: 170;">New Child Group</button>
+                            <div class="spacer-h-sm"></div>
+                            <button id="move-current-group-btn" class="secondary-button" style="anchor-width: 150;">Move Group</button>
                             <div style="flex-weight: 1; layout: center;">
                                 <p style="font-size: 18px; font-weight: bold; color: #FFFFFF;">Group: {{$viewingGroup}}</p>
                             </div>
@@ -1294,6 +1455,8 @@ public class CitizensUI {
                                     <button id="view-group-{{$groupId}}" class="secondary-button small-secondary-button" style="anchor-width: 110;">View</button>
                                     <div class="spacer-h-sm"></div>
                                     <button id="rename-group-{{$groupId}}" class="secondary-button small-secondary-button" style="anchor-width: 130;">Rename</button>
+                                    <div class="spacer-h-sm"></div>
+                                    <button id="move-group-{{$groupId}}" class="secondary-button small-secondary-button" style="anchor-width: 110;">Move</button>
                                 </div>
                             </div>
                             {{/if}}
@@ -1326,16 +1489,29 @@ public class CitizensUI {
 
     public void openCreateCitizenGUI(@Nonnull PlayerRef playerRef, @Nonnull Store<EntityStore> store) {
         openCreateCitizenGUI(playerRef, store, true, "", 0, false, false,
-                false, "", 1.0f, true, "",
+                false, CitizenData.MAP_MARKER_TYPE_PIN, "", false, "", 1.0f, true, "",
                 1.0f, "", "", false, false, "", true, "", 25.0f);
     }
 
     public void openCreateCitizenGUI(@Nonnull PlayerRef playerRef, @Nonnull Store<EntityStore> store,
-                                     boolean isPlayerModel, String name, float nametagOffset, boolean hideNametag, boolean hideNpc,
-                                     boolean modelNametagEnabled, String nametagModelId, float nametagModelScale, boolean rotateNametagTowardsPlayer,
-                                     String modelId, float scale, String permission, String permMessage, boolean useLiveSkin,
-                                     boolean preserveState, String skinUsername, boolean rotateTowardsPlayer,
-                                     String group, float lookAtDistance) {
+                                      boolean isPlayerModel, String name, float nametagOffset, boolean hideNametag, boolean hideNpc,
+                                      boolean mapMarkerEnabled, String mapMarkerType,
+                                      boolean modelNametagEnabled, String nametagModelId, float nametagModelScale, boolean rotateNametagTowardsPlayer,
+                                      String modelId, float scale, String permission, String permMessage, boolean useLiveSkin,
+                                      boolean preserveState, String skinUsername, boolean rotateTowardsPlayer,
+                                      String group, float lookAtDistance) {
+        openCreateCitizenGUI(playerRef, store, isPlayerModel, name, nametagOffset, hideNametag, hideNpc,
+                mapMarkerEnabled, mapMarkerType, "", modelNametagEnabled, nametagModelId, nametagModelScale, rotateNametagTowardsPlayer,
+                modelId, scale, permission, permMessage, useLiveSkin, preserveState, skinUsername, rotateTowardsPlayer, group, lookAtDistance);
+    }
+
+    private void openCreateCitizenGUI(@Nonnull PlayerRef playerRef, @Nonnull Store<EntityStore> store,
+                                      boolean isPlayerModel, String name, float nametagOffset, boolean hideNametag, boolean hideNpc,
+                                      boolean mapMarkerEnabled, String mapMarkerType, String mapMarkerName,
+                                      boolean modelNametagEnabled, String nametagModelId, float nametagModelScale, boolean rotateNametagTowardsPlayer,
+                                      String modelId, float scale, String permission, String permMessage, boolean useLiveSkin,
+                                      boolean preserveState, String skinUsername, boolean rotateTowardsPlayer,
+                                      String group, float lookAtDistance) {
         pendingFollowSelections.remove(playerRef.getUuid());
 
         List<String> allGroups = plugin.getCitizensManager().getAllGroups();
@@ -1345,6 +1521,9 @@ public class CitizensUI {
                 .setVariable("isPlayerModel", isPlayerModel)
                 .setVariable("name", escapeHtml(name))
                 .setVariable("hideNpc", hideNpc)
+                .setVariable("mapMarkerEnabled", mapMarkerEnabled)
+                .setVariable("mapMarkerTypeOptions", generateMapMarkerTypeOptions(mapMarkerType))
+                .setVariable("mapMarkerName", escapeHtml(mapMarkerName))
                 .setVariable("group", escapeHtml(group))
                 .setVariable("groupOptions", groupOptionsHTML)
                 .setVariable("modelId", modelId.isEmpty() ? "PlayerTestModel_V" : modelId)
@@ -1361,7 +1540,7 @@ public class CitizensUI {
 
         String html = template.process(getSharedStyles() + """
                 <div class="page-overlay">
-                    <div class="main-container decorated-container" style="anchor-width: 900; anchor-height: 820;">
+                    <div class="main-container decorated-container" style="anchor-width: 900; anchor-height: 860;">
                 
                         <!-- Header -->
                         <div class="header container-title">
@@ -1408,6 +1587,31 @@ public class CitizensUI {
                                         <p class="checkbox-description">Hide the NPC entity</p>
                                     </div>
                                 </div>
+                                <div class="spacer-xs"></div>
+                                <div class="checkbox-row">
+                                    <input type="checkbox" id="map-marker-check" {{#if mapMarkerEnabled}}checked{{/if}} />
+                                    <div style="layout: top; flex-weight: 0; text-align: center;">
+                                        <p class="checkbox-label">Show Map Marker</p>
+                                        <p class="checkbox-description">Add this citizen to the world map</p>
+                                    </div>
+                                </div>
+                                {{#if mapMarkerEnabled}}
+                                <div class="spacer-xs"></div>
+                                <div class="form-group" style="anchor-width: 360;">
+                                    <p class="form-label">Map Marker Type</p>
+                                    <select id="map-marker-type" data-hyui-showlabel="true">
+                                        {{{$mapMarkerTypeOptions}}}
+                                    </select>
+                                    <p class="form-hint">Used when Show Map Marker is enabled</p>
+                                </div>
+                                <div class="spacer-xs"></div>
+                                <div class="form-group" style="anchor-width: 360;">
+                                    <p class="form-label">Marker Name</p>
+                                    <input type="text" id="map-marker-name" class="form-input" value="{{$mapMarkerName}}"
+                                           placeholder="Leave empty to use citizen name" maxlength="64" />
+                                    <p class="form-hint">Leave empty to use the citizen name</p>
+                                </div>
+                                {{/if}}
                             </div>
 
                             <div class="spacer-md"></div>
@@ -1540,7 +1744,7 @@ public class CitizensUI {
                                             <input type="number" id="citizen-scale" class="form-input"
                                                    value="{{$scale}}"
                                                    placeholder="1.0"
-                                                   min="0.01" max="500" step="0.25"
+                                                   min="0.01" max="100" step="0.25"
                                                    data-hyui-max-decimal-places="2" />
                                             <p class="form-hint">Default: 1.0 (normal size)</p>
                                         </div>
@@ -1605,6 +1809,7 @@ public class CitizensUI {
                 .fromHtml(html);
 
         setupCreateCitizenListeners(page, playerRef, store, isPlayerModel, name, nametagOffset, hideNametag, hideNpc,
+                mapMarkerEnabled, mapMarkerType, mapMarkerName,
                 modelNametagEnabled, nametagModelId, nametagModelScale, rotateNametagTowardsPlayer,
                 modelId, scale, permission, permMessage, useLiveSkin, skinUsername, rotateTowardsPlayer, group, lookAtDistance);
 
@@ -1612,9 +1817,15 @@ public class CitizensUI {
     }
 
     public void openEditCitizenGUI(@Nonnull PlayerRef playerRef, @Nonnull Store<EntityStore> store, @Nonnull CitizenData citizen) {
+        openEditCitizenGUI(playerRef, store, citizen, citizen.isMapMarkerEnabled(), citizen.getMapMarkerType(), citizen.getMapMarkerName());
+    }
+
+    private void openEditCitizenGUI(@Nonnull PlayerRef playerRef, @Nonnull Store<EntityStore> store, @Nonnull CitizenData citizen,
+                                    boolean draftMapMarkerEnabled, @Nullable String draftMapMarkerType, @Nullable String draftMapMarkerName) {
         pendingFollowSelections.remove(playerRef.getUuid());
         List<String> allGroups = plugin.getCitizensManager().getAllGroups();
         String groupOptionsHTML = generateGroupDropdownOptions(citizen.getGroup(), allGroups);
+        String normalizedDraftMapMarkerType = CitizenData.normalizeMapMarkerType(draftMapMarkerType);
 
         TemplateProcessor template = createBaseTemplate()
                 .setVariable("citizen", new SafeCitizen(citizen))
@@ -1623,6 +1834,9 @@ public class CitizensUI {
                 .setVariable("rotateTowardsPlayer", citizen.getRotateTowardsPlayer())
                 .setVariable("lookAtDistance", citizen.getLookAtDistance())
                 .setVariable("hideNpc", citizen.isHideNpc())
+                .setVariable("mapMarkerEnabled", draftMapMarkerEnabled)
+                .setVariable("mapMarkerTypeOptions", generateMapMarkerTypeOptions(normalizedDraftMapMarkerType))
+                .setVariable("mapMarkerName", escapeHtml(draftMapMarkerName != null ? draftMapMarkerName : ""))
                 .setVariable("groupOptions", groupOptionsHTML)
                 .setVariable("nametagSummary", buildNametagSummary(
                         citizen.getName(),
@@ -1679,6 +1893,31 @@ public class CitizensUI {
                                         <p class="checkbox-description">Hide the NPC entity</p>
                                     </div>
                                 </div>
+                                <div class="spacer-xs"></div>
+                                <div class="checkbox-row">
+                                    <input type="checkbox" id="map-marker-check" {{#if mapMarkerEnabled}}checked{{/if}} />
+                                    <div style="layout: top; flex-weight: 0; text-align: center;">
+                                        <p class="checkbox-label">Show Map Marker</p>
+                                        <p class="checkbox-description">Add this citizen to the world map</p>
+                                    </div>
+                                </div>
+                                {{#if mapMarkerEnabled}}
+                                <div class="spacer-xs"></div>
+                                <div class="form-group" style="anchor-width: 360;">
+                                    <p class="form-label">Map Marker Type</p>
+                                    <select id="map-marker-type" data-hyui-showlabel="true">
+                                        {{{$mapMarkerTypeOptions}}}
+                                    </select>
+                                    <p class="form-hint">NPC Type uses an official portrait when one matches the model</p>
+                                </div>
+                                <div class="spacer-xs"></div>
+                                <div class="form-group" style="anchor-width: 360;">
+                                    <p class="form-label">Marker Name</p>
+                                    <input type="text" id="map-marker-name" class="form-input" value="{{$mapMarkerName}}"
+                                           placeholder="Leave empty to use citizen name" maxlength="64" />
+                                    <p class="form-hint">Leave empty to use the citizen name</p>
+                                </div>
+                                {{/if}}
                             </div>
 
                             <div class="spacer-md"></div>
@@ -1817,7 +2056,7 @@ public class CitizensUI {
                                             <p class="form-label">Scale Factor *</p>
                                             <input type="number" id="citizen-scale" class="form-input"
                                                    value="{{$citizen.scale}}"
-                                                   min="0.01" max="500" step="0.25"
+                                                   min="0.01" max="100" step="0.25"
                                                    data-hyui-max-decimal-places="2" />
                                             <p class="form-hint">Default: 1.0 (normal size)</p>
                                         </div>
@@ -1924,7 +2163,8 @@ public class CitizensUI {
                 .withLifetime(CustomPageLifetime.CanDismiss)
                 .fromHtml(html);
 
-        setupEditCitizenListeners(page, playerRef, store, citizen);
+        setupEditCitizenListeners(page, playerRef, store, citizen, draftMapMarkerEnabled, normalizedDraftMapMarkerType,
+                draftMapMarkerName != null ? draftMapMarkerName : "");
 
         page.open(store);
     }
@@ -2253,6 +2493,9 @@ public class CitizensUI {
                 openEditCitizenGUI(playerRef, store, closest);
             });
 
+            page.addEventListener("new-root-group-btn", CustomUIEventBindingType.Activating, event ->
+                    openCreateGroupGUI(playerRef, store, ""));
+
             page.addEventListener("get-citizen-stick-btn", CustomUIEventBindingType.Activating, event -> {
                 Ref<EntityStore> ref = playerRef.getReference();
                 if (ref == null || !ref.isValid()) {
@@ -2291,8 +2534,14 @@ public class CitizensUI {
 
             // Back button listener
             if (viewingGroup != null && !viewingGroup.isEmpty()) {
-                page.addEventListener("back-to-all", CustomUIEventBindingType.Activating, event ->
-                        openCitizensGUI(playerRef, store, Tab.MANAGE, "", null));
+                page.addEventListener("back-to-all", CustomUIEventBindingType.Activating, event -> {
+                    String parentGroup = getParentGroup(viewingGroup);
+                    openCitizensGUI(playerRef, store, Tab.MANAGE, "", parentGroup.isEmpty() ? null : parentGroup);
+                });
+                page.addEventListener("new-child-group-btn", CustomUIEventBindingType.Activating, event ->
+                        openCreateGroupGUI(playerRef, store, viewingGroup));
+                page.addEventListener("move-current-group-btn", CustomUIEventBindingType.Activating, event ->
+                        openMoveGroupGUI(playerRef, store, viewingGroup));
             }
 
             // Register event listeners for all items in the unified list
@@ -2305,6 +2554,8 @@ public class CitizensUI {
                             openCitizensGUI(playerRef, store, Tab.MANAGE, "", rawGroupName ));
                     page.addEventListener("rename-group-" + groupId, CustomUIEventBindingType.Activating, event ->
                             openRenameGroupGUI(playerRef, store, rawGroupName));
+                    page.addEventListener("move-group-" + groupId, CustomUIEventBindingType.Activating, event ->
+                            openMoveGroupGUI(playerRef, store, rawGroupName));
                 } else {
                     // Citizen action listeners
                     CitizenData citizen = item.getRawCitizen();
@@ -2401,6 +2652,7 @@ public class CitizensUI {
                 citizen.getLastSkinUpdate(),
                 citizen.getRotateTowardsPlayer()
         );
+        clonedCitizen.setCurrentPosition(new Vector3d(position));
 
         clonedCitizen.setNametagOffset(citizen.getNametagOffset());
         clonedCitizen.setHideNametag(citizen.isHideNametag());
@@ -2409,6 +2661,9 @@ public class CitizensUI {
         clonedCitizen.setNametagModelScale(citizen.getNametagModelScale());
         clonedCitizen.setRotateNametagTowardsPlayer(citizen.isRotateNametagTowardsPlayer());
         clonedCitizen.setHideNpc(citizen.isHideNpc());
+        clonedCitizen.setMapMarkerEnabled(citizen.isMapMarkerEnabled());
+        clonedCitizen.setMapMarkerType(citizen.getMapMarkerType());
+        clonedCitizen.setMapMarkerName(citizen.getMapMarkerName());
         clonedCitizen.setNpcHelmet(citizen.getNpcHelmet());
         clonedCitizen.setNpcChest(citizen.getNpcChest());
         clonedCitizen.setNpcGloves(citizen.getNpcGloves());
@@ -2589,6 +2844,138 @@ public class CitizensUI {
 
         page.addEventListener("cancel-btn", CustomUIEventBindingType.Activating, event ->
                 openCitizensGUI(playerRef, store, Tab.MANAGE));
+
+        page.open(store);
+    }
+
+    private void openCreateGroupGUI(@Nonnull PlayerRef playerRef, @Nonnull Store<EntityStore> store,
+                                    @Nullable String parentGroup) {
+        String normalizedParent = normalizeGroupPath(parentGroup);
+        TemplateProcessor template = createBaseTemplate()
+                .setVariable("parentName", normalizedParent.isEmpty() ? "Root" : escapeHtml(normalizedParent))
+                .setVariable("isChildGroup", !normalizedParent.isEmpty())
+                .setVariable("newGroupName", "");
+
+        String html = template.process(getSharedStyles() + """
+                <div class="page-overlay">
+                    <div class="main-container decorated-container" style="anchor-width: 620; anchor-height: 380;">
+                        <div class="header container-title">
+                            <div class="header-content">
+                                <p class="header-title">{{#if isChildGroup}}Create Child Group{{else}}Create Group{{/if}}</p>
+                            </div>
+                        </div>
+                        <div class="body">
+                            <p class="page-description">Parent: {{$parentName}}</p>
+                            <div class="spacer-sm"></div>
+                            <div class="section">
+                                {{@formField:id=group-name,label=Group Name,value={{$newGroupName}},placeholder=Enter group name...}}
+                                <div class="spacer-xs"></div>
+                                <p class="form-hint">Child groups are shown under their parent in the Manage tab.</p>
+                            </div>
+                        </div>
+                        <div class="footer">
+                            <button id="cancel-btn" class="secondary-button">Cancel</button>
+                            <div class="spacer-h-md"></div>
+                            <button id="save-btn" class="secondary-button" style="anchor-width: 170;">Create Group</button>
+                        </div>
+                    </div>
+                </div>
+                """);
+
+        PageBuilder page = PageBuilder.pageForPlayer(playerRef)
+                .withLifetime(CustomPageLifetime.CanDismiss)
+                .fromHtml(html);
+
+        final String[] groupName = {""};
+        page.addEventListener("group-name", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
+            groupName[0] = ctx.getValue("group-name", String.class).orElse("").trim();
+        });
+
+        page.addEventListener("save-btn", CustomUIEventBindingType.Activating, (event, ctx) -> {
+            groupName[0] = ctx.getValue("group-name", String.class).orElse(groupName[0]).trim();
+            String fullGroupName = buildChildGroupPath(normalizedParent, groupName[0]);
+            if (fullGroupName.isEmpty()) {
+                playerRef.sendMessage(Message.raw("Please enter a group name.").color(Color.RED));
+                return;
+            }
+            if (plugin.getCitizensManager().groupExists(fullGroupName)) {
+                playerRef.sendMessage(Message.raw("That group already exists.").color(Color.RED));
+                return;
+            }
+
+            plugin.getCitizensManager().createGroup(fullGroupName);
+            playerRef.sendMessage(Message.raw("Group created: '" + fullGroupName + "'.").color(Color.GREEN));
+            openCitizensGUI(playerRef, store, Tab.MANAGE, "", normalizedParent.isEmpty() ? null : normalizedParent);
+        });
+
+        page.addEventListener("cancel-btn", CustomUIEventBindingType.Activating, event ->
+                openCitizensGUI(playerRef, store, Tab.MANAGE, "", normalizedParent.isEmpty() ? null : normalizedParent));
+
+        page.open(store);
+    }
+
+    private void openMoveGroupGUI(@Nonnull PlayerRef playerRef, @Nonnull Store<EntityStore> store,
+                                  @Nonnull String groupName) {
+        String normalizedGroup = normalizeGroupPath(groupName);
+        String currentParent = getParentGroup(normalizedGroup);
+        TemplateProcessor template = createBaseTemplate()
+                .setVariable("groupName", escapeHtml(normalizedGroup))
+                .setVariable("parentOptions", generateGroupParentOptions(currentParent, normalizedGroup));
+
+        String html = template.process(getSharedStyles() + """
+                <div class="page-overlay">
+                    <div class="main-container decorated-container" style="anchor-width: 660; anchor-height: 400;">
+                        <div class="header container-title">
+                            <div class="header-content">
+                                <p class="header-title">Move Group</p>
+                            </div>
+                        </div>
+                        <div class="body">
+                            <p class="page-description">Move {{$groupName}} under another group or back to root</p>
+                            <div class="spacer-sm"></div>
+                            <div class="section">
+                                <div class="form-group">
+                                    <p class="form-label">New Parent</p>
+                                    <select id="group-parent" data-hyui-showlabel="true">
+                                        {{{$parentOptions}}}
+                                    </select>
+                                    <p class="form-hint">Choose Root to make this a top-level group.</p>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="footer">
+                            <button id="cancel-btn" class="secondary-button">Cancel</button>
+                            <div class="spacer-h-md"></div>
+                            <button id="save-btn" class="secondary-button" style="anchor-width: 160;">Move Group</button>
+                        </div>
+                    </div>
+                </div>
+                """);
+
+        PageBuilder page = PageBuilder.pageForPlayer(playerRef)
+                .withLifetime(CustomPageLifetime.CanDismiss)
+                .fromHtml(html);
+
+        final String[] selectedParent = {currentParent};
+        page.addEventListener("group-parent", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
+            selectedParent[0] = normalizeGroupPath(ctx.getValue("group-parent", String.class).orElse(""));
+        });
+
+        page.addEventListener("save-btn", CustomUIEventBindingType.Activating, (event, ctx) -> {
+            selectedParent[0] = normalizeGroupPath(ctx.getValue("group-parent", String.class).orElse(selectedParent[0]));
+            boolean moved = plugin.getCitizensManager().moveGroup(normalizedGroup, selectedParent[0]);
+            if (!moved) {
+                playerRef.sendMessage(Message.raw("Could not move group. Check for name conflicts or invalid parent group.").color(Color.RED));
+                return;
+            }
+
+            String newPath = buildChildGroupPath(selectedParent[0], getGroupLeafName(normalizedGroup));
+            playerRef.sendMessage(Message.raw("Group moved to '" + newPath + "'.").color(Color.GREEN));
+            openCitizensGUI(playerRef, store, Tab.MANAGE, "", selectedParent[0].isEmpty() ? null : selectedParent[0]);
+        });
+
+        page.addEventListener("cancel-btn", CustomUIEventBindingType.Activating, event ->
+                openCitizensGUI(playerRef, store, Tab.MANAGE, "", currentParent.isEmpty() ? null : currentParent));
 
         page.open(store);
     }
@@ -2827,7 +3214,7 @@ public class CitizensUI {
 
                                         <div class="form-row" style="horizontal-align: center;">
                                             <div style="anchor-width: 220;">
-                                                {{@numberField:id=nametag-model-scale,label=Model Scale,value={{$nametagModelScale}},placeholder=1.0,min=0.01,max=500,step=0.1,decimals=2}}
+                                                {{@numberField:id=nametag-model-scale,label=Model Scale,value={{$nametagModelScale}},placeholder=1.0,min=0.01,max=100,step=0.1,decimals=2}}
                                             </div>
                                         </div>
 
@@ -2962,10 +3349,11 @@ public class CitizensUI {
     }
 
     private void setupCreateCitizenListeners(PageBuilder page, PlayerRef playerRef, Store<EntityStore> store,
-                                             boolean initialIsPlayerModel, String initialName, float initialNametagOffset,
-                                             boolean initialHideNametag, boolean initialHideNpc,
-                                             boolean initialModelNametagEnabled, String initialNametagModelId,
-                                             float initialNametagModelScale, boolean initialRotateNametagTowardsPlayer,
+                                              boolean initialIsPlayerModel, String initialName, float initialNametagOffset,
+                                              boolean initialHideNametag, boolean initialHideNpc,
+                                              boolean initialMapMarkerEnabled, String initialMapMarkerType, String initialMapMarkerName,
+                                              boolean initialModelNametagEnabled, String initialNametagModelId,
+                                              float initialNametagModelScale, boolean initialRotateNametagTowardsPlayer,
                                              String initialModelId, float initialScale, String initialPermission, String initialPermMessage, boolean initialUseLiveSkin,
                                              String initialSkinUsername, boolean initialRotateTowardsPlayer,
                                              String initialGroup, float initialLookAtDistance) {
@@ -2974,12 +3362,15 @@ public class CitizensUI {
         final float[] nametagOffset = {initialNametagOffset};
         final boolean[] hideNametag = {initialHideNametag};
         final boolean[] hideNpc = {initialHideNpc};
+        final boolean[] mapMarkerEnabled = {initialMapMarkerEnabled};
+        final String[] mapMarkerType = {CitizenData.normalizeMapMarkerType(initialMapMarkerType)};
+        final String[] mapMarkerName = {initialMapMarkerName != null ? initialMapMarkerName : ""};
         final boolean[] modelNametagEnabled = {initialModelNametagEnabled};
         final String[] currentNametagModelId = {initialNametagModelId};
         final float[] currentNametagModelScale = {initialNametagModelScale};
         final boolean[] rotateNametagTowardsPlayer = {initialRotateNametagTowardsPlayer};
         final String[] currentModelId = {initialModelId.isEmpty() ? "PlayerTestModel_V" : initialModelId};
-        final float[] currentScale = {initialScale};
+        final float[] currentScale = {Math.max(0.01f, Math.min(100.0f, initialScale))};
         final String[] currentPermission = {initialPermission};
         final String[] currentPermMessage = {initialPermMessage};
         final boolean[] isPlayerModel = {initialIsPlayerModel};
@@ -3013,6 +3404,9 @@ public class CitizensUI {
 
             page.addEventListener("live-skin-check", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
                 useLiveSkin[0] = ctx.getValue("live-skin-check", Boolean.class).orElse(false);
+                if (CitizenData.isGeneratedSkinUsername(skinUsername[0])) {
+                    useLiveSkin[0] = false;
+                }
             });
 
             page.addEventListener("get-player-skin-btn", CustomUIEventBindingType.Activating, event -> {
@@ -3026,6 +3420,7 @@ public class CitizensUI {
                     PlayerSkin randomSkin = CosmeticsModule.get().generateRandomSkin(RandomUtil.getSecureRandom());
                     cachedSkin[0] = randomSkin;
                     skinUsername[0] = "random_" + UUID.randomUUID().toString().substring(0, 8);
+                    useLiveSkin[0] = false;
                     playerRef.sendMessage(Message.raw("Random skin generated successfully!").color(Color.GREEN));
                 } catch (Exception e) {
                     playerRef.sendMessage(Message.raw("Failed to generate random skin: " + e.getMessage()).color(Color.RED));
@@ -3058,12 +3453,14 @@ public class CitizensUI {
                         rotateNametagTowardsPlayer[0],
                         updated -> openCreateCitizenGUI(
                                 playerRef, store, isPlayerModel[0], updated.name(), updated.offset(), updated.hideNametag(), hideNpc[0],
+                                mapMarkerEnabled[0], mapMarkerType[0], mapMarkerName[0],
                                 updated.modelEnabled(), updated.modelId(), updated.modelScale(), updated.rotateModelTowardsPlayer(),
                                 currentModelId[0], currentScale[0], currentPermission[0], currentPermMessage[0], useLiveSkin[0], true,
                                 skinUsername[0], rotateTowardsPlayer[0], currentGroup[0], lookAtDistance[0]
                         ),
                         () -> openCreateCitizenGUI(
                                 playerRef, store, isPlayerModel[0], currentName[0], nametagOffset[0], hideNametag[0], hideNpc[0],
+                                mapMarkerEnabled[0], mapMarkerType[0], mapMarkerName[0],
                                 modelNametagEnabled[0], currentNametagModelId[0], currentNametagModelScale[0], rotateNametagTowardsPlayer[0],
                                 currentModelId[0], currentScale[0], currentPermission[0], currentPermMessage[0], useLiveSkin[0], true,
                                 skinUsername[0], rotateTowardsPlayer[0], currentGroup[0], lookAtDistance[0]
@@ -3074,15 +3471,42 @@ public class CitizensUI {
             hideNpc[0] = ctx.getValue("hide-npc-check", Boolean.class).orElse(false);
         });
 
+        page.addEventListener("map-marker-check", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
+            boolean enabled = ctx.getValue("map-marker-check", Boolean.class).orElse(false);
+            if (mapMarkerEnabled[0]) {
+                mapMarkerName[0] = ctx.getValue("map-marker-name", String.class).orElse(mapMarkerName[0]);
+            }
+            if (enabled == mapMarkerEnabled[0]) {
+                return;
+            }
+
+            mapMarkerEnabled[0] = enabled;
+            openCreateCitizenGUI(playerRef, store, isPlayerModel[0], currentName[0], nametagOffset[0], hideNametag[0], hideNpc[0],
+                    mapMarkerEnabled[0], mapMarkerType[0], mapMarkerName[0],
+                    modelNametagEnabled[0], currentNametagModelId[0], currentNametagModelScale[0], rotateNametagTowardsPlayer[0],
+                    currentModelId[0], currentScale[0], currentPermission[0], currentPermMessage[0], useLiveSkin[0], true,
+                    skinUsername[0], rotateTowardsPlayer[0], currentGroup[0], lookAtDistance[0]);
+        });
+
+        if (mapMarkerEnabled[0]) {
+            page.addEventListener("map-marker-type", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
+                mapMarkerType[0] = CitizenData.normalizeMapMarkerType(
+                        ctx.getValue("map-marker-type", String.class).orElse(CitizenData.MAP_MARKER_TYPE_PIN));
+            });
+            page.addEventListener("map-marker-name", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
+                mapMarkerName[0] = ctx.getValue("map-marker-name", String.class).orElse("");
+            });
+        }
+
         page.addEventListener("citizen-scale", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
             ctx.getValue("citizen-scale", Double.class)
-                    .ifPresent(val -> currentScale[0] = val.floatValue());
+                    .ifPresent(val -> currentScale[0] = Math.max(0.01f, Math.min(100.0f, val.floatValue())));
 
             if (currentScale[0] == 1.0f) {
                 ctx.getValue("citizen-scale", String.class)
                         .ifPresent(val -> {
                             try {
-                                currentScale[0] = Float.parseFloat(val);
+                                currentScale[0] = Math.max(0.01f, Math.min(100.0f, Float.parseFloat(val)));
                             } catch (NumberFormatException e) {
                             }
                         });
@@ -3111,20 +3535,39 @@ public class CitizensUI {
         });
 
         page.addEventListener("type-player", CustomUIEventBindingType.Activating, (event, ctx) -> {
+            if (mapMarkerEnabled[0]) {
+                mapMarkerType[0] = CitizenData.normalizeMapMarkerType(
+                        ctx.getValue("map-marker-type", String.class).orElse(mapMarkerType[0]));
+                mapMarkerName[0] = ctx.getValue("map-marker-name", String.class).orElse(mapMarkerName[0]);
+            }
             openCreateCitizenGUI(playerRef, store, true, currentName[0], nametagOffset[0], hideNametag[0], hideNpc[0],
+                    mapMarkerEnabled[0], mapMarkerType[0], mapMarkerName[0],
                     modelNametagEnabled[0], currentNametagModelId[0], currentNametagModelScale[0], rotateNametagTowardsPlayer[0], currentModelId[0],
                     currentScale[0], currentPermission[0], currentPermMessage[0], useLiveSkin[0], true,
                     skinUsername[0], rotateTowardsPlayer[0], currentGroup[0], lookAtDistance[0]);
         });
 
         page.addEventListener("type-entity", CustomUIEventBindingType.Activating, (event, ctx) -> {
+            if (mapMarkerEnabled[0]) {
+                mapMarkerType[0] = CitizenData.normalizeMapMarkerType(
+                        ctx.getValue("map-marker-type", String.class).orElse(mapMarkerType[0]));
+                mapMarkerName[0] = ctx.getValue("map-marker-name", String.class).orElse(mapMarkerName[0]);
+            }
             openCreateCitizenGUI(playerRef, store, false, currentName[0], nametagOffset[0], hideNametag[0], hideNpc[0],
+                    mapMarkerEnabled[0], mapMarkerType[0], mapMarkerName[0],
                     modelNametagEnabled[0], currentNametagModelId[0], currentNametagModelScale[0], rotateNametagTowardsPlayer[0], currentModelId[0],
                     currentScale[0], currentPermission[0], currentPermMessage[0], useLiveSkin[0], true,
                     skinUsername[0], rotateTowardsPlayer[0], currentGroup[0], lookAtDistance[0]);
         });
 
-        page.addEventListener("create-btn", CustomUIEventBindingType.Activating, event -> {
+        page.addEventListener("create-btn", CustomUIEventBindingType.Activating, (event, ctx) -> {
+            mapMarkerEnabled[0] = ctx.getValue("map-marker-check", Boolean.class).orElse(mapMarkerEnabled[0]);
+            if (mapMarkerEnabled[0]) {
+                mapMarkerType[0] = CitizenData.normalizeMapMarkerType(
+                        ctx.getValue("map-marker-type", String.class).orElse(mapMarkerType[0]));
+                mapMarkerName[0] = ctx.getValue("map-marker-name", String.class).orElse(mapMarkerName[0]);
+            }
+
             String name = currentName[0].trim();
 
             if (name.isEmpty()) {
@@ -3184,6 +3627,9 @@ public class CitizensUI {
             citizen.setNametagModelScale(currentNametagModelScale[0]);
             citizen.setRotateNametagTowardsPlayer(rotateNametagTowardsPlayer[0]);
             citizen.setHideNpc(hideNpc[0]);
+            citizen.setMapMarkerEnabled(mapMarkerEnabled[0]);
+            citizen.setMapMarkerType(mapMarkerType[0]);
+            citizen.setMapMarkerName(mapMarkerName[0]);
             citizen.setGroup(currentGroup[0]);
             citizen.setLookAtDistance(lookAtDistance[0]);
             plugin.getCitizensManager().autoResolveAttackType(citizen);
@@ -3225,17 +3671,21 @@ public class CitizensUI {
     }
 
     private void setupEditCitizenListeners(PageBuilder page, PlayerRef playerRef, Store<EntityStore> store,
-                                           CitizenData citizen) {
+                                           CitizenData citizen, boolean initialMapMarkerEnabled, String initialMapMarkerType,
+                                           String initialMapMarkerName) {
         final String[] currentName = {citizen.getName()};
         final float[] nametagOffset = {citizen.getNametagOffset()};
         final boolean[] hideNametag = {citizen.isHideNametag()};
         final boolean[] hideNpc = {citizen.isHideNpc()};
+        final boolean[] mapMarkerEnabled = {initialMapMarkerEnabled};
+        final String[] mapMarkerType = {CitizenData.normalizeMapMarkerType(initialMapMarkerType)};
+        final String[] mapMarkerName = {initialMapMarkerName != null ? initialMapMarkerName : ""};
         final boolean[] modelNametagEnabled = {citizen.isModelNametagEnabled()};
         final String[] currentNametagModelId = {citizen.getNametagModelId()};
         final float[] currentNametagModelScale = {citizen.getNametagModelScale()};
         final boolean[] rotateNametagTowardsPlayer = {citizen.isRotateNametagTowardsPlayer()};
         final String[] currentModelId = {citizen.getModelId()};
-        final float[] currentScale = {citizen.getScale()};
+        final float[] currentScale = {Math.max(0.01f, Math.min(100.0f, citizen.getScale()))};
         final String[] currentPermission = {citizen.getRequiredPermission()};
         final String[] currentPermMessage = {citizen.getNoPermissionMessage()};
         final boolean[] isPlayerModel = {citizen.isPlayerModel()};
@@ -3282,6 +3732,9 @@ public class CitizensUI {
 
             page.addEventListener("live-skin-check", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
                 useLiveSkin[0] = ctx.getValue("live-skin-check", Boolean.class).orElse(false);
+                if (CitizenData.isGeneratedSkinUsername(skinUsername[0])) {
+                    useLiveSkin[0] = false;
+                }
             });
 
             page.addEventListener("get-player-skin-btn", CustomUIEventBindingType.Activating, event -> {
@@ -3295,6 +3748,7 @@ public class CitizensUI {
                     PlayerSkin randomSkin = CosmeticsModule.get().generateRandomSkin(RandomUtil.getSecureRandom());
                     cachedSkin[0] = randomSkin;
                     skinUsername[0] = "random_" + UUID.randomUUID().toString().substring(0, 8);
+                    useLiveSkin[0] = false;
                     playerRef.sendMessage(Message.raw("Random skin generated successfully!").color(Color.GREEN));
                 } catch (Exception e) {
                     playerRef.sendMessage(Message.raw("Failed to generate random skin: " + e.getMessage()).color(Color.RED));
@@ -3347,24 +3801,47 @@ public class CitizensUI {
                             citizen.setNametagModelId(currentNametagModelId[0]);
                             citizen.setNametagModelScale(currentNametagModelScale[0]);
                             citizen.setRotateNametagTowardsPlayer(rotateNametagTowardsPlayer[0]);
-                            openEditCitizenGUI(playerRef, store, citizen);
+                            openEditCitizenGUI(playerRef, store, citizen, mapMarkerEnabled[0], mapMarkerType[0], mapMarkerName[0]);
                         },
-                        () -> openEditCitizenGUI(playerRef, store, citizen)
+                        () -> openEditCitizenGUI(playerRef, store, citizen, mapMarkerEnabled[0], mapMarkerType[0], mapMarkerName[0])
                 ));
 
         page.addEventListener("hide-npc-check", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
             hideNpc[0] = ctx.getValue("hide-npc-check", Boolean.class).orElse(false);
         });
 
+        page.addEventListener("map-marker-check", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
+            boolean enabled = ctx.getValue("map-marker-check", Boolean.class).orElse(false);
+            if (mapMarkerEnabled[0]) {
+                mapMarkerName[0] = ctx.getValue("map-marker-name", String.class).orElse(mapMarkerName[0]);
+            }
+            if (enabled == mapMarkerEnabled[0]) {
+                return;
+            }
+
+            mapMarkerEnabled[0] = enabled;
+            openEditCitizenGUI(playerRef, store, citizen, mapMarkerEnabled[0], mapMarkerType[0], mapMarkerName[0]);
+        });
+
+        if (mapMarkerEnabled[0]) {
+            page.addEventListener("map-marker-type", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
+                mapMarkerType[0] = CitizenData.normalizeMapMarkerType(
+                        ctx.getValue("map-marker-type", String.class).orElse(CitizenData.MAP_MARKER_TYPE_PIN));
+            });
+            page.addEventListener("map-marker-name", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
+                mapMarkerName[0] = ctx.getValue("map-marker-name", String.class).orElse("");
+            });
+        }
+
         page.addEventListener("citizen-scale", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
             ctx.getValue("citizen-scale", Double.class)
-                    .ifPresent(val -> currentScale[0] = val.floatValue());
+                    .ifPresent(val -> currentScale[0] = Math.max(0.01f, Math.min(100.0f, val.floatValue())));
 
             if (currentScale[0] == 1.0f) {
                 ctx.getValue("citizen-scale", String.class)
                         .ifPresent(val -> {
                             try {
-                                currentScale[0] = Float.parseFloat(val);
+                                currentScale[0] = Math.max(0.01f, Math.min(100.0f, Float.parseFloat(val)));
                             } catch (NumberFormatException e) {
                             }
                         });
@@ -3380,15 +3857,25 @@ public class CitizensUI {
         });
 
         page.addEventListener("type-player", CustomUIEventBindingType.Activating, (event, ctx) -> {
+            if (mapMarkerEnabled[0]) {
+                mapMarkerType[0] = CitizenData.normalizeMapMarkerType(
+                        ctx.getValue("map-marker-type", String.class).orElse(mapMarkerType[0]));
+                mapMarkerName[0] = ctx.getValue("map-marker-name", String.class).orElse(mapMarkerName[0]);
+            }
             isPlayerModel[0] = true;
             citizen.setPlayerModel(true);
-            openEditCitizenGUI(playerRef, store, citizen);
+            openEditCitizenGUI(playerRef, store, citizen, mapMarkerEnabled[0], mapMarkerType[0], mapMarkerName[0]);
         });
 
         page.addEventListener("type-entity", CustomUIEventBindingType.Activating, (event, ctx) -> {
+            if (mapMarkerEnabled[0]) {
+                mapMarkerType[0] = CitizenData.normalizeMapMarkerType(
+                        ctx.getValue("map-marker-type", String.class).orElse(mapMarkerType[0]));
+                mapMarkerName[0] = ctx.getValue("map-marker-name", String.class).orElse(mapMarkerName[0]);
+            }
             isPlayerModel[0] = false;
             citizen.setPlayerModel(false);
-            openEditCitizenGUI(playerRef, store, citizen);
+            openEditCitizenGUI(playerRef, store, citizen, mapMarkerEnabled[0], mapMarkerType[0], mapMarkerName[0]);
         });
 
         page.addEventListener("edit-tp-btn", CustomUIEventBindingType.Activating, event ->
@@ -3502,7 +3989,14 @@ public class CitizensUI {
             openFirstInteractionConfigGUI(playerRef, store, citizen);
         });
 
-        page.addEventListener("save-btn", CustomUIEventBindingType.Activating, event -> {
+        page.addEventListener("save-btn", CustomUIEventBindingType.Activating, (event, ctx) -> {
+            mapMarkerEnabled[0] = ctx.getValue("map-marker-check", Boolean.class).orElse(mapMarkerEnabled[0]);
+            if (mapMarkerEnabled[0]) {
+                mapMarkerType[0] = CitizenData.normalizeMapMarkerType(
+                        ctx.getValue("map-marker-type", String.class).orElse(mapMarkerType[0]));
+                mapMarkerName[0] = ctx.getValue("map-marker-name", String.class).orElse(mapMarkerName[0]);
+            }
+
             String name = currentName[0].trim();
 
             if (name.isEmpty()) {
@@ -3549,6 +4043,9 @@ public class CitizensUI {
             citizen.setNametagModelScale(currentNametagModelScale[0]);
             citizen.setRotateNametagTowardsPlayer(rotateNametagTowardsPlayer[0]);
             citizen.setHideNpc(hideNpc[0]);
+            citizen.setMapMarkerEnabled(mapMarkerEnabled[0]);
+            citizen.setMapMarkerType(mapMarkerType[0]);
+            citizen.setMapMarkerName(mapMarkerName[0]);
             citizen.setGroup(currentGroup[0]);
 
             if (isPlayerModel[0]) {
@@ -3564,11 +4061,7 @@ public class CitizensUI {
                     plugin.getCitizensManager().updateCitizen(citizen, true);
                     playerRef.sendMessage(Message.raw("Citizen '" + name + "' updated!").color(Color.GREEN));
                     openCitizensGUI(playerRef, store, Tab.MANAGE);
-                } else if (skinUsername[0].trim().startsWith("random_") && citizen.getCachedSkin() != null) {
-                    plugin.getCitizensManager().updateCitizen(citizen, true);
-                    playerRef.sendMessage(Message.raw("Citizen '" + name + "' updated!").color(Color.GREEN));
-                    openCitizensGUI(playerRef, store, Tab.MANAGE);
-                } else if (skinUsername[0].trim().startsWith("custom_") && citizen.getCachedSkin() != null) {
+                } else if (CitizenData.isGeneratedSkinUsername(skinUsername[0].trim()) && citizen.getCachedSkin() != null) {
                     plugin.getCitizensManager().updateCitizen(citizen, true);
                     playerRef.sendMessage(Message.raw("Citizen '" + name + "' updated!").color(Color.GREEN));
                     openCitizensGUI(playerRef, store, Tab.MANAGE);

@@ -169,7 +169,7 @@ public class CitizensManager {
                 if (citizen.isPlayerModel() && citizen.isUseLiveSkin() && !citizen.getSkinUsername().isEmpty()) {
                     long timeSinceLastUpdate = currentTime - citizen.getLastSkinUpdate();
 
-                    if (citizen.getSkinUsername().startsWith("random_") || citizen.getSkinUsername().startsWith("custom_")) {
+                    if (CitizenData.isGeneratedSkinUsername(citizen.getSkinUsername())) {
                         continue;
                     }
 
@@ -650,7 +650,9 @@ public class CitizensManager {
         // Load groups
         List<String> groupList = config.getStringList("groups");
         if (groupList != null) {
-            groups.addAll(groupList);
+            for (String groupName : groupList) {
+                addGroupHierarchy(groupName);
+            }
         }
 
         // Get all citizen IDs from the nested "citizens" map
@@ -662,13 +664,12 @@ public class CitizensManager {
                 citizens.put(citizenId, citizen);
 
                 if (!citizen.getGroup().isEmpty()) {
-                    groups.add(citizen.getGroup());
+                    addGroupHierarchy(citizen.getGroup());
                 }
             }
         }
 
-        // Save groups list in case new groups were discovered from citizens
-        saveGroups();
+        cleanupUnusedGroups();
     }
 
     @Nullable
@@ -785,6 +786,9 @@ public class CitizensManager {
         citizenData.setFKeyInteractionEnabled(config.getBoolean(basePath + ".f-key-interaction", true));
 
         citizenData.setForceFKeyInteractionText(config.getBoolean(basePath + ".force-f-key-interaction-text", false));
+        citizenData.setMapMarkerEnabled(config.getBoolean(basePath + ".map-marker.enabled", false));
+        citizenData.setMapMarkerType(config.getString(basePath + ".map-marker.type", CitizenData.MAP_MARKER_TYPE_PIN));
+        citizenData.setMapMarkerName(config.getString(basePath + ".map-marker.name", ""));
 
         // Load animation behaviors
         List<AnimationBehavior> animBehaviors = new ArrayList<>();
@@ -1258,6 +1262,9 @@ public class CitizensManager {
             }
 
             config.set(basePath + ".force-f-key-interaction-text", citizen.getForceFKeyInteractionText());
+            config.set(basePath + ".map-marker.enabled", citizen.isMapMarkerEnabled());
+            config.set(basePath + ".map-marker.type", citizen.getMapMarkerType());
+            config.set(basePath + ".map-marker.name", citizen.getMapMarkerName());
 
             // Misc
             config.set(basePath + ".hide-nametag", citizen.isHideNametag());
@@ -1503,11 +1510,8 @@ public class CitizensManager {
             // Only write role file if role-relevant data actually changed
             boolean roleChanged = roleGenerator.generateRoleIfChanged(citizen);
 
-            // Add group to groups set if not empty
-            if (!citizen.getGroup().isEmpty()) {
-                groups.add(citizen.getGroup());
-                saveGroups();
-            }
+            addGroupHierarchy(citizen.getGroup());
+            cleanupUnusedGroups();
 
             // This is needed due to a Hytale bug
             // Also, we only respawn sometimes due to a bug that can occur causing double spawning
@@ -1687,6 +1691,7 @@ public class CitizensManager {
         cancelAllPendingLookResets(citizen);
         despawnCitizenForDeletion(citizen);
         fireCitizenRemovedEvent(new CitizenRemovedEvent(citizen));
+        cleanupUnusedGroups();
     }
 
     private void despawnCitizenForDeletion(@Nonnull CitizenData citizen) {
@@ -2531,7 +2536,8 @@ public class CitizensManager {
     }
 
     public PlayerSkin determineSkin(CitizenData citizen) {
-        if (citizen.isUseLiveSkin() && !citizen.getSkinUsername().isEmpty()) {
+        if (citizen.isUseLiveSkin() && !citizen.getSkinUsername().isEmpty()
+                && !CitizenData.isGeneratedSkinUsername(citizen.getSkinUsername())) {
             updateCitizenSkin(citizen, true);
             return citizen.getCachedSkin();
         } else {
@@ -2546,6 +2552,17 @@ public class CitizensManager {
 
         PlayerSkin cachedSkin = citizen.getCachedSkin();
         String skinUsername = citizen.getSkinUsername().trim();
+
+        if (CitizenData.isGeneratedSkinUsername(skinUsername)) {
+            citizen.setUseLiveSkin(false);
+            if (cachedSkin != null) {
+                if (save) {
+                    saveCitizen(citizen);
+                }
+                refreshSpawnedCitizenAppearance(citizen);
+            }
+            return;
+        }
 
         if (!skinUsername.isEmpty() && (cachedSkin == null || citizen.isUseLiveSkin())) {
             SkinUtilities.getSkin(skinUsername).thenAccept(skin -> {
@@ -4115,6 +4132,77 @@ public class CitizensManager {
     }
 
     @Nonnull
+    private static String normalizeGroupName(@Nullable String groupName) {
+        if (groupName == null) {
+            return "";
+        }
+
+        String normalized = groupName.trim().replace('\\', '/');
+        normalized = normalized.replaceAll("/+", "/");
+        while (normalized.startsWith("/")) {
+            normalized = normalized.substring(1);
+        }
+        while (normalized.endsWith("/")) {
+            normalized = normalized.substring(0, normalized.length() - 1);
+        }
+        return normalized.trim();
+    }
+
+    private void addGroupHierarchy(@Nullable String groupName) {
+        String normalized = normalizeGroupName(groupName);
+        if (normalized.isEmpty()) {
+            return;
+        }
+
+        StringBuilder current = new StringBuilder();
+        for (String part : normalized.split("/")) {
+            if (part.isBlank()) {
+                continue;
+            }
+            if (!current.isEmpty()) {
+                current.append('/');
+            }
+            current.append(part.trim());
+            groups.add(current.toString());
+        }
+    }
+
+    @Nonnull
+    private Set<String> collectActiveGroupHierarchy() {
+        Set<String> activeGroups = new HashSet<>();
+        for (CitizenData citizen : citizens.values()) {
+            String groupName = normalizeGroupName(citizen.getGroup());
+            if (groupName.isEmpty()) {
+                continue;
+            }
+
+            StringBuilder current = new StringBuilder();
+            for (String part : groupName.split("/")) {
+                if (part.isBlank()) {
+                    continue;
+                }
+                if (!current.isEmpty()) {
+                    current.append('/');
+                }
+                current.append(part.trim());
+                activeGroups.add(current.toString());
+            }
+        }
+        return activeGroups;
+    }
+
+    private void cleanupUnusedGroups() {
+        Set<String> activeGroups = collectActiveGroupHierarchy();
+        if (groups.equals(activeGroups)) {
+            return;
+        }
+
+        groups.clear();
+        groups.addAll(activeGroups);
+        saveGroups();
+    }
+
+    @Nonnull
     public List<String> getAllGroups() {
         List<String> groupList = new ArrayList<>(groups);
         Collections.sort(groupList);
@@ -4122,18 +4210,21 @@ public class CitizensManager {
     }
 
     public void createGroup(@Nonnull String groupName) {
-        if (!groupName.isEmpty()) {
-            groups.add(groupName);
+        String normalized = normalizeGroupName(groupName);
+        if (!normalized.isEmpty()) {
+            addGroupHierarchy(normalized);
             saveGroups();
         }
     }
 
     public void deleteGroup(@Nonnull String groupName) {
-        groups.remove(groupName);
+        String normalized = normalizeGroupName(groupName);
+        groups.removeIf(group -> group.equals(normalized) || group.startsWith(normalized + "/"));
 
         // Remove group from all citizens that have it
         for (CitizenData citizen : citizens.values()) {
-            if (groupName.equals(citizen.getGroup())) {
+            String citizenGroup = normalizeGroupName(citizen.getGroup());
+            if (citizenGroup.equals(normalized) || citizenGroup.startsWith(normalized + "/")) {
                 citizen.setGroup("");
                 saveCitizen(citizen);
             }
@@ -4143,8 +4234,8 @@ public class CitizensManager {
     }
 
     public boolean renameGroup(@Nonnull String oldGroupName, @Nonnull String newGroupName) {
-        String oldTrimmed = oldGroupName.trim();
-        String newTrimmed = newGroupName.trim();
+        String oldTrimmed = normalizeGroupName(oldGroupName);
+        String newTrimmed = normalizeGroupName(newGroupName);
         if (oldTrimmed.isEmpty() || newTrimmed.isEmpty()) {
             return false;
         }
@@ -4152,29 +4243,61 @@ public class CitizensManager {
             return false;
         }
 
-        groups.remove(oldTrimmed);
-        groups.add(newTrimmed);
-
         for (CitizenData citizen : citizens.values()) {
-            if (oldTrimmed.equals(citizen.getGroup())) {
+            String citizenGroup = normalizeGroupName(citizen.getGroup());
+            if (oldTrimmed.equals(citizenGroup)) {
                 citizen.setGroup(newTrimmed);
+                saveCitizen(citizen);
+            } else if (citizenGroup.startsWith(oldTrimmed + "/")) {
+                citizen.setGroup(newTrimmed + citizenGroup.substring(oldTrimmed.length()));
                 saveCitizen(citizen);
             }
         }
 
+        cleanupUnusedGroups();
+        addGroupHierarchy(newTrimmed);
         saveGroups();
         return true;
     }
 
+    public boolean moveGroup(@Nonnull String groupName, @Nullable String newParentGroup) {
+        String normalizedGroup = normalizeGroupName(groupName);
+        if (normalizedGroup.isEmpty() || !groups.contains(normalizedGroup)) {
+            return false;
+        }
+
+        String normalizedParent = normalizeGroupName(newParentGroup);
+        if (!normalizedParent.isEmpty()) {
+            if (!groups.contains(normalizedParent)
+                    || normalizedParent.equals(normalizedGroup)
+                    || normalizedParent.startsWith(normalizedGroup + "/")) {
+                return false;
+            }
+        }
+
+        String leafName = normalizedGroup;
+        int slash = normalizedGroup.lastIndexOf('/');
+        if (slash >= 0) {
+            leafName = normalizedGroup.substring(slash + 1);
+        }
+
+        String newGroupName = normalizedParent.isEmpty() ? leafName : normalizedParent + "/" + leafName;
+        if (newGroupName.equals(normalizedGroup)) {
+            return true;
+        }
+
+        return renameGroup(normalizedGroup, newGroupName);
+    }
+
     public boolean groupExists(@Nonnull String groupName) {
-        return groups.contains(groupName);
+        return groups.contains(normalizeGroupName(groupName));
     }
 
     @Nonnull
     public List<CitizenData> getCitizensByGroup(@Nullable String groupName) {
-        String targetGroup = groupName != null ? groupName : "";
+        String targetGroup = normalizeGroupName(groupName);
         return citizens.values().stream()
-                .filter(c -> targetGroup.equals(c.getGroup()))
+                .filter(c -> targetGroup.equals(normalizeGroupName(c.getGroup())))
                 .collect(Collectors.toList());
     }
 

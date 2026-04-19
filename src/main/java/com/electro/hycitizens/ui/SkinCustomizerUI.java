@@ -493,11 +493,28 @@ public class SkinCustomizerUI {
 
     private static String escapeHtml(String text) {
         if (text == null) return "";
-        return text
-                .replace("&", "&amp;")
-                .replace("<", "&lt;")
-                .replace(">", "&gt;")
-                .replace("\"", "&quot;");
+        StringBuilder escaped = new StringBuilder(text.length());
+        for (int i = 0; i < text.length(); i++) {
+            char c = text.charAt(i);
+            switch (c) {
+                case '&' -> escaped.append("&amp;");
+                case '<' -> escaped.append("&lt;");
+                case '>' -> escaped.append("&gt;");
+                case '"' -> escaped.append("&quot;");
+                case '\'' -> escaped.append("&#39;");
+                case '\r' -> {
+                }
+                case '\n' -> escaped.append("&#10;");
+                default -> {
+                    if (c < 32 || c > 126) {
+                        escaped.append("&#").append((int) c).append(';');
+                    } else {
+                        escaped.append(c);
+                    }
+                }
+            }
+        }
+        return escaped.toString();
     }
 
     private String getStyles() {
