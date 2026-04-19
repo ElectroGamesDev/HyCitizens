@@ -21,6 +21,7 @@ import com.hypixel.hytale.server.core.entity.entities.Player;
 import com.hypixel.hytale.server.core.inventory.ItemStack;
 import com.hypixel.hytale.server.core.modules.entity.component.TransformComponent;
 import com.hypixel.hytale.server.core.modules.entity.teleport.Teleport;
+import com.hypixel.hytale.server.core.modules.time.WorldTimeResource;
 import com.hypixel.hytale.server.core.universe.PlayerRef;
 import com.hypixel.hytale.server.core.universe.Universe;
 import com.hypixel.hytale.server.core.universe.world.World;
@@ -30,6 +31,7 @@ import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
 import java.awt.*;
 import java.nio.charset.StandardCharsets;
+import java.time.LocalDateTime;
 import java.util.*;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
@@ -284,6 +286,71 @@ public class CitizensUI {
         return String.format(Locale.ROOT, "%02d:%02d", hour, minute);
     }
 
+    private String formatScheduleTimeRange(@Nonnull ScheduleEntry entry) {
+        if (Math.abs(entry.getStartTime24() - entry.getEndTime24()) < 0.0001) {
+            return "All day";
+        }
+        return formatTime24(entry.getStartTime24()) + " - " + formatTime24(entry.getEndTime24());
+    }
+
+    @Nullable
+    private Double getScheduleWorldTime24(@Nonnull CitizenData citizen) {
+        World world = Universe.get().getWorld(citizen.getWorldUUID());
+        if (world == null) {
+            return null;
+        }
+
+        WorldTimeResource timeResource = world.getEntityStore().getStore().getResource(WorldTimeResource.getResourceType());
+        if (timeResource == null) {
+            return null;
+        }
+
+        LocalDateTime gameDateTime = timeResource.getGameDateTime();
+        return gameDateTime.getHour() + (gameDateTime.getMinute() / 60.0);
+    }
+
+    @Nonnull
+    private String formatScheduleWorldTime(@Nullable Double time24) {
+        return time24 == null ? "Unknown" : formatTime24(time24);
+    }
+
+    @Nonnull
+    private String describeScheduleNextEntry(@Nonnull ScheduleConfig scheduleConfig, @Nullable Double time24) {
+        if (!scheduleConfig.isEnabled()) {
+            return "Enable the schedule to run entries.";
+        }
+        if (scheduleConfig.getEntries().isEmpty()) {
+            return "Add a schedule entry to start using the schedule.";
+        }
+        if (time24 == null) {
+            return "World time is unavailable, so entries cannot be selected yet.";
+        }
+
+        Optional<ScheduleEntry> activeEntry = scheduleConfig.getEntries().stream()
+                .filter(ScheduleEntry::isEnabled)
+                .filter(entry -> entry.isActiveAt(time24))
+                .sorted(Comparator.comparingInt(ScheduleEntry::getPriority).reversed())
+                .findFirst();
+        if (activeEntry.isPresent()) {
+            return "Active now: " + activeEntry.get().getName() + " (" + formatScheduleTimeRange(activeEntry.get()) + ")";
+        }
+
+        return scheduleConfig.getEntries().stream()
+                .filter(ScheduleEntry::isEnabled)
+                .min(Comparator.comparingDouble((ScheduleEntry entry) -> hoursUntil(entry.getStartTime24(), time24))
+                        .thenComparing(Comparator.comparingInt(ScheduleEntry::getPriority).reversed()))
+                .map(entry -> "Next: " + entry.getName() + " at " + formatTime24(entry.getStartTime24()))
+                .orElse("All entries are disabled.");
+    }
+
+    private double hoursUntil(double startTime24, double currentTime24) {
+        double delta = startTime24 - currentTime24;
+        if (delta < 0.0) {
+            delta += 24.0;
+        }
+        return delta;
+    }
+
     private String describeScheduleActivity(@Nonnull ScheduleEntry entry) {
         return switch (entry.getActivityType()) {
             case IDLE -> "Idle";
@@ -306,7 +373,25 @@ public class CitizensUI {
     }
 
     @Nonnull
-    private String generateScheduleStatusText(@Nonnull CitizenData citizen) {
+    private String generateScheduleStatusText(@Nonnull CitizenData citizen,
+                                              @Nonnull ScheduleConfig scheduleConfig,
+                                              @Nullable Double time24) {
+        if (!scheduleConfig.isEnabled()) {
+            return "Schedule is disabled. Enable it to let entries control movement.";
+        }
+        if (scheduleConfig.getEntries().isEmpty()) {
+            return "Schedule is enabled, but there are no entries yet.";
+        }
+        if (time24 == null) {
+            return "Schedule is enabled, but world time is unavailable.";
+        }
+        boolean hasActiveEntry = scheduleConfig.getEntries().stream()
+                .filter(ScheduleEntry::isEnabled)
+                .anyMatch(entry -> entry.isActiveAt(time24));
+        if (!hasActiveEntry && citizen.getCurrentScheduleRuntimeState() == ScheduleRuntimeState.INACTIVE) {
+            return "No entry matches the current Hytale time. The citizen is using fallback/base behavior.";
+        }
+
         String statusText = citizen.getCurrentScheduleStatusText();
         if (statusText == null || statusText.isBlank()) {
             return "Inactive";
@@ -8468,6 +8553,7 @@ public class CitizensUI {
             citizen.setScheduleConfig(new ScheduleConfig());
         }
         final ScheduleConfig scheduleConfig = citizen.getScheduleConfig();
+        Double scheduleTime24 = getScheduleWorldTime24(citizen);
 
         Map<String, String> locationNames = new HashMap<>();
         for (ScheduleLocation location : scheduleConfig.getLocations()) {
@@ -8485,7 +8571,7 @@ public class CitizensUI {
 
             locationsHtml.append("""
                                     <div class="list-item">
-                                        <div style="flex-weight: 1;">
+                                        <div style="layout: top; flex-weight: 1;">
                                             <div>
                                                 <p style="font-size: 14; font-weight: bold;">%s%s</p>
                                             </div>
@@ -8496,13 +8582,13 @@ public class CitizensUI {
                                                 <p style="font-size: 12; color: #888888;">%s</p>
                                             </div>
                                         </div>
-                                        <button id="schedule-default-location-%d" class="secondary-button" style="anchor-width: 120;">%s</button>
+                                        <button id="schedule-default-location-%d" class="secondary-button" style="anchor-width: 145;">%s</button>
                                         <div class="spacer-h-xs"></div>
-                                        <button id="schedule-update-location-%d" class="secondary-button" style="anchor-width: 120;">Update Pos</button>
+                                        <button id="schedule-update-location-%d" class="secondary-button" style="anchor-width: 180;">Update Position</button>
                                         <div class="spacer-h-xs"></div>
-                                        <button id="schedule-rename-location-%d" class="secondary-button" style="anchor-width: 100;">Rename</button>
+                                        <button id="schedule-rename-location-%d" class="secondary-button" style="anchor-width: 120;">Rename</button>
                                         <div class="spacer-h-xs"></div>
-                                        <button id="schedule-delete-location-%d" class="secondary-button" style="anchor-width: 100;">Delete</button>
+                                        <button id="schedule-delete-location-%d" class="secondary-button" style="anchor-width: 120;">Delete</button>
                                     </div>
                                     <div class="spacer-xs"></div>
                                     """.formatted(
@@ -8523,7 +8609,7 @@ public class CitizensUI {
         for (int i = 0; i < entries.size(); i++) {
             ScheduleEntry entry = entries.get(i);
             String locationName = locationNames.getOrDefault(entry.getLocationId(), "No location");
-            String timeLabel = formatTime24(entry.getStartTime24()) + " - " + formatTime24(entry.getEndTime24());
+            String timeLabel = formatScheduleTimeRange(entry);
             String activityLabel = describeScheduleActivity(entry);
             if (entry.getActivityType() == ScheduleActivityType.FOLLOW_CITIZEN && !entry.getFollowCitizenId().isEmpty()) {
                 CitizenData followTarget = plugin.getCitizensManager().getCitizen(entry.getFollowCitizenId());
@@ -8535,7 +8621,7 @@ public class CitizensUI {
 
             entriesHtml.append("""
                                     <div class="list-item">
-                                        <div style="flex-weight: 1;">
+                                        <div style="layout: top; flex-weight: 1;">
                                             <div>
                                                 <p style="font-size: 14; font-weight: bold;">%s%s</p>
                                             </div>
@@ -8548,15 +8634,15 @@ public class CitizensUI {
                                         </div>
                                         <button id="schedule-edit-entry-%d" class="secondary-button" style="anchor-width: 90;">Edit</button>
                                         <div class="spacer-h-xs"></div>
-                                        <button id="schedule-duplicate-entry-%d" class="secondary-button" style="anchor-width: 100;">Duplicate</button>
+                                        <button id="schedule-duplicate-entry-%d" class="secondary-button" style="anchor-width: 135;">Duplicate</button>
                                         <div class="spacer-h-xs"></div>
-                                        <button id="schedule-toggle-entry-%d" class="secondary-button" style="anchor-width: 95;">%s</button>
+                                        <button id="schedule-toggle-entry-%d" class="secondary-button" style="anchor-width: 120;">%s</button>
                                         <div class="spacer-h-xs"></div>
-                                        <button id="schedule-move-up-entry-%d" class="secondary-button" style="anchor-width: 60;">Up</button>
+                                        <button id="schedule-move-up-entry-%d" class="secondary-button" style="anchor-width: 90;">Up</button>
                                         <div class="spacer-h-xs"></div>
-                                        <button id="schedule-move-down-entry-%d" class="secondary-button" style="anchor-width: 70;">Down</button>
+                                        <button id="schedule-move-down-entry-%d" class="secondary-button" style="anchor-width: 100;">Down</button>
                                         <div class="spacer-h-xs"></div>
-                                        <button id="schedule-delete-entry-%d" class="secondary-button" style="anchor-width: 90;">Delete</button>
+                                        <button id="schedule-delete-entry-%d" class="secondary-button" style="anchor-width: 110;">Delete</button>
                                     </div>
                                     <div class="spacer-xs"></div>
                                     """.formatted(
@@ -8583,16 +8669,16 @@ public class CitizensUI {
                 .setVariable("scheduleEnabled", scheduleConfig.isEnabled())
                 .setVariable("runtimeState", citizen.getCurrentScheduleRuntimeState().name())
                 .setVariable("currentEntryName", escapeHtml(currentEntryName))
-                .setVariable("statusText", escapeHtml(generateScheduleStatusText(citizen)))
+                .setVariable("scheduleTimeText", escapeHtml(formatScheduleWorldTime(scheduleTime24)))
+                .setVariable("statusText", escapeHtml(generateScheduleStatusText(citizen, scheduleConfig, scheduleTime24)))
+                .setVariable("nextEntryText", escapeHtml(describeScheduleNextEntry(scheduleConfig, scheduleTime24)))
                 .setVariable("fallbackModeText", escapeHtml(describeScheduleFallbackMode(scheduleConfig.getFallbackMode())))
-                .setVariable("locationsHtml", locationsHtml.toString())
-                .setVariable("entriesHtml", entriesHtml.toString())
                 .setVariable("hasLocations", !locations.isEmpty())
                 .setVariable("hasEntries", !entries.isEmpty());
 
         String html = template.process(getSharedStyles() + """
                 <div class="page-overlay">
-                    <div class="main-container decorated-container" style="anchor-width: 980; anchor-height: 1040;">
+                    <div class="main-container decorated-container" style="anchor-width: 1180; anchor-height: 1040;">
 
                         <div class="header container-title">
                             <div class="header-content">
@@ -8609,9 +8695,12 @@ public class CitizensUI {
                                 <div class="stats-grid" style="layout: left;">
                                     {{@statCard:value={{$runtimeState}},label=State}}
                                     {{@statCard:value={{$currentEntryName}},label=Current Entry}}
+                                    {{@statCard:value={{$scheduleTimeText}},label=Hytale Time}}
                                 </div>
                                 <div class="spacer-xs"></div>
                                 {{@infoBox:text={{$statusText}}}}
+                                <div class="spacer-xs"></div>
+                                {{@infoBox:text={{$nextEntryText}}}}
                             </div>
 
                             <div class="spacer-sm"></div>
@@ -8649,13 +8738,13 @@ public class CitizensUI {
                             <div class="section">
                                 {{@sectionHeader:title=Locations,description=Named places this citizen can travel to during the day}}
                                 {{#if hasLocations}}
-                                {{{$locationsHtml}}}
+                                <!--SCHEDULE_LOCATIONS-->
                                 {{else}}
                                 <p style="color: #8b949e; font-size: 12; text-align: center;">No schedule locations yet. Add one from your current position.</p>
                                 <div class="spacer-xs"></div>
                                 {{/if}}
                                 <div style="layout: center;">
-                                    <button id="schedule-add-location" class="secondary-button" style="anchor-width: 240;">Add Location At My Position</button>
+                                    <button id="schedule-add-location" class="secondary-button" style="anchor-width: 340;">Add Location At My Position</button>
                                 </div>
                             </div>
 
@@ -8664,7 +8753,7 @@ public class CitizensUI {
                             <div class="section">
                                 {{@sectionHeader:title=Entries,description=Time blocks that define where the citizen goes and what it does there}}
                                 {{#if hasEntries}}
-                                {{{$entriesHtml}}}
+                                <!--SCHEDULE_ENTRIES-->
                                 {{else}}
                                 <p style="color: #8b949e; font-size: 12; text-align: center;">No schedule entries yet. Create one to start using the system.</p>
                                 <div class="spacer-xs"></div>
@@ -8680,7 +8769,9 @@ public class CitizensUI {
                         </div>
                     </div>
                 </div>
-                """);
+                """)
+                .replace("<!--SCHEDULE_LOCATIONS-->", locationsHtml.toString())
+                .replace("<!--SCHEDULE_ENTRIES-->", entriesHtml.toString());
 
         PageBuilder page = PageBuilder.pageForPlayer(playerRef)
                 .withLifetime(CustomPageLifetime.CanDismiss)
@@ -8789,8 +8880,8 @@ public class CitizensUI {
             ScheduleEntry newEntry = new ScheduleEntry();
             newEntry.setId(UUID.randomUUID().toString());
             newEntry.setName("New Entry");
-            newEntry.setStartTime24(8.0);
-            newEntry.setEndTime24(12.0);
+            newEntry.setStartTime24(0.0);
+            newEntry.setEndTime24(0.0);
             if (!scheduleConfig.getLocations().isEmpty()) {
                 newEntry.setLocationId(scheduleConfig.getLocations().get(0).getId());
             }
@@ -8987,7 +9078,7 @@ public class CitizensUI {
                         </div>
 
                         <div class="body" data-hyui-scrollbar-style='"Common.ui" "DefaultScrollbarStyle"' style="layout-mode: TopScrolling;">
-                            <p class="page-description">Schedule entries use Hytale's 0-24 hour clock. Overnight ranges such as 22.0 to 6.0 are supported.</p>
+                            <p class="page-description">Schedule entries use Hytale's 0-24 hour clock. Set start and end to the same time for an all-day entry.</p>
                             <div class="spacer-sm"></div>
 
                             <div class="section">
@@ -9380,7 +9471,7 @@ public class CitizensUI {
             PatrolPath path = allPaths.get(i);
             pathsHtml.append("""
                                     <div class="list-item">
-                                        <div style="flex-weight: 1;">
+                                        <div style="layout: top; flex-weight: 1;">
                                             <div>
                                                 <p style="font-size: 14; font-weight: bold;">%s</p>
                                             </div>

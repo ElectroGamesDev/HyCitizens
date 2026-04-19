@@ -47,6 +47,7 @@ public class ScheduleManager {
 
     private final CitizensManager citizensManager;
     private final Map<String, ScheduleSession> sessions = new ConcurrentHashMap<>();
+    private final java.util.Set<String> queuedTicks = ConcurrentHashMap.newKeySet();
     private ThreadedScheduler task = new ThreadedScheduler();
 
     public ScheduleManager(@Nonnull CitizensManager citizensManager) {
@@ -57,26 +58,24 @@ public class ScheduleManager {
     private void start() {
         task.scheduleAtFixedRate("citizens-schedule-manager", () -> {
             for (CitizenData citizen : citizensManager.getAllCitizens()) {
-                try {
-                    tickCitizen(citizen);
-                } catch (Exception e) {
-                    getLogger().atWarning().log("Schedule tick error for citizen " + citizen.getId() + ": " + e.getMessage());
-                }
+                scheduleCitizenTick(citizen);
             }
         }, TICK_INTERVAL_MS, TICK_INTERVAL_MS, TimeUnit.MILLISECONDS);
     }
 
     public void shutdown() {
         task.stop();
+        queuedTicks.clear();
         sessions.clear();
     }
 
     public void clearCitizen(@Nonnull String citizenId) {
+        queuedTicks.remove(citizenId);
         sessions.remove(citizenId);
     }
 
     public void refreshCitizen(@Nonnull CitizenData citizen) {
-        tickCitizen(citizen);
+        scheduleCitizenTick(citizen);
     }
 
     @Nonnull
@@ -88,14 +87,61 @@ public class ScheduleManager {
         return citizensManager.getRoleGenerator().getRoleName(citizen);
     }
 
+    private void scheduleCitizenTick(@Nonnull CitizenData citizen) {
+        if (!queuedTicks.add(citizen.getId())) {
+            return;
+        }
+
+        World world = Universe.get().getWorld(citizen.getWorldUUID());
+        if (world == null) {
+            queuedTicks.remove(citizen.getId());
+            markScheduleUnavailable(citizen, "Schedule blocked: world missing");
+            return;
+        }
+
+        try {
+            world.execute(() -> {
+                try {
+                    tickCitizen(citizen);
+                } catch (Exception e) {
+                    getLogger().atWarning().log("Schedule tick error for citizen " + citizen.getId() + ": " + e.getMessage());
+                } finally {
+                    queuedTicks.remove(citizen.getId());
+                }
+            });
+        } catch (Exception e) {
+            queuedTicks.remove(citizen.getId());
+            getLogger().atWarning().log("Failed to queue schedule tick for citizen " + citizen.getId() + ": " + e.getMessage());
+        }
+    }
+
+    private void markScheduleUnavailable(@Nonnull CitizenData citizen, @Nonnull String message) {
+        ScheduleSession session = sessions.computeIfAbsent(citizen.getId(), ignored -> new ScheduleSession());
+        session.activeEntryId = "";
+        session.currentLocationId = "";
+        session.currentRoleName = "";
+        session.state = ScheduleRuntimeState.BLOCKED;
+        session.arrivalAnimationPlayed = false;
+        resetFollowSession(session);
+
+        citizen.setCurrentScheduleEntryId("");
+        citizen.setCurrentScheduleRoleName("");
+        citizen.setCurrentScheduleRuntimeState(ScheduleRuntimeState.BLOCKED);
+        citizen.setCurrentScheduleStatusText(message);
+    }
+
     private void tickCitizen(@Nonnull CitizenData citizen) {
         if (citizen.isAwaitingRespawn() || citizensManager.isCitizenSpawning(citizen.getId())) {
             return;
         }
 
         ScheduleConfig scheduleConfig = citizen.getScheduleConfig();
-        if (!scheduleConfig.isEnabled() || scheduleConfig.getEntries().isEmpty()) {
-            applyBaseBehavior(citizen, "Schedule inactive");
+        if (!scheduleConfig.isEnabled()) {
+            applyBaseBehavior(citizen, "Schedule disabled");
+            return;
+        }
+        if (scheduleConfig.getEntries().isEmpty()) {
+            applyBaseBehavior(citizen, "Schedule enabled, but no entries are configured");
             return;
         }
 
@@ -116,7 +162,7 @@ public class ScheduleManager {
 
         ScheduleEntry activeEntry = selectActiveEntry(scheduleConfig.getEntries(), time24);
         if (activeEntry == null) {
-            applyFallback(citizen, scheduleConfig);
+            applyFallback(citizen, scheduleConfig, time24);
             return;
         }
 
@@ -173,8 +219,8 @@ public class ScheduleManager {
         String travelRoleName = roleGenerator.getScheduleTravelRoleName(citizen, entry);
         updateCitizenLeashPoint(citizen, location.getPosition());
         citizensManager.stopCitizenPatrol(citizen.getId());
+        switchCitizenRole(citizen, travelRoleName, true, location.getPosition());
         citizensManager.moveCitizenToPosition(citizen.getId(), location.getPosition());
-        switchCitizenRole(citizen, travelRoleName, true);
 
         session.activeEntryId = entry.getId();
         session.currentLocationId = location.getId();
@@ -192,10 +238,11 @@ public class ScheduleManager {
                                 @Nonnull ScheduleLocation location, @Nonnull ScheduleSession session) {
         String travelRoleName = citizensManager.getRoleGenerator().getScheduleTravelRoleName(citizen, entry);
         if (!travelRoleName.equals(session.currentRoleName)) {
-            switchCitizenRole(citizen, travelRoleName, true);
+            switchCitizenRole(citizen, travelRoleName, true, location.getPosition());
             session.currentRoleName = travelRoleName;
             citizen.setCurrentScheduleRoleName(travelRoleName);
         }
+        citizensManager.updateCitizenMoveTarget(citizen.getId(), location.getPosition());
         citizen.setCurrentScheduleRuntimeState(ScheduleRuntimeState.TRAVELING);
         citizen.setCurrentScheduleStatusText("Traveling to " + location.getName() + " for " + entry.getName());
     }
@@ -285,11 +332,11 @@ public class ScheduleManager {
         citizen.setCurrentScheduleStatusText(describeActiveState(citizen, entry, location));
     }
 
-    private void applyFallback(@Nonnull CitizenData citizen, @Nonnull ScheduleConfig scheduleConfig) {
+    private void applyFallback(@Nonnull CitizenData citizen, @Nonnull ScheduleConfig scheduleConfig, double time24) {
         if (scheduleConfig.getFallbackMode() == ScheduleFallbackMode.HOLD_LAST_SCHEDULE_STATE) {
             ScheduleSession session = sessions.computeIfAbsent(citizen.getId(), ignored -> new ScheduleSession());
             citizen.setCurrentScheduleRuntimeState(session.state);
-            citizen.setCurrentScheduleStatusText("Holding last schedule state");
+            citizen.setCurrentScheduleStatusText("No active entry at " + formatTime24(time24) + ". Holding last schedule state");
             return;
         }
 
@@ -302,7 +349,7 @@ public class ScheduleManager {
             }
         }
 
-        applyBaseBehavior(citizen, "Using base behavior");
+        applyBaseBehavior(citizen, "No active entry at " + formatTime24(time24) + ". Using base behavior");
     }
 
     private void applyDefaultLocationFallback(@Nonnull CitizenData citizen, @Nonnull ScheduleLocation location) {
@@ -314,7 +361,7 @@ public class ScheduleManager {
             boolean roleChanged = !travelRoleName.equals(session.currentRoleName);
             boolean locationChanged = !location.getId().equals(session.currentLocationId);
             if (roleChanged) {
-                switchCitizenRole(citizen, travelRoleName, true);
+                switchCitizenRole(citizen, travelRoleName, true, location.getPosition());
             }
             updateCitizenLeashPoint(citizen, location.getPosition());
             citizensManager.stopCitizenPatrol(citizen.getId());
@@ -588,6 +635,18 @@ public class ScheduleManager {
         return dx * dx + dy * dy + dz * dz <= radiusSq;
     }
 
+    @Nonnull
+    private String formatTime24(double time24) {
+        double clamped = Math.max(0.0, Math.min(24.0, time24));
+        int hour = (int) clamped;
+        int minute = (int) Math.round((clamped - hour) * 60.0);
+        if (minute == 60) {
+            minute = 0;
+            hour = Math.min(24, hour + 1);
+        }
+        return String.format(java.util.Locale.ROOT, "%02d:%02d", hour, minute);
+    }
+
     private void updateCitizenLeashPoint(@Nonnull CitizenData citizen, @Nonnull Vector3d position) {
         Ref<EntityStore> npcRef = citizen.getNpcRef();
         if (npcRef == null || !npcRef.isValid()) {
@@ -626,6 +685,11 @@ public class ScheduleManager {
     }
 
     private void switchCitizenRole(@Nonnull CitizenData citizen, @Nonnull String roleName, boolean ensureMoveTarget) {
+        switchCitizenRole(citizen, roleName, ensureMoveTarget, null);
+    }
+
+    private void switchCitizenRole(@Nonnull CitizenData citizen, @Nonnull String roleName,
+                                   boolean ensureMoveTarget, @Nullable Vector3d moveTargetPosition) {
         if (roleName.isEmpty()) {
             return;
         }
@@ -654,7 +718,9 @@ public class ScheduleManager {
             if (ensureMoveTarget && citizensManager.getPatrolManager() != null) {
                 TransformComponent transformComponent =
                         npcRef.getStore().getComponent(npcRef, TransformComponent.getComponentType());
-                Vector3d markerPosition = transformComponent != null
+                Vector3d markerPosition = moveTargetPosition != null
+                        ? moveTargetPosition
+                        : transformComponent != null
                         ? transformComponent.getPosition()
                         : (citizen.getCurrentPosition() != null ? citizen.getCurrentPosition() : citizen.getPosition());
                 citizensManager.getPatrolManager().ensureMoveTargetNow(citizen, world, markerPosition);
