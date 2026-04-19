@@ -1,7 +1,7 @@
 package com.electro.hycitizens.managers;
 
 import com.electro.hycitizens.HyCitizensPlugin;
-import com.electro.hycitizens.components.CitizenBindingComponent;
+import com.electro.hycitizens.components.CitizenNpcIdentityComponent;
 import com.electro.hycitizens.components.CitizenNametagComponent;
 import com.electro.hycitizens.events.CitizenAddedEvent;
 import com.electro.hycitizens.events.CitizenAddedListener;
@@ -132,10 +132,12 @@ public class CitizensManager {
     private final Map<UUID, Map<UUID, PendingHologramRemoval>> pendingHologramRemovals = new ConcurrentHashMap<>();
     private final Map<UUID, Map<UUID, PendingNpcRemoval>> pendingNpcRemovals = new ConcurrentHashMap<>();
     private final Set<String> pendingNpcRemovalTasks = ConcurrentHashMap.newKeySet();
+    private final Set<UUID> pendingImmediateNpcDespawns = ConcurrentHashMap.newKeySet();
     private final Map<String, FollowSession> standaloneFollowSessions = new ConcurrentHashMap<>();
     private final Map<String, WanderRecoveryState> wanderRecoveryStates = new ConcurrentHashMap<>();
     private final Map<String, ScheduledFuture<?>> pendingNpcSpawnRetryTasks = new ConcurrentHashMap<>();
     private final Map<String, ScheduledFuture<?>> pendingRespawnTasks = new ConcurrentHashMap<>();
+    private final Map<String, ScheduledFuture<?>> pendingTemporaryNametagRecoveryTasks = new ConcurrentHashMap<>();
     private PatrolManager patrolManager;
     private ScheduleManager scheduleManager;
     private ThreadedScheduler followCitizenTask = new ThreadedScheduler();
@@ -432,28 +434,61 @@ public class CitizensManager {
                             continue;
                         }
 
-                        bindCitizenEntityBinding(citizen, resolvedRef);
-
-                        if (!refreshSpawnedCitizenAppearance(citizen) && citizen.isPlayerModel()) {
-                            updateCitizenSkin(citizen, true);
-                        }
-
-                        setInteractionComponent(resolvedRef.getStore(), resolvedRef, citizen);
-                        applyNpcNameplateComponent(resolvedRef.getStore(), resolvedRef, citizen);
-                        updateCitizenNPCItems(citizen);
-                        triggerAnimations(citizen, "DEFAULT");
-
-                        if (scheduleManager != null) {
-                            scheduleManager.refreshCitizen(citizen);
-                        }
-
-                        if (patrolManager != null && shouldAutoStartPluginPatrol(citizen) && !patrolManager.isPatrolling(citizen.getId())) {
-                            patrolManager.startPatrol(citizen.getId(), citizen.getPathConfig().getPluginPatrolPath());
-                        }
+                        restoreResolvedCitizenState(citizen, resolvedRef, true);
                     }
                 });
             }
         }, 1, 1, TimeUnit.SECONDS);
+    }
+
+    private void cancelPendingTemporaryNametagRecovery(@Nonnull String citizenId) {
+        ScheduledFuture<?> pendingTask = pendingTemporaryNametagRecoveryTasks.remove(citizenId);
+        if (pendingTask != null) {
+            pendingTask.cancel(false);
+        }
+    }
+
+    private void scheduleTemporaryNametagRecovery(@Nonnull CitizenData citizen, boolean save) {
+        if (!shouldUseSeparateNametagEntities(citizen)) {
+            cancelPendingTemporaryNametagRecovery(citizen.getId());
+            return;
+        }
+
+        // TEMPORARY WORKAROUND: persisted multiline nametag entities can survive reload in a bad state
+        // where they never become visible again. After rebinding the NPC, force one fresh rebuild so
+        // chunk-load recovery follows the same teardown/recreate path as a manual citizen respawn.
+        cancelPendingTemporaryNametagRecovery(citizen.getId());
+        String citizenId = citizen.getId();
+        ScheduledFuture<?> recoveryTask = HytaleServer.SCHEDULED_EXECUTOR.schedule(() -> {
+            pendingTemporaryNametagRecoveryTasks.remove(citizenId);
+
+            World world = Universe.get().getWorld(citizen.getWorldUUID());
+            if (world == null) {
+                return;
+            }
+
+            world.execute(() -> {
+                Ref<EntityStore> npcRef = citizen.getNpcRef();
+                if (npcRef == null || !npcRef.isValid()) {
+                    return;
+                }
+
+                if (!shouldUseSeparateNametagEntities(citizen)) {
+                    updateSpawnedCitizenHologram(citizen, save);
+                    return;
+                }
+
+                TransformComponent transformComponent =
+                        npcRef.getStore().getComponent(npcRef, TransformComponent.getComponentType());
+                if (transformComponent != null && transformComponent.getPosition() != null) {
+                    citizen.setCurrentPosition(new Vector3d(transformComponent.getPosition()));
+                }
+
+                despawnCitizenHologram(citizen);
+                spawnCitizenHologram(citizen, save);
+            });
+        }, 800, TimeUnit.MILLISECONDS);
+        pendingTemporaryNametagRecoveryTasks.put(citizenId, recoveryTask);
     }
 
     private boolean isCitizenChunkLoaded(@Nonnull World world, @Nonnull CitizenData citizen) {
@@ -484,16 +519,20 @@ public class CitizensManager {
                 return;
             }
 
-            CitizenBindingComponent bindingComponent = archetypeChunk.getComponent(index, CitizenBindingComponent.getComponentType());
-            if (bindingComponent != null && citizen.getId().equals(bindingComponent.getCitizenId())) {
+            UUIDComponent uuidComponent = archetypeChunk.getComponent(index, UUIDComponent.getComponentType());
+            if (uuidComponent != null && pendingImmediateNpcDespawns.contains(uuidComponent.getUuid())) {
+                return;
+            }
+
+            CitizenNpcIdentityComponent identityComponent =
+                    archetypeChunk.getComponent(index, CitizenNpcIdentityComponent.getComponentType());
+            if (identityComponent != null && citizen.getId().equals(identityComponent.getCitizenId())) {
                 Ref<EntityStore> ref = archetypeChunk.getReferenceTo(index);
                 if (ref != null && ref.isValid()) {
                     foundRef[0] = ref;
                 }
                 return;
             }
-
-            UUIDComponent uuidComponent = archetypeChunk.getComponent(index, UUIDComponent.getComponentType());
             if (citizen.getSpawnedUUID() != null && uuidComponent != null
                     && citizen.getSpawnedUUID().equals(uuidComponent.getUuid())) {
                 Ref<EntityStore> ref = archetypeChunk.getReferenceTo(index);
@@ -654,6 +693,12 @@ public class CitizensManager {
             }
         }
         pendingNpcSpawnRetryTasks.clear();
+        for (ScheduledFuture<?> pendingRecovery : pendingTemporaryNametagRecoveryTasks.values()) {
+            if (pendingRecovery != null && !pendingRecovery.isCancelled()) {
+                pendingRecovery.cancel(false);
+            }
+        }
+        pendingTemporaryNametagRecoveryTasks.clear();
 
         for (CitizenData citizen : citizens.values()) {
             cancelAllPendingLookResets(citizen);
@@ -1794,11 +1839,55 @@ public class CitizensManager {
         return citizensCurrentlySpawning.contains(citizenId);
     }
 
-    public void bindCitizenEntityBinding(@Nonnull CitizenData citizen, @Nonnull Ref<EntityStore> ref) {
+    public void restoreResolvedCitizenState(@Nonnull CitizenData citizen,
+                                            @Nonnull Ref<EntityStore> resolvedRef,
+                                            boolean save) {
+        bindCitizenEntityRef(citizen, resolvedRef);
+
+        TransformComponent transformComponent =
+                resolvedRef.getStore().getComponent(resolvedRef, TransformComponent.getComponentType());
+        if (transformComponent != null && transformComponent.getPosition() != null) {
+            citizen.setCurrentPosition(new Vector3d(transformComponent.getPosition()));
+        }
+
+        World world = Universe.get().getWorld(citizen.getWorldUUID());
+        if (world != null && patrolManager != null) {
+            Vector3d moveTargetPosition = citizen.getCurrentPosition() != null
+                    ? citizen.getCurrentPosition()
+                    : citizen.getPosition();
+            patrolManager.ensureMoveTargetNow(citizen, world, moveTargetPosition);
+        }
+
+        if (!refreshSpawnedCitizenAppearance(citizen) && citizen.isPlayerModel()) {
+            updateCitizenSkin(citizen, save);
+        }
+
+        setInteractionComponent(resolvedRef.getStore(), resolvedRef, citizen);
+        applyNpcNameplateComponent(resolvedRef.getStore(), resolvedRef, citizen);
+        if (shouldUseSeparateNametagEntities(citizen)) {
+            despawnCitizenHologram(citizen);
+            scheduleTemporaryNametagRecovery(citizen, save);
+        } else {
+            cancelPendingTemporaryNametagRecovery(citizen.getId());
+            updateSpawnedCitizenHologram(citizen, save);
+        }
+        updateCitizenNPCItems(citizen);
+        triggerAnimations(citizen, "DEFAULT");
+
+        if (scheduleManager != null) {
+            scheduleManager.refreshCitizen(citizen);
+        }
+
+        if (patrolManager != null && shouldAutoStartPluginPatrol(citizen) && !patrolManager.isPatrolling(citizen.getId())) {
+            patrolManager.startPatrol(citizen.getId(), citizen.getPathConfig().getPluginPatrolPath());
+        }
+    }
+
+    public void bindCitizenEntityRef(@Nonnull CitizenData citizen, @Nonnull Ref<EntityStore> ref) {
         citizen.setNpcRef(ref);
         cancelPendingNpcSpawnRetry(citizen.getId());
-
-        ref.getStore().putComponent(ref, CitizenBindingComponent.getComponentType(), new CitizenBindingComponent(citizen.getId()));
+        ref.getStore().putComponent(ref, CitizenNpcIdentityComponent.getComponentType(),
+                new CitizenNpcIdentityComponent(citizen.getId()));
 
         UUIDComponent uuidComponent = ref.getStore().getComponent(ref, UUIDComponent.getComponentType());
         if (uuidComponent != null) {
@@ -1806,9 +1895,10 @@ public class CitizensManager {
         }
     }
 
-    public void clearCitizenEntityBinding(@Nonnull CitizenData citizen) {
+    public void clearCitizenEntityRef(@Nonnull CitizenData citizen) {
         citizen.setSpawnedUUID(null);
         citizen.setNpcRef(null);
+        cancelPendingTemporaryNametagRecovery(citizen.getId());
     }
 
     private void cancelPendingRespawn(@Nonnull String citizenId) {
@@ -1876,10 +1966,10 @@ public class CitizensManager {
         List<CitizenData> snapshot = citizens.values().stream()
                 .filter(citizen -> {
                     String citizenGroup = normalizeRespawnGroupPath(citizen.getGroup());
-                    return citizenGroup.equals(normalizedGroup)
-                            || (includeChildren && citizenGroup.startsWith(normalizedGroup + "/"));
+                    return citizenGroup.equals(normalizedGroup) || (includeChildren && citizenGroup.startsWith(normalizedGroup + "/"));
                 })
                 .collect(Collectors.toList());
+
         return respawnCitizenSnapshot(snapshot, save);
     }
 
@@ -2099,7 +2189,21 @@ public class CitizensManager {
         Ref<EntityStore> existingRef = findExistingCitizenNpcRef(world.getEntityStore().getStore(), citizen);
         if (existingRef != null && existingRef.isValid()) {
             citizensCurrentlySpawning.remove(citizen.getId());
-            schedulePendingNpcSpawnRetry(citizen, save, attempt);
+            world.execute(() -> {
+                if (existingRef == null || !existingRef.isValid()) {
+                    schedulePendingNpcSpawnRetry(citizen, save, attempt);
+                    return;
+                }
+
+                UUIDComponent uuidComponent =
+                        existingRef.getStore().getComponent(existingRef, UUIDComponent.getComponentType());
+                if (uuidComponent != null && pendingImmediateNpcDespawns.contains(uuidComponent.getUuid())) {
+                    schedulePendingNpcSpawnRetry(citizen, save, attempt);
+                    return;
+                }
+
+                restoreResolvedCitizenState(citizen, existingRef, save);
+            });
             return;
         }
 
@@ -2155,7 +2259,7 @@ public class CitizensManager {
             }
         }
 
-        bindCitizenEntityBinding(citizen, ref);
+        bindCitizenEntityRef(citizen, ref);
         if (patrolManager != null) {
             patrolManager.ensureMoveTargetNow(citizen, world, citizen.getPosition());
         }
@@ -2268,7 +2372,7 @@ public class CitizensManager {
                     ));
         }
 
-        bindCitizenEntityBinding(citizen, ref);
+        bindCitizenEntityRef(citizen, ref);
         if (patrolManager != null) {
             patrolManager.ensureMoveTargetNow(citizen, world, citizen.getPosition());
         }
@@ -2401,16 +2505,35 @@ public class CitizensManager {
     }
 
     @Nonnull
+    private Vector3d getNametagAnchorPosition(@Nonnull CitizenData citizen) {
+        Ref<EntityStore> npcRef = citizen.getNpcRef();
+        if (npcRef != null && npcRef.isValid()) {
+            TransformComponent transformComponent = npcRef.getStore().getComponent(npcRef, TransformComponent.getComponentType());
+            if (transformComponent != null && transformComponent.getPosition() != null) {
+                return new Vector3d(transformComponent.getPosition());
+            }
+        }
+
+        Vector3d currentPosition = citizen.getCurrentPosition();
+        if (currentPosition != null) {
+            return new Vector3d(currentPosition);
+        }
+
+        return new Vector3d(citizen.getPosition());
+    }
+
+    @Nonnull
     private Vector3d getBaseHologramPosition(@Nonnull CitizenData citizen) {
         double scale = Math.max(0.01, citizen.getScale() + citizen.getNametagOffset());
         double baseOffset = 1.65;
         double extraPerScale = 0.40;
         double yOffset = baseOffset * scale + (scale - 1.0) * extraPerScale;
+        Vector3d anchorPosition = getNametagAnchorPosition(citizen);
 
         return new Vector3d(
-                citizen.getPosition().x,
-                citizen.getPosition().y + yOffset,
-                citizen.getPosition().z
+                anchorPosition.x,
+                anchorPosition.y + yOffset,
+                anchorPosition.z
         );
     }
 
@@ -2921,33 +3044,48 @@ public class CitizensManager {
             if (!queued[0]) {
                 queued[0] = true;
                 world.execute(() -> {
-                    long chunkIndex = ChunkUtil.indexChunkFromBlock(citizen.getPosition().x, citizen.getPosition().z);
+                    Vector3d anchorPosition = getNametagAnchorPosition(citizen);
+                    long chunkIndex = ChunkUtil.indexChunkFromBlock(anchorPosition.x, anchorPosition.z);
                     WorldChunk chunk = world.getChunkIfLoaded(chunkIndex);
                     if (chunk == null) {
                         queued[0] = false;
                         return;
                     }
 
-                    spawned[0] = true;
-                    futureRef[0].cancel(false);
-
                     Vector3d baseHologramPos = getBaseHologramPosition(citizen);
 
                     Vector3f hologramRot = new Vector3f(citizen.getRotation());
+                    List<Holder<EntityStore>> holders = new ArrayList<>(desiredEntityCount);
+                    List<UUID> spawnedUuids = new ArrayList<>(desiredEntityCount);
 
                     for (int i = 0; i < desiredEntityCount; ++i) {
                         String lineText = i < nametagLines.size() ? nametagLines.get(i) : null;
                         Vector3d linePos = getHologramLinePosition(baseHologramPos, desiredEntityCount, i);
                         Holder<EntityStore> holder = createNametagEntityHolder(world, citizen, i, linePos, hologramRot, lineText);
                         if (holder == null) {
-                            continue;
+                            queued[0] = false;
+                            return;
                         }
 
                         UUIDComponent hologramUUIDComponent = holder.getComponent(UUIDComponent.getComponentType());
                         if (hologramUUIDComponent != null) {
-                            citizen.getHologramLineUuids().add(hologramUUIDComponent.getUuid());
+                            spawnedUuids.add(hologramUUIDComponent.getUuid());
                         }
-                        world.getEntityStore().getStore().addEntity(holder, AddReason.SPAWN);
+                        holders.add(holder);
+                    }
+
+                    if (holders.size() != desiredEntityCount || spawnedUuids.size() != desiredEntityCount) {
+                        queued[0] = false;
+                        return;
+                    }
+
+                    spawned[0] = true;
+                    futureRef[0].cancel(false);
+                    citizen.getHologramLineUuids().clear();
+
+                    for (int i = 0; i < holders.size(); i++) {
+                        citizen.getHologramLineUuids().add(spawnedUuids.get(i));
+                        world.getEntityStore().getStore().addEntity(holders.get(i), AddReason.SPAWN);
                     }
 
                     if (save) {
@@ -2982,28 +3120,46 @@ public class CitizensManager {
         Ref<EntityStore> npcRef = citizen.getNpcRef();
         if (npcRef != null && npcRef.isValid()) {
             despawned = true;
+            UUIDComponent uuidComponent = npcRef.getStore().getComponent(npcRef, UUIDComponent.getComponentType());
+            UUID pendingUuid = uuidComponent != null ? uuidComponent.getUuid() : null;
+            if (pendingUuid != null) {
+                pendingImmediateNpcDespawns.add(pendingUuid);
+            }
             world.execute(() -> {
-                world.getEntityStore().getStore().removeEntity(npcRef, RemoveReason.REMOVE);
+                try {
+                    if (npcRef.isValid()) {
+                        world.getEntityStore().getStore().removeEntity(npcRef, RemoveReason.REMOVE);
+                    }
+                } finally {
+                    if (pendingUuid != null) {
+                        pendingImmediateNpcDespawns.remove(pendingUuid);
+                    }
+                }
             });
 
-            clearCitizenEntityBinding(citizen);
+            clearCitizenEntityRef(citizen);
         }
 
         if (!despawned) {
             UUID npcUUID = citizen.getSpawnedUUID();
             if (npcUUID != null) {
                 if (world.getEntityRef(npcUUID) != null) {
+                    pendingImmediateNpcDespawns.add(npcUUID);
                     world.execute(() -> {
-                        Ref<EntityStore> npc = world.getEntityRef(npcUUID);
-                        if (npc == null) {
-                            return;
-                        }
+                        try {
+                            Ref<EntityStore> npc = world.getEntityRef(npcUUID);
+                            if (npc == null || !npc.isValid()) {
+                                return;
+                            }
 
-                        world.getEntityStore().getStore().removeEntity(npc, RemoveReason.REMOVE);
+                            world.getEntityStore().getStore().removeEntity(npc, RemoveReason.REMOVE);
+                        } finally {
+                            pendingImmediateNpcDespawns.remove(npcUUID);
+                        }
                     });
                 }
 
-                clearCitizenEntityBinding(citizen);
+                clearCitizenEntityRef(citizen);
             }
         }
     }
@@ -3024,13 +3180,13 @@ public class CitizensManager {
             if (npcUUID != null) {
                 queuePendingNpcRemoval(citizen, npcUUID);
             }
-            clearCitizenEntityBinding(citizen);
+            clearCitizenEntityRef(citizen);
             return;
         }
 
         if (npcRef != null && npcRef.isValid()) {
             world.execute(() -> world.getEntityStore().getStore().removeEntity(npcRef, RemoveReason.REMOVE));
-            clearCitizenEntityBinding(citizen);
+            clearCitizenEntityRef(citizen);
             return;
         }
 
@@ -3042,7 +3198,7 @@ public class CitizensManager {
                 queuePendingNpcRemoval(citizen, npcUUID);
             }
 
-            clearCitizenEntityBinding(citizen);
+            clearCitizenEntityRef(citizen);
         }
     }
 
@@ -3294,15 +3450,14 @@ public class CitizensManager {
             return;
         }
 
-        List<UUID> existingUuids = citizen.getHologramLineUuids();
-        int existingCount = existingUuids.size();
         int newCount = desiredEntityCount;
 
         Vector3d baseHologramPos = getBaseHologramPosition(citizen);
         Vector3f hologramRot = new Vector3f(citizen.getRotation());
 
         world.execute(() -> {
-            long chunkIndex = ChunkUtil.indexChunkFromBlock(citizen.getPosition().x, citizen.getPosition().z);
+            Vector3d anchorPosition = getNametagAnchorPosition(citizen);
+            long chunkIndex = ChunkUtil.indexChunkFromBlock(anchorPosition.x, anchorPosition.z);
             WorldChunk chunk = world.getChunkIfLoaded(chunkIndex);
             if (chunk == null) {
                 // Chunk not loaded, just save it
@@ -3311,6 +3466,16 @@ public class CitizensManager {
                 }
                 return;
             }
+
+            if (!rebindCitizenHologramEntities(world, citizen)
+                    && !hasAllSpawnedCitizenHologramEntities(world, citizen)) {
+                despawnCitizenHologram(citizen);
+                spawnCitizenHologram(citizen, save);
+                return;
+            }
+
+            List<UUID> existingUuids = citizen.getHologramLineUuids();
+            int existingCount = existingUuids.size();
 
             if (!existingUuids.isEmpty()) {
                 Ref<EntityStore> firstEntity = world.getEntityRef(existingUuids.get(0));
@@ -3353,20 +3518,35 @@ public class CitizensManager {
 
             // Spawn new lines if needed
             if (newCount > existingCount) {
+                List<Holder<EntityStore>> holdersToAdd = new ArrayList<>(newCount - existingCount);
+                List<UUID> newUuids = new ArrayList<>(newCount - existingCount);
                 for (int i = existingCount; i < newCount; i++) {
                     String lineText = i < nonEmptyLines.size() ? nonEmptyLines.get(i) : null;
 
                     Vector3d linePos = getHologramLinePosition(baseHologramPos, newCount, i);
                     Holder<EntityStore> holder = createNametagEntityHolder(world, citizen, i, linePos, hologramRot, lineText);
                     if (holder == null) {
-                        continue;
+                        despawnCitizenHologram(citizen);
+                        spawnCitizenHologram(citizen, save);
+                        return;
                     }
 
                     UUIDComponent hologramUUIDComponent = holder.getComponent(UUIDComponent.getComponentType());
                     if (hologramUUIDComponent != null) {
-                        existingUuids.add(hologramUUIDComponent.getUuid());
+                        newUuids.add(hologramUUIDComponent.getUuid());
                     }
-                    world.getEntityStore().getStore().addEntity(holder, AddReason.SPAWN);
+                    holdersToAdd.add(holder);
+                }
+
+                if (holdersToAdd.size() != newCount - existingCount || newUuids.size() != newCount - existingCount) {
+                    despawnCitizenHologram(citizen);
+                    spawnCitizenHologram(citizen, save);
+                    return;
+                }
+
+                for (int i = 0; i < holdersToAdd.size(); i++) {
+                    existingUuids.add(newUuids.get(i));
+                    world.getEntityStore().getStore().addEntity(holdersToAdd.get(i), AddReason.SPAWN);
                 }
             }
 
@@ -3429,6 +3609,38 @@ public class CitizensManager {
         return true;
     }
 
+    private boolean isExpectedCitizenHologramEntity(@Nonnull World world,
+                                                    @Nonnull CitizenData citizen,
+                                                    @Nonnull UUID uuid,
+                                                    int lineIndex) {
+        Ref<EntityStore> ref = world.getEntityRef(uuid);
+        if (ref == null || !ref.isValid()) {
+            return false;
+        }
+
+        CitizenNametagComponent nametagComponent =
+                ref.getStore().getComponent(ref, CitizenNametagComponent.getComponentType());
+        if (nametagComponent == null
+                || !citizen.getId().equals(nametagComponent.getCitizenId())
+                || nametagComponent.getLineIndex() != lineIndex) {
+            return false;
+        }
+
+        TransformComponent transformComponent =
+                ref.getStore().getComponent(ref, TransformComponent.getComponentType());
+        if (transformComponent == null) {
+            return false;
+        }
+
+        if (shouldUseModelNametag(citizen)) {
+            return ref.getStore().getComponent(ref, PropComponent.getComponentType()) != null
+                    && ref.getStore().getComponent(ref, ModelComponent.getComponentType()) != null;
+        }
+
+        return ref.getStore().getComponent(ref, ProjectileComponent.getComponentType()) != null
+                && ref.getStore().getComponent(ref, Nameplate.getComponentType()) != null;
+    }
+
     public boolean migrateLegacyCitizenHologramEntities(@Nonnull World world, @Nonnull CitizenData citizen) {
         List<UUID> storedUuids = citizen.getHologramLineUuids();
         if (storedUuids == null || storedUuids.isEmpty()) {
@@ -3480,8 +3692,7 @@ public class CitizensManager {
                 return false;
             }
 
-            Ref<EntityStore> ref = world.getEntityRef(uuid);
-            if (ref == null || !ref.isValid()) {
+            if (!isExpectedCitizenHologramEntity(world, citizen, uuid, i)) {
                 return false;
             }
         }

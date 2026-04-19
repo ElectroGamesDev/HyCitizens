@@ -131,7 +131,11 @@ public class PlayerInteractionHandler implements PacketWatcher {
             // If the ref became stale after chunk/entity reattachment, repair it from the interacted entity.
             if (!isDirectRefMatch) {
                 //getLogger().atInfo().log("Recovered citizen NPC ref from UUID match for " + citizen.getId());
-                HyCitizensPlugin.get().getCitizensManager().bindCitizenEntityBinding(citizen, entity);
+                HyCitizensPlugin.get().getCitizensManager().bindCitizenEntityRef(citizen, entity);
+                World world = Universe.get().getWorld(citizen.getWorldUUID());
+                if (world != null) {
+                    world.execute(() -> HyCitizensPlugin.get().getCitizensManager().restoreResolvedCitizenState(citizen, entity, false));
+                }
             }
 
             if (type != InteractionType.Use

@@ -2,7 +2,7 @@ package com.electro.hycitizens;
 
 import com.electro.hycitizens.actions.BuilderActionInteract;
 import com.electro.hycitizens.commands.CitizensCommand;
-import com.electro.hycitizens.components.CitizenBindingComponent;
+import com.electro.hycitizens.components.CitizenNpcIdentityComponent;
 import com.electro.hycitizens.components.CitizenNametagComponent;
 import com.electro.hycitizens.interactions.PlayerInteractionHandler;
 import com.electro.hycitizens.listeners.*;
@@ -44,7 +44,7 @@ public class HyCitizensPlugin extends JavaPlugin {
     private CitizensUI citizensUI;
     private SkinCustomizerUI skinCustomizerUI;
     private Path generatedRolesPath;
-    private ComponentType<EntityStore, CitizenBindingComponent> citizenBindingComponent;
+    private ComponentType<EntityStore, CitizenNpcIdentityComponent> citizenNpcIdentityComponent;
     private ComponentType<EntityStore, CitizenNametagComponent> citizenNametagComponent;
     private CitizenMapMarkerProvider citizenMapMarkerProvider;
 
@@ -68,10 +68,12 @@ public class HyCitizensPlugin extends JavaPlugin {
         this.generatedRolesPath = Paths.get("mods", "HyCitizensRoles", "Server", "NPC", "Roles");
 
         RoleAssetPackManager.setup();
-        this.citizenBindingComponent = this.getEntityStoreRegistry().registerComponent(
-                CitizenBindingComponent.class,
-                "HCBINDING",
-                CitizenBindingComponent.CODEC
+        // TEMPORARY WORKAROUND: some persisted NPCs reload with generic roles, so we persist the owning
+        // citizen id directly on the NPC entity to make rebind and nametag recovery deterministic.
+        this.citizenNpcIdentityComponent = this.getEntityStoreRegistry().registerComponent(
+                CitizenNpcIdentityComponent.class,
+                "HCNPCID",
+                CitizenNpcIdentityComponent.CODEC
         );
         this.citizenNametagComponent = this.getEntityStoreRegistry().registerComponent(
                 CitizenNametagComponent.class,
@@ -205,8 +207,8 @@ public class HyCitizensPlugin extends JavaPlugin {
     }
 
     @Nonnull
-    public ComponentType<EntityStore, CitizenBindingComponent> getCitizenBindingComponent() {
-        return citizenBindingComponent;
+    public ComponentType<EntityStore, CitizenNpcIdentityComponent> getCitizenNpcIdentityComponent() {
+        return citizenNpcIdentityComponent;
     }
 
     @Nonnull

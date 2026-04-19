@@ -18,8 +18,7 @@ import java.util.concurrent.ConcurrentHashMap;
 public class DuplicateNametagPrevention extends RefSystem<EntityStore> {
 
     @Nonnull
-    private final ComponentType<EntityStore, CitizenNametagComponent> nametagComponentType =
-            CitizenNametagComponent.getComponentType();
+    private final ComponentType<EntityStore, CitizenNametagComponent> nametagComponentType = CitizenNametagComponent.getComponentType();
 
     @Nonnull
     private final Query<EntityStore> query = this.nametagComponentType;
@@ -28,10 +27,7 @@ public class DuplicateNametagPrevention extends RefSystem<EntityStore> {
     private final Map<String, Ref<EntityStore>> activeNametags = new ConcurrentHashMap<>();
 
     @Override
-    public void onEntityAdded(@Nonnull Ref<EntityStore> ref,
-                              @Nonnull AddReason reason,
-                              @Nonnull Store<EntityStore> store,
-                              @Nonnull CommandBuffer<EntityStore> commandBuffer) {
+    public void onEntityAdded(@Nonnull Ref<EntityStore> ref, @Nonnull AddReason reason, @Nonnull Store<EntityStore> store, @Nonnull CommandBuffer<EntityStore> commandBuffer) {
         CitizenNametagComponent nametagComponent = store.getComponent(ref, this.nametagComponentType);
         if (nametagComponent == null || nametagComponent.getCitizenId().isEmpty() || nametagComponent.getLineIndex() < 0) {
             return;

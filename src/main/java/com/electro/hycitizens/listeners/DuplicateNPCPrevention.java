@@ -1,9 +1,8 @@
 package com.electro.hycitizens.listeners;
 
-import com.electro.hycitizens.components.CitizenBindingComponent;
+import com.electro.hycitizens.components.CitizenNpcIdentityComponent;
 import com.hypixel.hytale.component.AddReason;
 import com.hypixel.hytale.component.CommandBuffer;
-import com.hypixel.hytale.component.ComponentType;
 import com.hypixel.hytale.component.Ref;
 import com.hypixel.hytale.component.RemoveReason;
 import com.hypixel.hytale.component.Store;
@@ -13,10 +12,10 @@ import com.hypixel.hytale.server.core.universe.world.storage.EntityStore;
 import com.hypixel.hytale.server.npc.entities.NPCEntity;
 import com.hypixel.hytale.server.npc.role.Role;
 
-import java.util.HashMap;
 import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.concurrent.ConcurrentHashMap;
 import javax.annotation.Nonnull;
 
 public class DuplicateNPCPrevention extends RefSystem<EntityStore> {
@@ -26,19 +25,14 @@ public class DuplicateNPCPrevention extends RefSystem<EntityStore> {
     );
 
     @Nonnull
-    private final ComponentType<EntityStore, NPCEntity> npcComponentType = NPCEntity.getComponentType();
-    @Nonnull
-    private final ComponentType<EntityStore, CitizenBindingComponent> citizenBindingComponentType = CitizenBindingComponent.getComponentType();
+    private final Query<EntityStore> query = NPCEntity.getComponentType();
 
     @Nonnull
-    private final Query<EntityStore> query = this.npcComponentType;
-
-    @Nonnull
-    private final Map<String, Ref<EntityStore>> activeCitizenRoles = new HashMap<>();
+    private final Map<String, Ref<EntityStore>> activeCitizenRoles = new ConcurrentHashMap<>();
 
     @Override
     public void onEntityAdded(@Nonnull Ref<EntityStore> ref, @Nonnull AddReason reason, @Nonnull Store<EntityStore> store, @Nonnull CommandBuffer<EntityStore> commandBuffer) {
-        NPCEntity npc = store.getComponent(ref, this.npcComponentType);
+        NPCEntity npc = store.getComponent(ref, NPCEntity.getComponentType());
         if (npc == null) {
             return;
         }
@@ -65,7 +59,7 @@ public class DuplicateNPCPrevention extends RefSystem<EntityStore> {
 
     @Override
     public void onEntityRemove(@Nonnull Ref<EntityStore> ref, @Nonnull RemoveReason reason, @Nonnull Store<EntityStore> store, @Nonnull CommandBuffer<EntityStore> commandBuffer) {
-        NPCEntity npc = store.getComponent(ref, this.npcComponentType);
+        NPCEntity npc = store.getComponent(ref, NPCEntity.getComponentType());
         if (npc == null) {
             return;
         }
@@ -97,12 +91,13 @@ public class DuplicateNPCPrevention extends RefSystem<EntityStore> {
         return roleName.startsWith("HyCitizens_") || roleName.startsWith("Citizens_");
     }
 
-    private String extractCitizenKey(@Nonnull Ref<EntityStore> ref,
-                                     @Nonnull Store<EntityStore> store,
-                                     String roleName) {
-        CitizenBindingComponent bindingComponent = store.getComponent(ref, this.citizenBindingComponentType);
-        if (bindingComponent != null && !bindingComponent.getCitizenId().isBlank()) {
-            return bindingComponent.getCitizenId();
+    private String extractCitizenKey(Ref<EntityStore> ref, Store<EntityStore> store, String roleName) {
+        if (ref != null && store != null) {
+            CitizenNpcIdentityComponent identityComponent =
+                    store.getComponent(ref, CitizenNpcIdentityComponent.getComponentType());
+            if (identityComponent != null && !identityComponent.getCitizenId().isBlank()) {
+                return identityComponent.getCitizenId();
+            }
         }
 
         if (roleName == null || !isTrackedCitizenRole(roleName)) {

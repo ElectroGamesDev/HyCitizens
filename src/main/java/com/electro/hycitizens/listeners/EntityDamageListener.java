@@ -165,7 +165,7 @@ public class EntityDamageListener extends DamageEventSystem {
 //                    plugin.getCitizensManager().getPatrolManager().onCitizenDespawned(targetCitizen.getId());
 //                }
 //                plugin.getCitizensManager().despawnCitizenHologram(targetCitizen);
-//                plugin.getCitizensManager().clearCitizenEntityBinding(targetCitizen);
+//                plugin.getCitizensManager().clearCitizenEntityRef(targetCitizen);
 //
 //                // Mark for respawn
 //                if (targetCitizen.isRespawnOnDeath()) {

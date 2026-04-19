@@ -120,7 +120,7 @@ public class EntityDeathListener extends DeathSystems.OnDeathSystem {
             plugin.getCitizensManager().getPatrolManager().onCitizenDespawned(foundCitizen.getId());
         }
         plugin.getCitizensManager().despawnCitizenHologram(foundCitizen);
-        plugin.getCitizensManager().clearCitizenEntityBinding(foundCitizen);
+        plugin.getCitizensManager().clearCitizenEntityRef(foundCitizen);
 
         // Mark for respawn
         if (foundCitizen.isRespawnOnDeath()) {
