@@ -34,6 +34,10 @@ Each Citizen supports:
 *   Walking around
 *   Passive, Neutral, and Aggressive behavior
 *   Persistent saving/loading (Citizens stay after restarts)
+*   Markers on map
+*   Can use models for nametags
+*   Daily schedules/routines
+*   Can follow other citizens around
 *   Trading with players (This requires the [NPC Trading](https://www.curseforge.com/hytale/mods/npc-trading) plugin)
 *   AND MORE!
 
