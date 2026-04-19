@@ -14,9 +14,15 @@ import com.hypixel.hytale.server.npc.role.Role;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import javax.annotation.Nonnull;
 
 public class DuplicateNPCPrevention extends RefSystem<EntityStore> {
+
+    private static final Pattern UUID_PATTERN = Pattern.compile(
+            "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
+    );
 
     @Nonnull
     private final ComponentType<EntityStore, NPCEntity> npcComponentType = NPCEntity.getComponentType();
@@ -28,12 +34,7 @@ public class DuplicateNPCPrevention extends RefSystem<EntityStore> {
     private final Map<String, Ref<EntityStore>> activeCitizenRoles = new HashMap<>();
 
     @Override
-    public void onEntityAdded(
-            @Nonnull Ref<EntityStore> ref,
-            @Nonnull AddReason reason,
-            @Nonnull Store<EntityStore> store,
-            @Nonnull CommandBuffer<EntityStore> commandBuffer
-    ) {
+    public void onEntityAdded(@Nonnull Ref<EntityStore> ref, @Nonnull AddReason reason, @Nonnull Store<EntityStore> store, @Nonnull CommandBuffer<EntityStore> commandBuffer) {
         NPCEntity npc = store.getComponent(ref, this.npcComponentType);
         if (npc == null) {
             return;
@@ -53,22 +54,19 @@ public class DuplicateNPCPrevention extends RefSystem<EntityStore> {
             return;
         }
 
-        Ref<EntityStore> existingRef = this.activeCitizenRoles.get(roleName);
+        String citizenKey = extractCitizenKey(roleName);
+
+        Ref<EntityStore> existingRef = this.activeCitizenRoles.get(citizenKey);
         if (existingRef != null && existingRef.isValid() && !existingRef.equals(ref)) {
             commandBuffer.removeEntity(ref, RemoveReason.REMOVE);
             return;
         }
 
-        this.activeCitizenRoles.put(roleName, ref);
+        this.activeCitizenRoles.put(citizenKey, ref);
     }
 
     @Override
-    public void onEntityRemove(
-            @Nonnull Ref<EntityStore> ref,
-            @Nonnull RemoveReason reason,
-            @Nonnull Store<EntityStore> store,
-            @Nonnull CommandBuffer<EntityStore> commandBuffer
-    ) {
+    public void onEntityRemove(@Nonnull Ref<EntityStore> ref, @Nonnull RemoveReason reason, @Nonnull Store<EntityStore> store, @Nonnull CommandBuffer<EntityStore> commandBuffer) {
         NPCEntity npc = store.getComponent(ref, this.npcComponentType);
         if (npc == null) {
             return;
@@ -88,9 +86,11 @@ public class DuplicateNPCPrevention extends RefSystem<EntityStore> {
             return;
         }
 
-        Ref<EntityStore> existingRef = this.activeCitizenRoles.get(roleName);
+        String citizenKey = extractCitizenKey(roleName);
+
+        Ref<EntityStore> existingRef = this.activeCitizenRoles.get(citizenKey);
         if (existingRef != null && existingRef.equals(ref)) {
-            this.activeCitizenRoles.remove(roleName);
+            this.activeCitizenRoles.remove(citizenKey);
         }
     }
 
@@ -102,5 +102,11 @@ public class DuplicateNPCPrevention extends RefSystem<EntityStore> {
 
     private boolean isTrackedCitizenRole(@Nonnull String roleName) {
         return roleName.startsWith("HyCitizens_") || roleName.startsWith("Citizens_");
+    }
+
+    @Nonnull
+    private String extractCitizenKey(@Nonnull String roleName) {
+        Matcher matcher = UUID_PATTERN.matcher(roleName);
+        return matcher.find() ? matcher.group() : roleName;
     }
 }
