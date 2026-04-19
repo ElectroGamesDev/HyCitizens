@@ -73,7 +73,10 @@ public class EntityDeathListener extends DeathSystems.OnDeathSystem {
 
         // Todo: Should create and switch to a citizen component
 
-        CitizenData foundCitizen = plugin.getCitizensManager().getAllCitizens().stream().filter(citizen -> citizen.getSpawnedUUID() != null && citizen.getSpawnedUUID() == uuidComponent.getUuid()).findFirst().orElse(null);
+        CitizenData foundCitizen = plugin.getCitizensManager().getAllCitizens().stream()
+                .filter(citizen -> citizen.getSpawnedUUID() != null && citizen.getSpawnedUUID().equals(uuidComponent.getUuid()))
+                .findFirst()
+                .orElse(null);
 
         if (foundCitizen == null) {
             return;
@@ -101,16 +104,6 @@ public class EntityDeathListener extends DeathSystems.OnDeathSystem {
             }
         }
 
-        // Fire death event
-        CitizenDeathEvent deathEvent = new CitizenDeathEvent(foundCitizen, attackerPlayerRef);
-        plugin.getCitizensManager().fireCitizenDeathEvent(deathEvent);
-
-//        if (deathEvent.isCancelled()) {
-//            event.setCancelled(true);
-//            event.setAmount(0);
-//            return;
-//        }
-
         // Handle death config (drops, commands, messages)
         DeathConfig dc = foundCitizen.getDeathConfig();
         handleDeathCommands(foundCitizen, dc, attackerPlayerRef);
@@ -131,18 +124,7 @@ public class EntityDeathListener extends DeathSystems.OnDeathSystem {
 
         // Mark for respawn
         if (foundCitizen.isRespawnOnDeath()) {
-            foundCitizen.setAwaitingRespawn(true);
-
-            HytaleServer.SCHEDULED_EXECUTOR.schedule(() -> {
-                World world = Universe.get().getWorld(foundCitizen.getWorldUUID());
-                if (world == null)
-                    return;
-
-                foundCitizen.setAwaitingRespawn(false);
-                world.execute(() -> {
-                    plugin.getCitizensManager().spawnCitizen(foundCitizen, true);
-                });
-            }, (long)(foundCitizen.getRespawnDelaySeconds() * 1000), TimeUnit.MILLISECONDS);
+            plugin.getCitizensManager().scheduleCitizenRespawn(foundCitizen, (long)(foundCitizen.getRespawnDelaySeconds() * 1000));
         }
     }
 

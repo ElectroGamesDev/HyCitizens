@@ -23,7 +23,6 @@ public class ConfigManager {
     private Map<String, Object> config;
     private boolean deferSave = false;
     private boolean dirty = false;
-    private final Object saveLock = new Object();
 
     public ConfigManager(@Nonnull Path pluginDataFolder) {
         this.configFile = pluginDataFolder.resolve("data.json");
@@ -32,12 +31,12 @@ public class ConfigManager {
         loadConfig();
     }
 
-    public void beginBatch() {
+    public synchronized void beginBatch() {
         this.deferSave = true;
         this.dirty = false;
     }
 
-    public void endBatch() {
+    public synchronized void endBatch() {
         this.deferSave = false;
         if (this.dirty) {
             saveConfig();
@@ -45,7 +44,7 @@ public class ConfigManager {
         }
     }
 
-    public void loadConfig() {
+    public synchronized void loadConfig() {
         if (!Files.exists(configFile)) {
             setDefaults();
             saveConfig();
@@ -97,7 +96,7 @@ public class ConfigManager {
     }
 
     @SuppressWarnings("unchecked")
-    private void setNestedValue(@Nonnull Map<String, Object> root, @Nonnull String path, @Nullable Object value) {
+    private synchronized void setNestedValue(@Nonnull Map<String, Object> root, @Nonnull String path, @Nullable Object value) {
         String[] parts = path.split("\\.");
         Map<String, Object> current = root;
 
@@ -122,7 +121,7 @@ public class ConfigManager {
 
     @SuppressWarnings("unchecked")
     @Nullable
-    private Object getNestedValue(@Nonnull String path) {
+    private synchronized Object getNestedValue(@Nonnull String path) {
         String[] parts = path.split("\\.");
         Object current = config;
 
@@ -138,7 +137,7 @@ public class ConfigManager {
     }
 
     @SuppressWarnings("unchecked")
-    private void removeNestedValue(@Nonnull String path) {
+    private synchronized void removeNestedValue(@Nonnull String path) {
         String[] parts = path.split("\\.");
         if (parts.length == 1) {
             config.remove(parts[0]);
@@ -175,30 +174,28 @@ public class ConfigManager {
         }
     }
 
-    public void saveConfig() {
-        synchronized (saveLock) {
-            try {
-                Files.createDirectories(configFile.getParent());
+    public synchronized void saveConfig() {
+        try {
+            Files.createDirectories(configFile.getParent());
 
-                Path tempFile = configFile.getParent().resolve("data.json.tmp");
-                try (Writer writer = Files.newBufferedWriter(tempFile)) {
-                    gson.toJson(config, writer);
-                }
-
-                Files.move(
-                        tempFile,
-                        configFile,
-                        StandardCopyOption.REPLACE_EXISTING,
-                        StandardCopyOption.ATOMIC_MOVE
-                );
-
-            } catch (IOException e) {
-                System.err.println("Failed to save config: " + e.getMessage());
+            Path tempFile = configFile.getParent().resolve("data.json.tmp");
+            try (Writer writer = Files.newBufferedWriter(tempFile)) {
+                gson.toJson(config, writer);
             }
+
+            Files.move(
+                    tempFile,
+                    configFile,
+                    StandardCopyOption.REPLACE_EXISTING,
+                    StandardCopyOption.ATOMIC_MOVE
+            );
+
+        } catch (IOException e) {
+            System.err.println("Failed to save config: " + e.getMessage());
         }
     }
 
-    private void conditionalSave() {
+    private synchronized void conditionalSave() {
         if (deferSave) {
             dirty = true;
         } else {
@@ -207,29 +204,29 @@ public class ConfigManager {
     }
 
     @Nullable
-    public Object get(@Nonnull String path) {
+    public synchronized Object get(@Nonnull String path) {
         return getNestedValue(path);
     }
 
     @Nonnull
-    public Object get(@Nonnull String path, @Nonnull Object defaultValue) {
+    public synchronized Object get(@Nonnull String path, @Nonnull Object defaultValue) {
         Object value = getNestedValue(path);
         return value != null ? value : defaultValue;
     }
 
     @Nullable
-    public String getString(@Nonnull String path) {
+    public synchronized String getString(@Nonnull String path) {
         Object value = get(path);
         return value != null ? value.toString() : null;
     }
 
     @Nonnull
-    public String getString(@Nonnull String path, @Nullable String defaultValue) {
+    public synchronized String getString(@Nonnull String path, @Nullable String defaultValue) {
         String value = getString(path);
         return value != null ? value : defaultValue;
     }
 
-    public int getInt(@Nonnull String path, int defaultValue) {
+    public synchronized int getInt(@Nonnull String path, int defaultValue) {
         Object value = get(path);
         if (value instanceof Number) {
             return ((Number) value).intValue();
@@ -237,7 +234,7 @@ public class ConfigManager {
         return defaultValue;
     }
 
-    public float getFloat(@Nonnull String path, float defaultValue) {
+    public synchronized float getFloat(@Nonnull String path, float defaultValue) {
         Object value = get(path);
         if (value instanceof Number) {
             return ((Number) value).floatValue();
@@ -245,7 +242,7 @@ public class ConfigManager {
         return defaultValue;
     }
 
-    public boolean getBoolean(@Nonnull String path, boolean defaultValue) {
+    public synchronized boolean getBoolean(@Nonnull String path, boolean defaultValue) {
         Object value = get(path);
         if (value instanceof Boolean) {
             return (Boolean) value;
@@ -253,7 +250,7 @@ public class ConfigManager {
         return defaultValue;
     }
 
-    public long getLong(@Nonnull String path, long defaultValue) {
+    public synchronized long getLong(@Nonnull String path, long defaultValue) {
         Object value = get(path);
         if (value instanceof Number) {
             return ((Number) value).longValue();
@@ -261,7 +258,7 @@ public class ConfigManager {
         return defaultValue;
     }
 
-    public double getDouble(@Nonnull String path, double defaultValue) {
+    public synchronized double getDouble(@Nonnull String path, double defaultValue) {
         Object value = get(path);
         if (value instanceof Number) {
             return ((Number) value).doubleValue();
@@ -270,7 +267,7 @@ public class ConfigManager {
     }
 
     @Nullable
-    public Vector3f getVector3f(@Nonnull String path) {
+    public synchronized Vector3f getVector3f(@Nonnull String path) {
         Object value = get(path);
         if (!(value instanceof Map<?, ?> map)) return null;
 
@@ -284,7 +281,7 @@ public class ConfigManager {
         }
     }
 
-    public void setVector3f(@Nonnull String path, @Nullable Vector3f vec) {
+    public synchronized void setVector3f(@Nonnull String path, @Nullable Vector3f vec) {
         if (vec == null) {
             removeNestedValue(path);
             conditionalSave();
@@ -301,7 +298,7 @@ public class ConfigManager {
     }
 
     @Nullable
-    public Vector3d getVector3d(@Nonnull String path) {
+    public synchronized Vector3d getVector3d(@Nonnull String path) {
         Object value = get(path);
         if (!(value instanceof Map<?, ?> map)) return null;
 
@@ -315,7 +312,7 @@ public class ConfigManager {
         }
     }
 
-    public void setVector3d(@Nonnull String path, @Nullable Vector3d vec) {
+    public synchronized void setVector3d(@Nonnull String path, @Nullable Vector3d vec) {
         if (vec == null) {
             removeNestedValue(path);
             conditionalSave();
@@ -332,7 +329,7 @@ public class ConfigManager {
     }
 
     @Nullable
-    public UUID getUUID(@Nonnull String path) {
+    public synchronized UUID getUUID(@Nonnull String path) {
         Object value = get(path);
         if (!(value instanceof String str)) return null;
 
@@ -344,7 +341,7 @@ public class ConfigManager {
     }
 
     @Nullable
-    public List<UUID> getUUIDList(@Nonnull String path) {
+    public synchronized List<UUID> getUUIDList(@Nonnull String path) {
         Object value = get(path);
         if (value == null) return null;
 
@@ -370,7 +367,7 @@ public class ConfigManager {
         return uuids.isEmpty() ? null : uuids;
     }
 
-    public void setUUID(@Nonnull String path, @Nullable UUID uuid) {
+    public synchronized void setUUID(@Nonnull String path, @Nullable UUID uuid) {
         if (uuid == null) {
             removeNestedValue(path);
         } else {
@@ -379,7 +376,7 @@ public class ConfigManager {
         conditionalSave();
     }
 
-    public void setUUIDList(@Nonnull String path, @Nullable List<UUID> uuids) {
+    public synchronized void setUUIDList(@Nonnull String path, @Nullable List<UUID> uuids) {
         if (uuids == null || uuids.isEmpty()) {
             removeNestedValue(path);
         } else {
@@ -400,7 +397,7 @@ public class ConfigManager {
         conditionalSave();
     }
 
-    public void set(@Nonnull String path, @Nullable Object value) {
+    public synchronized void set(@Nonnull String path, @Nullable Object value) {
         if (value == null) {
             removeNestedValue(path);
         } else {
@@ -409,31 +406,31 @@ public class ConfigManager {
         conditionalSave();
     }
 
-    private void setDefaults() {
+    private synchronized void setDefaults() {
         config.clear();
     }
 
-    public void reload() {
+    public synchronized void reload() {
         loadConfig();
     }
 
     @Nonnull
-    public Map<String, Object> getAll() {
+    public synchronized Map<String, Object> getAll() {
         return new LinkedHashMap<>(config);
     }
 
     @SuppressWarnings("unchecked")
     @Nonnull
-    public Set<String> getKeys(@Nonnull String path) {
+    public synchronized Set<String> getKeys(@Nonnull String path) {
         Object value = getNestedValue(path);
         if (value instanceof Map) {
-            return ((Map<String, Object>) value).keySet();
+            return new LinkedHashSet<>(((Map<String, Object>) value).keySet());
         }
         return Collections.emptySet();
     }
 
     @Nullable
-    public PlayerSkin getPlayerSkin(@Nonnull String path) {
+    public synchronized PlayerSkin getPlayerSkin(@Nonnull String path) {
         Object value = get(path);
         if (!(value instanceof Map<?, ?> map)) return null;
 
@@ -465,7 +462,7 @@ public class ConfigManager {
         }
     }
 
-    public void setPlayerSkin(@Nonnull String path, @Nullable PlayerSkin skin) {
+    public synchronized void setPlayerSkin(@Nonnull String path, @Nullable PlayerSkin skin) {
         if (skin == null) {
             removeNestedValue(path);
             conditionalSave();
@@ -499,7 +496,7 @@ public class ConfigManager {
     }
 
     @Nullable
-    public List<String> getStringList(@Nonnull String path) {
+    public synchronized List<String> getStringList(@Nonnull String path) {
         Object value = get(path);
         if (value == null) return null;
 
@@ -516,7 +513,7 @@ public class ConfigManager {
         return strings.isEmpty() ? null : strings;
     }
 
-    public void setStringList(@Nonnull String path, @Nullable List<String> strings) {
+    public synchronized void setStringList(@Nonnull String path, @Nullable List<String> strings) {
         if (strings == null || strings.isEmpty()) {
             removeNestedValue(path);
         } else {

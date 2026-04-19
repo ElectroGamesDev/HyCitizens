@@ -66,6 +66,7 @@ public class EntityDamageListener extends DamageEventSystem {
             Damage.Source source = event.getSource();
             Ref<EntityStore> attackerEntityRef = getAttackerEntityRef(source);
             UUID attackerUuid = getEntityUuid(attackerEntityRef);
+            PlayerRef attackerPlayerRef = getAttackerPlayerRef(attackerEntityRef);
 
             // No longer needed
 //            PlayerRef attackerPlayerRef = null;
@@ -98,32 +99,10 @@ public class EntityDamageListener extends DamageEventSystem {
                     event.setCancelled(true);
                     event.setAmount(0);
                     World world = Universe.get().getWorld(targetCitizen.getWorldUUID());
-                    // Todo: This does not work
-//                if (world != null) {
-//                    // Prevent knockback
-//                    world.execute(() -> {
-//                        store.removeComponentIfExists(targetRef, KnockbackComponent.getComponentType());
-//                    });
-//                }
-                    // Temporary solution to knockback
                     TransformComponent transformComponent = store.getComponent(targetRef, TransformComponent.getComponentType());
                     if (transformComponent != null && world != null) {
                         Vector3d lockedPosition = new Vector3d(transformComponent.getPosition());
-
-                        ScheduledFuture<?> lockTask = HytaleServer.SCHEDULED_EXECUTOR.scheduleAtFixedRate(() -> {
-                            if (!targetRef.isValid()) {
-                                return;
-                            }
-
-                            Vector3d currentPosition = transformComponent.getPosition();
-                            if (!currentPosition.equals(lockedPosition)) {
-                                transformComponent.setPosition(lockedPosition);
-                            }
-                        }, 0, 20, TimeUnit.MILLISECONDS);
-
-                        HytaleServer.SCHEDULED_EXECUTOR.schedule(() -> {
-                            lockTask.cancel(false);
-                        }, 2000, TimeUnit.MILLISECONDS);
+                        scheduleKnockbackLock(world, targetRef, targetCitizen, lockedPosition);
                     }
                 }
                 return;
@@ -131,7 +110,17 @@ public class EntityDamageListener extends DamageEventSystem {
 
             targetCitizen.setLastDamageTakenAt(System.currentTimeMillis());
 
-            // Death is now handled in EntityDeathListener. Although now the event can no longer be canceled by HyCitizens API
+            if (!targetCitizen.isAwaitingRespawn() && isLethalDamage(store, targetRef, event)) {
+                CitizenDeathEvent deathEvent = new CitizenDeathEvent(targetCitizen, attackerPlayerRef);
+                plugin.getCitizensManager().fireCitizenDeathEvent(deathEvent);
+                if (deathEvent.isCancelled()) {
+                    event.setCancelled(true);
+                    event.setAmount(0);
+                    return;
+                }
+            }
+
+            // Death side effects are handled in EntityDeathListener after lethal damage survives the cancellable pre-death hook above.
 
             // Check if the citizen will die from this damage
 //            EntityStatMap statMap = store.getComponent(targetRef, EntityStatsModule.get().getEntityStatMapComponentType());
@@ -224,6 +213,55 @@ public class EntityDamageListener extends DamageEventSystem {
             return null;
         }
         return uuidComponent.getUuid();
+    }
+
+    @Nullable
+    private PlayerRef getAttackerPlayerRef(@Nullable Ref<EntityStore> attackerEntityRef) {
+        if (attackerEntityRef == null || !attackerEntityRef.isValid()) {
+            return null;
+        }
+
+        return attackerEntityRef.getStore().getComponent(attackerEntityRef, PlayerRef.getComponentType());
+    }
+
+    private void scheduleKnockbackLock(@Nonnull World world,
+                                       @Nonnull Ref<EntityStore> targetRef,
+                                       @Nonnull CitizenData targetCitizen,
+                                       @Nonnull Vector3d lockedPosition) {
+        ScheduledFuture<?> lockTask = HytaleServer.SCHEDULED_EXECUTOR.scheduleAtFixedRate(() -> world.execute(() -> {
+            if (!targetRef.isValid()) {
+                return;
+            }
+
+            TransformComponent liveTransform = targetRef.getStore().getComponent(targetRef, TransformComponent.getComponentType());
+            if (liveTransform == null) {
+                return;
+            }
+
+            Vector3d currentPosition = liveTransform.getPosition();
+            if (!currentPosition.equals(lockedPosition)) {
+                liveTransform.setPosition(new Vector3d(lockedPosition));
+                targetCitizen.setCurrentPosition(new Vector3d(lockedPosition));
+            }
+        }), 0, 20, TimeUnit.MILLISECONDS);
+
+        HytaleServer.SCHEDULED_EXECUTOR.schedule(() -> lockTask.cancel(false), 2000, TimeUnit.MILLISECONDS);
+    }
+
+    private boolean isLethalDamage(@Nonnull Store<EntityStore> store,
+                                   @Nonnull Ref<EntityStore> targetRef,
+                                   @Nonnull Damage event) {
+        EntityStatMap statMap = store.getComponent(targetRef, EntityStatsModule.get().getEntityStatMapComponentType());
+        if (statMap == null) {
+            return false;
+        }
+
+        EntityStatValue healthValue = statMap.get(DefaultEntityStatTypes.getHealth());
+        if (healthValue == null) {
+            return false;
+        }
+
+        return (healthValue.get() - event.getAmount()) <= 0;
     }
 
     @Nullable

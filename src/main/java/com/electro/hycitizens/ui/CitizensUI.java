@@ -1489,7 +1489,9 @@ public class CitizensUI {
                             <div class="spacer-h-sm"></div>
                             <button id="get-citizen-stick-btn" class="secondary-button" style="anchor-width: 220; anchor-height: 40;">Get Citizen Stick</button>
                             <div class="spacer-h-sm"></div>
-                            <button id="new-root-group-btn" class="secondary-button" style="anchor-width: 170; anchor-height: 40;">New Group</button>
+                            <button id="respawn-all-btn" class="secondary-button" style="anchor-width: 170; anchor-height: 40;">Respawn All</button>
+                            <div class="spacer-h-sm"></div>
+                            <button id="new-root-group-btn" class="secondary-button" style="anchor-width: 150; anchor-height: 40;">New Group</button>
                         </div>
                         
                         {{#if isViewingGroup}}
@@ -1500,6 +1502,8 @@ public class CitizensUI {
                             <button id="new-child-group-btn" class="secondary-button" style="anchor-width: 170;">New Child Group</button>
                             <div class="spacer-h-sm"></div>
                             <button id="move-current-group-btn" class="secondary-button" style="anchor-width: 150;">Move Group</button>
+                            <div class="spacer-h-sm"></div>
+                            <button id="respawn-current-group-btn" class="secondary-button" style="anchor-width: 160;">Respawn Group</button>
                             <div style="flex-weight: 1; layout: center;">
                                 <p style="font-size: 18px; font-weight: bold; color: #FFFFFF;">Group: {{$viewingGroup}}</p>
                             </div>
@@ -2581,6 +2585,12 @@ public class CitizensUI {
             page.addEventListener("new-root-group-btn", CustomUIEventBindingType.Activating, event ->
                     openCreateGroupGUI(playerRef, store, ""));
 
+            page.addEventListener("respawn-all-btn", CustomUIEventBindingType.Activating, event -> {
+                int count = plugin.getCitizensManager().respawnAllCitizens(true);
+                playerRef.sendMessage(Message.raw("Respawned " + count + " citizens.").color(Color.GREEN));
+                openCitizensGUI(playerRef, store, currentTab, searchQuery, viewingGroup);
+            });
+
             page.addEventListener("get-citizen-stick-btn", CustomUIEventBindingType.Activating, event -> {
                 Ref<EntityStore> ref = playerRef.getReference();
                 if (ref == null || !ref.isValid()) {
@@ -2627,6 +2637,11 @@ public class CitizensUI {
                         openCreateGroupGUI(playerRef, store, viewingGroup));
                 page.addEventListener("move-current-group-btn", CustomUIEventBindingType.Activating, event ->
                         openMoveGroupGUI(playerRef, store, viewingGroup));
+                page.addEventListener("respawn-current-group-btn", CustomUIEventBindingType.Activating, event -> {
+                    int count = plugin.getCitizensManager().respawnCitizensInGroup(viewingGroup, true, true);
+                    playerRef.sendMessage(Message.raw("Respawned " + count + " citizens in this group.").color(Color.GREEN));
+                    openCitizensGUI(playerRef, store, currentTab, searchQuery, viewingGroup);
+                });
             }
 
             // Register event listeners for all items in the unified list

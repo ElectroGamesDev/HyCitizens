@@ -93,6 +93,19 @@ public class SkinCustomizerUI {
         page.open(store);
     }
 
+    private boolean applyValidatedSlotChange(@Nonnull PlayerRef playerRef,
+                                             @Nonnull CustomizerState state,
+                                             @Nonnull String slotName,
+                                             String value) {
+        if (!SkinUtilities.trySetSkinField(state.workingSkin, slotName, value)) {
+            playerRef.sendMessage(Message.raw("That cosmetic option is not valid for this skin.").color(Color.RED));
+            return false;
+        }
+
+        plugin.getCitizensManager().applySkinPreview(state.citizen, state.workingSkin);
+        return true;
+    }
+
     private String buildHTML(CustomizerState state) {
         String categorySidebar = buildCategorySidebar(state);
         String slotTabs        = buildSlotTabs(state);
@@ -352,9 +365,9 @@ public class SkinCustomizerUI {
         boolean isBodyType = state.selectedSlot.equalsIgnoreCase("bodyCharacteristic");
         if (!isBodyType) {
             page.addEventListener("part-none", CustomUIEventBindingType.Activating, event -> {
-                SkinUtilities.setSkinField(state.workingSkin, state.selectedSlot, null);
-                state.selectedPartId = null;
-                plugin.getCitizensManager().applySkinPreview(state.citizen, state.workingSkin);
+                if (applyValidatedSlotChange(playerRef, state, state.selectedSlot, null)) {
+                    state.selectedPartId = null;
+                }
                 buildAndOpen(playerRef, store, state);
             });
         }
@@ -362,18 +375,20 @@ public class SkinCustomizerUI {
         for (int i = 0; i < entries.size(); i++) {
             final CosmeticOptionEntry entry = entries.get(i);
             page.addEventListener("part-" + i, CustomUIEventBindingType.Activating, event -> {
-                state.selectedPartId = entry.partId;
-
                 if (entry.colorOptions.size() == 1) {
-                    SkinUtilities.setSkinField(state.workingSkin, state.selectedSlot, entry.colorOptions.get(0));
-                    plugin.getCitizensManager().applySkinPreview(state.citizen, state.workingSkin);
+                    if (applyValidatedSlotChange(playerRef, state, state.selectedSlot, entry.colorOptions.get(0))) {
+                        state.selectedPartId = entry.partId;
+                    }
                 } else {
                     String currentValue = SkinUtilities.getSkinField(state.workingSkin, state.selectedSlot);
                     boolean alreadyCorrectPart = currentValue != null
                             && SkinUtilities.partIdOf(currentValue).equalsIgnoreCase(entry.partId);
                     if (!alreadyCorrectPart) {
-                        SkinUtilities.setSkinField(state.workingSkin, state.selectedSlot, entry.colorOptions.get(0));
-                        plugin.getCitizensManager().applySkinPreview(state.citizen, state.workingSkin);
+                        if (applyValidatedSlotChange(playerRef, state, state.selectedSlot, entry.colorOptions.get(0))) {
+                            state.selectedPartId = entry.partId;
+                        }
+                    } else {
+                        state.selectedPartId = entry.partId;
                     }
                 }
 
@@ -395,8 +410,7 @@ public class SkinCustomizerUI {
                 for (int i = 0; i < focusedEntry.colorOptions.size(); i++) {
                     final String fullId = focusedEntry.colorOptions.get(i);
                     page.addEventListener("color-" + i, CustomUIEventBindingType.Activating, event -> {
-                        SkinUtilities.setSkinField(state.workingSkin, state.selectedSlot, fullId);
-                        plugin.getCitizensManager().applySkinPreview(state.citizen, state.workingSkin);
+                        applyValidatedSlotChange(playerRef, state, state.selectedSlot, fullId);
                         buildAndOpen(playerRef, store, state);
                     });
                 }
@@ -412,9 +426,9 @@ public class SkinCustomizerUI {
                         RandomUtil.getSecureRandom().nextInt(slotEntries.size()));
                 String randomValue = randomEntry.colorOptions.get(
                         RandomUtil.getSecureRandom().nextInt(randomEntry.colorOptions.size()));
-                SkinUtilities.setSkinField(state.workingSkin, state.selectedSlot, randomValue);
-                state.selectedPartId = randomEntry.partId;
-                plugin.getCitizensManager().applySkinPreview(state.citizen, state.workingSkin);
+                if (applyValidatedSlotChange(playerRef, state, state.selectedSlot, randomValue)) {
+                    state.selectedPartId = randomEntry.partId;
+                }
             }
             buildAndOpen(playerRef, store, state);
         });
@@ -422,9 +436,9 @@ public class SkinCustomizerUI {
         // Per-slot Clear
         page.addEventListener("slot-clear-btn", CustomUIEventBindingType.Activating, event -> {
             if (state.selectedSlot.equalsIgnoreCase("bodyCharacteristic")) return;
-            SkinUtilities.setSkinField(state.workingSkin, state.selectedSlot, null);
-            state.selectedPartId = null;
-            plugin.getCitizensManager().applySkinPreview(state.citizen, state.workingSkin);
+            if (applyValidatedSlotChange(playerRef, state, state.selectedSlot, null)) {
+                state.selectedPartId = null;
+            }
             buildAndOpen(playerRef, store, state);
         });
 
@@ -446,6 +460,11 @@ public class SkinCustomizerUI {
 
         // Done
         page.addEventListener("done-btn", CustomUIEventBindingType.Activating, event -> {
+            if (!SkinUtilities.isValidSkin(state.workingSkin)) {
+                playerRef.sendMessage(Message.raw("Skin customization contains an invalid cosmetic option and was not saved.").color(Color.RED));
+                return;
+            }
+
             state.citizen.setCachedSkin(SkinUtilities.copySkin(state.workingSkin));
             state.citizen.setUseLiveSkin(false);
             state.citizen.setSkinUsername("custom_" + UUID.randomUUID().toString().substring(0, 8));

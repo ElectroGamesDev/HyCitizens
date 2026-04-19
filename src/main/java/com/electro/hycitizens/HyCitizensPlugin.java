@@ -2,6 +2,7 @@ package com.electro.hycitizens;
 
 import com.electro.hycitizens.actions.BuilderActionInteract;
 import com.electro.hycitizens.commands.CitizensCommand;
+import com.electro.hycitizens.components.CitizenBindingComponent;
 import com.electro.hycitizens.components.CitizenNametagComponent;
 import com.electro.hycitizens.interactions.PlayerInteractionHandler;
 import com.electro.hycitizens.listeners.*;
@@ -43,6 +44,7 @@ public class HyCitizensPlugin extends JavaPlugin {
     private CitizensUI citizensUI;
     private SkinCustomizerUI skinCustomizerUI;
     private Path generatedRolesPath;
+    private ComponentType<EntityStore, CitizenBindingComponent> citizenBindingComponent;
     private ComponentType<EntityStore, CitizenNametagComponent> citizenNametagComponent;
     private CitizenMapMarkerProvider citizenMapMarkerProvider;
 
@@ -66,6 +68,11 @@ public class HyCitizensPlugin extends JavaPlugin {
         this.generatedRolesPath = Paths.get("mods", "HyCitizensRoles", "Server", "NPC", "Roles");
 
         RoleAssetPackManager.setup();
+        this.citizenBindingComponent = this.getEntityStoreRegistry().registerComponent(
+                CitizenBindingComponent.class,
+                "HCBINDING",
+                CitizenBindingComponent.CODEC
+        );
         this.citizenNametagComponent = this.getEntityStoreRegistry().registerComponent(
                 CitizenNametagComponent.class,
                 "HCNAMETAG",
@@ -195,6 +202,11 @@ public class HyCitizensPlugin extends JavaPlugin {
     @Nonnull
     public Path getGeneratedRolesPath() {
         return generatedRolesPath;
+    }
+
+    @Nonnull
+    public ComponentType<EntityStore, CitizenBindingComponent> getCitizenBindingComponent() {
+        return citizenBindingComponent;
     }
 
     @Nonnull

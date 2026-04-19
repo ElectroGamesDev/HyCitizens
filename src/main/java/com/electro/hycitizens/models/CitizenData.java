@@ -131,6 +131,7 @@ public class CitizenData {
     private boolean respawnOnDeath = true;
     private float respawnDelaySeconds = 5.0f;
     private transient boolean awaitingRespawn = false;
+    private long respawnReadyAtMillis = 0L;
     private transient long lastDeathTime = 0;
 
     // Group field
@@ -865,11 +866,42 @@ public class CitizenData {
     }
 
     public boolean isAwaitingRespawn() {
+        if (awaitingRespawn && respawnReadyAtMillis > 0L && System.currentTimeMillis() >= respawnReadyAtMillis) {
+            awaitingRespawn = false;
+            respawnReadyAtMillis = 0L;
+        }
         return awaitingRespawn;
     }
 
     public void setAwaitingRespawn(boolean awaitingRespawn) {
         this.awaitingRespawn = awaitingRespawn;
+        if (!awaitingRespawn) {
+            this.respawnReadyAtMillis = 0L;
+        }
+    }
+
+    public void markAwaitingRespawnUntil(long respawnReadyAtMillis) {
+        this.awaitingRespawn = true;
+        this.respawnReadyAtMillis = Math.max(System.currentTimeMillis(), respawnReadyAtMillis);
+    }
+
+    public long getRespawnReadyAtMillis() {
+        return respawnReadyAtMillis;
+    }
+
+    public void setRespawnReadyAtMillis(long respawnReadyAtMillis) {
+        this.respawnReadyAtMillis = Math.max(0L, respawnReadyAtMillis);
+        this.awaitingRespawn = this.respawnReadyAtMillis > System.currentTimeMillis();
+        if (!this.awaitingRespawn) {
+            this.respawnReadyAtMillis = 0L;
+        }
+    }
+
+    public long getRemainingRespawnMillis() {
+        if (respawnReadyAtMillis <= 0L) {
+            return 0L;
+        }
+        return Math.max(0L, respawnReadyAtMillis - System.currentTimeMillis());
     }
 
     public long getLastDeathTime() {
