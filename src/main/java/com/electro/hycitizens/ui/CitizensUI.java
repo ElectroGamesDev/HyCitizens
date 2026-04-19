@@ -5695,7 +5695,7 @@ public class CitizensUI {
 
         String html = template.process(getSharedStyles() + """
                 <div class="page-overlay">
-                    <div class="main-container decorated-container" style="anchor-width: 680; anchor-height: 700;">
+                    <div class="main-container decorated-container" style="anchor-width: 680; anchor-height: 760;">
 
                         <!-- Header -->
                         <div class="header container-title">
@@ -5715,7 +5715,11 @@ public class CitizensUI {
                                 {{@sectionHeader:title=Message Text}}
                                 <input type="text" id="message-input" class="form-input" value="{{$message}}"
                                        placeholder="Enter message text with optional color codes..." />
-                                <p class="form-hint">Colors: {RED}, {GREEN}, {#HEX}. Rich text: **bold**, *italic*, [label](https://example.com). Variables: {PlayerName}, {CitizenName}, {NpcX}, {NpcY}, {NpcZ}.</p>
+                                <p class="form-hint">Colors: {RED}, {GREEN}, {#HEX}.</p>
+                                <div class="spacer-xs"></div>
+                                <p class="form-hint">Rich text: **bold**, *italic*, [label](https://example.com).</p>
+                                <div class="spacer-xs"></div>
+                                <p class="form-hint">Variables: {PlayerName}, {CitizenName}, {NpcX}, {NpcY}, {NpcZ}.</p>
                             </div>
 
                             <div class="spacer-md"></div>
@@ -6412,7 +6416,7 @@ public class CitizensUI {
 
         String html = template.process(getSharedStyles() + """
                 <div class="page-overlay">
-                    <div class="main-container decorated-container" style="anchor-width: 680; anchor-height: 700;">
+                    <div class="main-container decorated-container" style="anchor-width: 680; anchor-height: 760;">
                         <div class="header container-title">
                             <div class="header-content">
                                 <p class="header-title">{{#if isNew}}Add First Message{{else}}Edit First Message{{/if}}</p>
@@ -6428,7 +6432,7 @@ public class CitizensUI {
                                 <div class="spacer-xs"></div>
                                 <p class="form-hint">Rich text: **bold**, *italic*, [label](https://example.com).</p>
                                 <div class="spacer-xs"></div>
-                                <p class="form-hint">Colors: Variables: {PlayerName}, {CitizenName}, {NpcX}, {NpcY}, {NpcZ}.</p>
+                                <p class="form-hint">Variables: {PlayerName}, {CitizenName}, {NpcX}, {NpcY}, {NpcZ}.</p>
                             </div>
                             <div class="spacer-md"></div>
                             <div class="section">
@@ -9260,7 +9264,7 @@ public class CitizensUI {
 
         String html = template.process(getSharedStyles() + """
                 <div class="page-overlay">
-                    <div class="main-container decorated-container" style="anchor-width: 680; anchor-height: 520;">
+                    <div class="main-container decorated-container" style="anchor-width: 680; anchor-height: 580;">
 
                         <div class="header container-title">
                             <div class="header-content">
@@ -9280,7 +9284,7 @@ public class CitizensUI {
                                 <div class="spacer-xs"></div>
                                 <p class="form-hint">Rich text: **bold**, *italic*, [label](https://example.com).</p>
                                 <div class="spacer-xs"></div>
-                                <p class="form-hint">Colors: Variables: {PlayerName}, {CitizenName}, {NpcX}, {NpcY}, {NpcZ}.</p>
+                                <p class="form-hint">Variables: {PlayerName}, {CitizenName}, {NpcX}, {NpcY}, {NpcZ}.</p>
                             </div>
 
                             <div class="spacer-md"></div>
