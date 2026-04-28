@@ -1842,6 +1842,14 @@ public class CitizensManager {
     public void restoreResolvedCitizenState(@Nonnull CitizenData citizen,
                                             @Nonnull Ref<EntityStore> resolvedRef,
                                             boolean save) {
+        // Non-player models cannot be re-scaled in place, so when the resolved entity has a stale
+        // scale (e.g., the user changed scale in the UI but findExistingCitizenNpcRef rebound to the
+        // still-pending old entity), discard it and respawn fresh so the new scale is applied.
+        if (!citizen.isPlayerModel() && hasStaleEntityScale(resolvedRef, citizen)) {
+            forceFreshRespawnDueToStaleScale(citizen, resolvedRef, save);
+            return;
+        }
+
         bindCitizenEntityRef(citizen, resolvedRef);
 
         TransformComponent transformComponent =
@@ -1881,6 +1889,61 @@ public class CitizensManager {
         if (patrolManager != null && shouldAutoStartPluginPatrol(citizen) && !patrolManager.isPatrolling(citizen.getId())) {
             patrolManager.startPatrol(citizen.getId(), citizen.getPathConfig().getPluginPatrolPath());
         }
+    }
+
+    private boolean hasStaleEntityScale(@Nonnull Ref<EntityStore> ref, @Nonnull CitizenData citizen) {
+        if (!ref.isValid()) {
+            return false;
+        }
+
+        PersistentModel persistentModel = ref.getStore().getComponent(ref, PersistentModel.getComponentType());
+        if (persistentModel == null) {
+            return false;
+        }
+
+        Model.ModelReference modelReference = persistentModel.getModelReference();
+        if (modelReference == null) {
+            return false;
+        }
+
+        float entityScale = modelReference.getScale();
+        if (!Float.isFinite(entityScale) || entityScale <= 0.0f) {
+            return false;
+        }
+
+        float desiredScale = Math.max(0.01f, citizen.getScale());
+        return Math.abs(entityScale - desiredScale) > 0.001f;
+    }
+
+    private void forceFreshRespawnDueToStaleScale(@Nonnull CitizenData citizen,
+                                                  @Nonnull Ref<EntityStore> staleRef,
+                                                  boolean save) {
+        World world = Universe.get().getWorld(citizen.getWorldUUID());
+        if (world == null) {
+            return;
+        }
+
+        UUIDComponent uuidComponent = staleRef.getStore().getComponent(staleRef, UUIDComponent.getComponentType());
+        UUID staleUuid = uuidComponent != null ? uuidComponent.getUuid() : null;
+        if (staleUuid != null) {
+            pendingImmediateNpcDespawns.add(staleUuid);
+        }
+
+        world.execute(() -> {
+            try {
+                if (staleRef.isValid()) {
+                    world.getEntityStore().getStore().removeEntity(staleRef, RemoveReason.REMOVE);
+                }
+            } finally {
+                if (staleUuid != null) {
+                    pendingImmediateNpcDespawns.remove(staleUuid);
+                }
+            }
+        });
+
+        clearCitizenEntityRef(citizen);
+        // spawnCitizen has its own 15s timeout, so the loop terminates if duplicate stale entities keep getting found.
+        spawnCitizen(citizen, save);
     }
 
     public void bindCitizenEntityRef(@Nonnull CitizenData citizen, @Nonnull Ref<EntityStore> ref) {
