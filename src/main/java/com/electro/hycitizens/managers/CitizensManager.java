@@ -1843,6 +1843,7 @@ public class CitizensManager {
                                             @Nonnull Ref<EntityStore> resolvedRef,
                                             boolean save) {
         bindCitizenEntityRef(citizen, resolvedRef);
+        ensureSafeModelComponent(resolvedRef);
 
         TransformComponent transformComponent =
                 resolvedRef.getStore().getComponent(resolvedRef, TransformComponent.getComponentType());
@@ -1888,6 +1889,7 @@ public class CitizensManager {
         cancelPendingNpcSpawnRetry(citizen.getId());
         ref.getStore().putComponent(ref, CitizenNpcIdentityComponent.getComponentType(),
                 new CitizenNpcIdentityComponent(citizen.getId()));
+        ensureSafeModelComponent(ref);
 
         UUIDComponent uuidComponent = ref.getStore().getComponent(ref, UUIDComponent.getComponentType());
         if (uuidComponent != null) {
@@ -2133,7 +2135,18 @@ public class CitizensManager {
             }
 
             RoleChangeSystem.requestRoleChange(liveRef, npcEntity.getRole(), desiredRoleIndex, true, liveRef.getStore());
-            HytaleServer.SCHEDULED_EXECUTOR.schedule(() -> refreshSpawnedCitizenAppearance(citizen), 50, TimeUnit.MILLISECONDS);
+            HytaleServer.SCHEDULED_EXECUTOR.schedule(() -> {
+                refreshSpawnedCitizenAppearance(citizen);
+                World currentWorld = Universe.get().getWorld(citizen.getWorldUUID());
+                if (currentWorld != null) {
+                    currentWorld.execute(() -> {
+                        Ref<EntityStore> currentRef = citizen.getNpcRef();
+                        if (currentRef != null && currentRef.isValid()) {
+                            ensureSafeModelComponent(currentRef);
+                        }
+                    });
+                }
+            }, 50, TimeUnit.MILLISECONDS);
         });
     }
 
@@ -2154,10 +2167,59 @@ public class CitizensManager {
         }
 
         try {
-            return Model.createScaledModel(modelAsset, scale);
+            return withSafeAnimationSetMap(Model.createScaledModel(modelAsset, scale));
         } catch (Exception e) {
             getLogger().atWarning().log("Unable to create spawn model for citizen '" + citizen.getId() + "': " + e.getMessage());
             return null;
+        }
+    }
+
+    @Nullable
+    private Model withSafeAnimationSetMap(@Nullable Model model) {
+        if (model == null || model.getAnimationSetMap() != null) {
+            return model;
+        }
+
+        return new Model(
+                model.getModelAssetId(),
+                model.getScale(),
+                model.getRandomAttachmentIds(),
+                model.getAttachments(),
+                model.getBoundingBox(),
+                model.getModel(),
+                model.getTexture(),
+                model.getGradientSet(),
+                model.getGradientId(),
+                model.getEyeHeight(),
+                model.getCrouchOffset(),
+                model.getSittingOffset(),
+                model.getSleepingOffset(),
+                Collections.<String, ModelAsset.AnimationSet>emptyMap(),
+                model.getCamera(),
+                model.getLight(),
+                model.getParticles(),
+                model.getTrails(),
+                model.getPhysicsValues(),
+                model.getDetailBoxes(),
+                model.getPhobia(),
+                model.getPhobiaModelAssetId()
+        );
+    }
+
+    public void ensureSafeModelComponent(@Nonnull Ref<EntityStore> ref) {
+        if (!ref.isValid()) {
+            return;
+        }
+
+        ModelComponent modelComponent = ref.getStore().getComponent(ref, ModelComponent.getComponentType());
+        if (modelComponent == null) {
+            return;
+        }
+
+        Model model = modelComponent.getModel();
+        Model safeModel = withSafeAnimationSetMap(model);
+        if (safeModel != model) {
+            ref.getStore().putComponent(ref, ModelComponent.getComponentType(), new ModelComponent(safeModel));
         }
     }
 
@@ -2314,6 +2376,7 @@ public class CitizensManager {
             Map<String, String> randomAttachmentIds = new HashMap<>();
             playerModel = new Model.ModelReference("Player", scale, randomAttachmentIds).toModel();
         }
+        playerModel = withSafeAnimationSetMap(playerModel);
         //Map<String, String> randomAttachmentIds = new HashMap<>();
         //Model playerModel = new Model.ModelReference("PlayerTestModel_V", scale, randomAttachmentIds).toModel();
 
@@ -2610,7 +2673,7 @@ public class CitizensManager {
         }
 
         float scale = Math.max(0.01f, citizen.getNametagModelScale());
-        return Model.createStaticScaledModel(nametagAsset, scale);
+        return withSafeAnimationSetMap(Model.createStaticScaledModel(nametagAsset, scale));
     }
 
     @Nullable
@@ -2797,6 +2860,7 @@ public class CitizensManager {
             getLogger().atWarning().log("Failed to create skin model while restoring appearance for citizen '" + citizen.getId() + "'.");
             return;
         }
+        newModel = withSafeAnimationSetMap(newModel);
 
         npcRef.getStore().putComponent(npcRef, PlayerSkinComponent.getComponentType(), new PlayerSkinComponent(skin));
         npcRef.getStore().putComponent(npcRef, ModelComponent.getComponentType(), new ModelComponent(newModel));
@@ -2927,6 +2991,7 @@ public class CitizensManager {
                             getLogger().atWarning().log("Failed to create skin model while previewing skin for citizen '" + citizen.getId() + "'.");
                             return;
                         }
+                        newModel = withSafeAnimationSetMap(newModel);
 
                         PlayerSkinComponent skinComponent = new PlayerSkinComponent(skin);
                         npcRef.getStore().putComponent(npcRef, PlayerSkinComponent.getComponentType(), skinComponent);
