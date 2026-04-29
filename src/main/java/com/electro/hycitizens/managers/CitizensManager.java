@@ -2142,25 +2142,28 @@ public class CitizensManager {
     }
 
     @Nullable
-    private Model createFallbackSpawnModel(@Nonnull CitizenData citizen, @Nonnull String roleName, float scale) {
+    private Model createSpawnModel(@Nonnull CitizenData citizen, float scale) {
         if (citizen.isPlayerModel() || "Player".equals(citizen.getModelId())) {
-            return null;
-        }
-
-        if (!roleGenerator.getFallbackRoleName(citizen).equals(roleName)) {
             return null;
         }
 
         ModelAsset modelAsset = ModelAsset.getAssetMap().getAsset(citizen.getModelId());
         if (modelAsset == null) {
-            getLogger().atWarning().log("Unable to create fallback model for citizen '" + citizen.getId() + "': unknown model '" + citizen.getModelId() + "'.");
+            getLogger().atWarning().log("Unable to create spawn model for citizen '" + citizen.getId() + "': unknown model '" + citizen.getModelId() + "'.");
             return null;
         }
 
+        // Without an explicit spawn model, RoleBuilderSystem.onEntityAdded falls into its model-
+        // creation branch and replaces both the model and initialModelScale with
+        // modelAsset.generateRandomScale(), which silently discards the citizen's configured scale.
+        // Always create an animated model: NPCEntity.setAppearance (called when marker-driven NPCs
+        // are promoted via RoleChangeSystem) early-returns when the new appearance asset id matches
+        // the existing model's, so a static (animation-less) model would persist and the NPC would
+        // glide instead of playing its walk animation.
         try {
-            return Model.createStaticScaledModel(modelAsset, scale);
+            return Model.createScaledModel(modelAsset, scale);
         } catch (Exception e) {
-            getLogger().atWarning().log("Unable to create fallback model for citizen '" + citizen.getId() + "': " + e.getMessage());
+            getLogger().atWarning().log("Unable to create spawn model for citizen '" + citizen.getId() + "': " + e.getMessage());
             return null;
         }
     }
@@ -2221,15 +2224,17 @@ public class CitizensManager {
         float scale = Math.max((float)0.01, citizen.getScale());
 
         String roleName = resolveSpawnRoleName(citizen);
-        Model fallbackSpawnModel = createFallbackSpawnModel(citizen, roleName, scale);
+        Model spawnModel = createSpawnModel(citizen, scale);
 
-        // Let generated roles resolve models, but provide an explicit model when temporarily using the generic fallback role.
+        // Always provide an explicit spawn model for non-player NPCs so RoleBuilderSystem skips
+        // its model-creation branch (which would override the citizen's scale with the model
+        // asset's random default scale). See createSpawnModel for details.
         Pair<Ref<EntityStore>, NPCEntity> npc = NPCPlugin.get().spawnEntity(
                 world.getEntityStore().getStore(),
                 NPCPlugin.get().getIndex(roleName),
                 citizen.getPosition(),
                 citizen.getRotation(),
-                fallbackSpawnModel,
+                spawnModel,
                 (npcComponent, holder, store) -> npcComponent.setInitialModelScale(scale),
                 null
         );
@@ -4028,19 +4033,17 @@ public class CitizensManager {
         double dz = playerPos.z - entityPos.z;
         float yaw = (float) (Math.atan2(dx, dz) + Math.PI);
 
-        double dy = playerPos.y - entityPos.y;
-        double horizontalDistance = Math.sqrt(dx * dx + dz * dz);
-        float pitch = (float) Math.atan2(dy, horizontalDistance);
-
-        Direction lookDirection = new Direction(yaw, pitch, 0f);
-        Direction bodyDirection = new Direction(yaw, pitch, 0f);
+        // Model nametags are a single oriented model with no separate head, so only rotate
+        // around the Y axis - applying pitch would tilt the entire model up/down toward the
+        // player instead of having it face them while staying upright.
+        Direction lookDirection = new Direction(yaw, 0f, 0f);
+        Direction bodyDirection = new Direction(yaw, 0f, 0f);
 
         UUID playerUuid = playerRef.getUuid();
         Direction lastLook = citizen.lastNametagLookDirections.get(playerUuid);
         if (lastLook != null) {
             float yawDiff = Math.abs(lookDirection.yaw - lastLook.yaw);
-            float pitchDiff = Math.abs(lookDirection.pitch - lastLook.pitch);
-            if (yawDiff < 0.02f && pitchDiff < 0.02f) {
+            if (yawDiff < 0.02f) {
                 return;
             }
         }

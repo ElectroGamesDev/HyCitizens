@@ -60,6 +60,8 @@ public class HyCitizensPlugin extends JavaPlugin {
         instance = this;
     }
 
+    // JH fork
+
     @Override
     protected void setup() {
         // Initialize config manager
