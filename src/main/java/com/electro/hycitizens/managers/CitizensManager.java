@@ -2142,25 +2142,32 @@ public class CitizensManager {
     }
 
     @Nullable
-    private Model createFallbackSpawnModel(@Nonnull CitizenData citizen, @Nonnull String roleName, float scale) {
+    private Model createSpawnModel(@Nonnull CitizenData citizen, @Nonnull String roleName, float scale) {
         if (citizen.isPlayerModel() || "Player".equals(citizen.getModelId())) {
-            return null;
-        }
-
-        if (!roleGenerator.getFallbackRoleName(citizen).equals(roleName)) {
             return null;
         }
 
         ModelAsset modelAsset = ModelAsset.getAssetMap().getAsset(citizen.getModelId());
         if (modelAsset == null) {
-            getLogger().atWarning().log("Unable to create fallback model for citizen '" + citizen.getId() + "': unknown model '" + citizen.getModelId() + "'.");
+            getLogger().atWarning().log("Unable to create spawn model for citizen '" + citizen.getId() + "': unknown model '" + citizen.getModelId() + "'.");
             return null;
         }
 
+        // Without an explicit spawn model, RoleBuilderSystem.onEntityAdded falls into its model-
+        // creation branch and replaces both the model and initialModelScale with
+        // modelAsset.generateRandomScale(), which silently discards the citizen's configured scale.
+        // The temporary fallback role used by marker-driven NPCs is about to be swapped out by a
+        // RoleChangeSystem call, so a static model (no animation set) is fine there; for the
+        // persistent generated role we need an animated model so default NPC behaviours work.
+        boolean isTemporaryFallback = usesMarkerDrivenRole(citizen)
+                && roleGenerator.getFallbackRoleName(citizen).equals(roleName);
+
         try {
-            return Model.createStaticScaledModel(modelAsset, scale);
+            return isTemporaryFallback
+                    ? Model.createStaticScaledModel(modelAsset, scale)
+                    : Model.createScaledModel(modelAsset, scale);
         } catch (Exception e) {
-            getLogger().atWarning().log("Unable to create fallback model for citizen '" + citizen.getId() + "': " + e.getMessage());
+            getLogger().atWarning().log("Unable to create spawn model for citizen '" + citizen.getId() + "': " + e.getMessage());
             return null;
         }
     }
@@ -2221,15 +2228,17 @@ public class CitizensManager {
         float scale = Math.max((float)0.01, citizen.getScale());
 
         String roleName = resolveSpawnRoleName(citizen);
-        Model fallbackSpawnModel = createFallbackSpawnModel(citizen, roleName, scale);
+        Model spawnModel = createSpawnModel(citizen, roleName, scale);
 
-        // Let generated roles resolve models, but provide an explicit model when temporarily using the generic fallback role.
+        // Always provide an explicit spawn model for non-player NPCs so RoleBuilderSystem skips
+        // its model-creation branch (which would override the citizen's scale with the model
+        // asset's random default scale). See createSpawnModel for details.
         Pair<Ref<EntityStore>, NPCEntity> npc = NPCPlugin.get().spawnEntity(
                 world.getEntityStore().getStore(),
                 NPCPlugin.get().getIndex(roleName),
                 citizen.getPosition(),
                 citizen.getRotation(),
-                fallbackSpawnModel,
+                spawnModel,
                 (npcComponent, holder, store) -> npcComponent.setInitialModelScale(scale),
                 null
         );
