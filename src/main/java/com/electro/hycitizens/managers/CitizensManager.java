@@ -2142,7 +2142,7 @@ public class CitizensManager {
     }
 
     @Nullable
-    private Model createSpawnModel(@Nonnull CitizenData citizen, @Nonnull String roleName, float scale) {
+    private Model createSpawnModel(@Nonnull CitizenData citizen, float scale) {
         if (citizen.isPlayerModel() || "Player".equals(citizen.getModelId())) {
             return null;
         }
@@ -2156,16 +2156,12 @@ public class CitizensManager {
         // Without an explicit spawn model, RoleBuilderSystem.onEntityAdded falls into its model-
         // creation branch and replaces both the model and initialModelScale with
         // modelAsset.generateRandomScale(), which silently discards the citizen's configured scale.
-        // The temporary fallback role used by marker-driven NPCs is about to be swapped out by a
-        // RoleChangeSystem call, so a static model (no animation set) is fine there; for the
-        // persistent generated role we need an animated model so default NPC behaviours work.
-        boolean isTemporaryFallback = usesMarkerDrivenRole(citizen)
-                && roleGenerator.getFallbackRoleName(citizen).equals(roleName);
-
+        // Always create an animated model: NPCEntity.setAppearance (called when marker-driven NPCs
+        // are promoted via RoleChangeSystem) early-returns when the new appearance asset id matches
+        // the existing model's, so a static (animation-less) model would persist and the NPC would
+        // glide instead of playing its walk animation.
         try {
-            return isTemporaryFallback
-                    ? Model.createStaticScaledModel(modelAsset, scale)
-                    : Model.createScaledModel(modelAsset, scale);
+            return Model.createScaledModel(modelAsset, scale);
         } catch (Exception e) {
             getLogger().atWarning().log("Unable to create spawn model for citizen '" + citizen.getId() + "': " + e.getMessage());
             return null;
@@ -2228,7 +2224,7 @@ public class CitizensManager {
         float scale = Math.max((float)0.01, citizen.getScale());
 
         String roleName = resolveSpawnRoleName(citizen);
-        Model spawnModel = createSpawnModel(citizen, roleName, scale);
+        Model spawnModel = createSpawnModel(citizen, scale);
 
         // Always provide an explicit spawn model for non-player NPCs so RoleBuilderSystem skips
         // its model-creation branch (which would override the citizen's scale with the model
