@@ -2153,13 +2153,6 @@ public class CitizensManager {
             return null;
         }
 
-        // Without an explicit spawn model, RoleBuilderSystem.onEntityAdded falls into its model-
-        // creation branch and replaces both the model and initialModelScale with
-        // modelAsset.generateRandomScale(), which silently discards the citizen's configured scale.
-        // Always create an animated model: NPCEntity.setAppearance (called when marker-driven NPCs
-        // are promoted via RoleChangeSystem) early-returns when the new appearance asset id matches
-        // the existing model's, so a static (animation-less) model would persist and the NPC would
-        // glide instead of playing its walk animation.
         try {
             return Model.createScaledModel(modelAsset, scale);
         } catch (Exception e) {
@@ -4033,9 +4026,10 @@ public class CitizensManager {
         double dz = playerPos.z - entityPos.z;
         float yaw = (float) (Math.atan2(dx, dz) + Math.PI);
 
-        // Model nametags are a single oriented model with no separate head, so only rotate
-        // around the Y axis - applying pitch would tilt the entire model up/down toward the
-        // player instead of having it face them while staying upright.
+//        double dy = playerPos.y - entityPos.y;
+//        double horizontalDistance = Math.sqrt(dx * dx + dz * dz);
+//        float pitch = (float) Math.atan2(dy, horizontalDistance);
+
         Direction lookDirection = new Direction(yaw, 0f, 0f);
         Direction bodyDirection = new Direction(yaw, 0f, 0f);
 
@@ -4043,6 +4037,8 @@ public class CitizensManager {
         Direction lastLook = citizen.lastNametagLookDirections.get(playerUuid);
         if (lastLook != null) {
             float yawDiff = Math.abs(lookDirection.yaw - lastLook.yaw);
+//            float pitchDiff = Math.abs(lookDirection.pitch - lastLook.pitch);
+//            if (yawDiff < 0.02f && pitchDiff < 0.02f) {
             if (yawDiff < 0.02f) {
                 return;
             }
