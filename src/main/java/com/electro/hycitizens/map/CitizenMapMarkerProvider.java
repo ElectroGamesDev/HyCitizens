@@ -43,6 +43,7 @@ public final class CitizenMapMarkerProvider implements WorldMapManager.MarkerPro
         }
 
         List<String> markerImagesToDeliver = new ArrayList<>();
+        List<PendingMarker> pendingMarkers = new ArrayList<>();
 
         for (CitizenData citizen : plugin.getCitizensManager().getAllCitizens()) {
             if (!citizen.isMapMarkerEnabled() || !worldUuid.equals(citizen.getWorldUUID())) {
@@ -58,13 +59,20 @@ public final class CitizenMapMarkerProvider implements WorldMapManager.MarkerPro
 
             String markerImage = CitizenMapMarkerAsset.resolveMarkerImage(citizen);
             markerImagesToDeliver.add(markerImage);
-            collector.add(createMarker(citizen, position, markerImage));
+            pendingMarkers.add(new PendingMarker(citizen, position, markerImage));
         }
 
         PlayerRef viewerRef = findViewerRef(world.getPlayerRefs(), viewer.getUuid());
         if (viewerRef != null && !markerImagesToDeliver.isEmpty()) {
             CitizenMapMarkerAsset.deliverAssetsToViewer(viewerRef, markerImagesToDeliver);
         }
+
+        for (PendingMarker pendingMarker : pendingMarkers) {
+            collector.add(createMarker(pendingMarker.citizen(), pendingMarker.position(), pendingMarker.markerImage()));
+        }
+    }
+
+    private record PendingMarker(CitizenData citizen, Vector3d position, String markerImage) {
     }
 
     @Nonnull
