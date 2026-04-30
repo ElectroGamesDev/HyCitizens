@@ -4,6 +4,7 @@ import com.electro.hycitizens.HyCitizensPlugin;
 import com.electro.hycitizens.events.CitizenDeathEvent;
 import com.electro.hycitizens.interactions.CitizenInteraction;
 import com.electro.hycitizens.models.*;
+import com.electro.hycitizens.util.CommandExecutionUtil;
 import com.electro.hycitizens.util.UpdateChecker;
 import com.hypixel.hytale.builtin.adventure.npcobjectives.resources.KillTrackerResource;
 import com.hypixel.hytale.builtin.adventure.npcobjectives.transaction.KillTaskTransaction;
@@ -13,8 +14,6 @@ import com.hypixel.hytale.math.vector.Vector3d;
 import com.hypixel.hytale.math.vector.Vector3f;
 import com.hypixel.hytale.server.core.HytaleServer;
 import com.hypixel.hytale.server.core.Message;
-import com.hypixel.hytale.server.core.command.system.CommandManager;
-import com.hypixel.hytale.server.core.console.ConsoleSender;
 import com.hypixel.hytale.server.core.entity.UUIDComponent;
 import com.hypixel.hytale.server.core.entity.entities.Player;
 import com.hypixel.hytale.server.core.inventory.ItemStack;
@@ -239,15 +238,11 @@ public class EntityDeathListener extends DeathSystems.OnDeathSystem {
                     }
                     return CompletableFuture.completedFuture(null);
                 } else {
-                    if (cmd.isRunAsServer()) {
-                        return CommandManager.get().handleCommand(ConsoleSender.INSTANCE, command);
-                    } else {
-                        if (commandPlayer == null) {
-                            getLogger().atWarning().log("[HyCitizens] Skipping death command as player: attacker entity is unavailable.");
-                            return CompletableFuture.completedFuture(null);
-                        }
-                        return CommandManager.get().handleCommand(commandPlayer, command);
+                    if (!cmd.isRunAsServer() && commandPlayer == null) {
+                        getLogger().atWarning().log("[HyCitizens] Skipping death command as player: attacker entity is unavailable.");
+                        return CompletableFuture.completedFuture(null);
                     }
+                    return CommandExecutionUtil.execute(commandPlayer, command, cmd.isRunAsServer());
                 }
             });
         }
