@@ -2,8 +2,12 @@ package com.electro.hycitizens.util;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
+import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import com.google.gson.JsonSyntaxException;
+import com.google.gson.Strictness;
+import com.google.gson.stream.JsonReader;
 import com.hypixel.hytale.math.vector.Vector3d;
 import com.hypixel.hytale.math.vector.Vector3f;
 import com.hypixel.hytale.protocol.PlayerSkin;
@@ -11,6 +15,7 @@ import com.hypixel.hytale.protocol.PlayerSkin;
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
 import java.io.*;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
@@ -51,8 +56,8 @@ public class ConfigManager {
             return;
         }
 
-        try (Reader reader = new FileReader(configFile.toFile())) {
-            JsonObject jsonObject = JsonParser.parseReader(reader).getAsJsonObject();
+        try {
+            JsonObject jsonObject = parseLenientJsonObject(configFile);
             config = gson.fromJson(jsonObject, LinkedHashMap.class);
             if (config == null) {
                 config = new LinkedHashMap<>();
@@ -63,9 +68,22 @@ public class ConfigManager {
                 migrateToNested();
                 saveConfig();
             }
-        } catch (IOException e) {
+        } catch (IOException | JsonSyntaxException | IllegalStateException e) {
             getLogger().atInfo().log("Failed to load config: " + e.getMessage());
             setDefaults();
+        }
+    }
+
+    @Nonnull
+    private JsonObject parseLenientJsonObject(@Nonnull Path path) throws IOException {
+        try (Reader fileReader = Files.newBufferedReader(path, StandardCharsets.UTF_8);
+             JsonReader jsonReader = new JsonReader(fileReader)) {
+            jsonReader.setStrictness(Strictness.LENIENT);
+            JsonElement parsed = JsonParser.parseReader(jsonReader);
+            if (!parsed.isJsonObject()) {
+                throw new JsonSyntaxException("Expected root JSON object in " + path.getFileName());
+            }
+            return parsed.getAsJsonObject();
         }
     }
 
