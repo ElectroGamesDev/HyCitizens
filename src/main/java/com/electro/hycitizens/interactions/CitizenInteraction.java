@@ -6,12 +6,11 @@ import com.electro.hycitizens.models.CitizenData;
 import com.electro.hycitizens.models.CitizenMessage;
 import com.electro.hycitizens.models.CommandAction;
 import com.electro.hycitizens.models.MessagesConfig;
+import com.electro.hycitizens.util.CommandExecutionUtil;
 import com.hypixel.hytale.component.Ref;
 import com.hypixel.hytale.math.vector.Vector3d;
 import com.hypixel.hytale.server.core.HytaleServer;
 import com.hypixel.hytale.server.core.Message;
-import com.hypixel.hytale.server.core.command.system.CommandManager;
-import com.hypixel.hytale.server.core.console.ConsoleSender;
 import com.hypixel.hytale.server.core.entity.entities.Player;
 import com.hypixel.hytale.server.core.universe.PlayerRef;
 import com.hypixel.hytale.server.core.universe.world.storage.EntityStore;
@@ -506,10 +505,7 @@ public class CitizenInteraction {
                     return CompletableFuture.completedFuture(null);
                 }
 
-                if (commandAction.isRunAsServer()) {
-                    return CommandManager.get().handleCommand(ConsoleSender.INSTANCE, command);
-                }
-                return CommandManager.get().handleCommand(player, command);
+                return CommandExecutionUtil.execute(player, command, commandAction.isRunAsServer());
             });
         }
     }
