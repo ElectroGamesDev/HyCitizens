@@ -38,7 +38,6 @@ import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.util.Map;
-import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
@@ -53,8 +52,9 @@ public final class CitizenMapMarkerAsset {
     private static final int ICON_SIZE = 32;
     private static final int NPC_CONTENT_SCALE_PERCENT = 96;
     private static final long REBUILD_DEBOUNCE_MS = 40L;
+    private static final long ASSET_REFRESH_INTERVAL_MS = TimeUnit.MINUTES.toMillis(2);
     private static final Map<String, MarkerAsset> GENERATED_ASSETS = new ConcurrentHashMap<>();
-    private static final Map<UUID, Set<String>> DELIVERED_BY_VIEWER = new ConcurrentHashMap<>();
+    private static final Map<UUID, Map<String, Long>> DELIVERED_AT_BY_VIEWER = new ConcurrentHashMap<>();
     private static final Map<UUID, ScheduledFuture<?>> PENDING_REBUILDS = new ConcurrentHashMap<>();
 
     private CitizenMapMarkerAsset() {
@@ -83,11 +83,20 @@ public final class CitizenMapMarkerAsset {
             return;
         }
 
-        Set<String> deliveredAssets = DELIVERED_BY_VIEWER.computeIfAbsent(viewerUuid, ignored -> ConcurrentHashMap.newKeySet());
+        long now = System.currentTimeMillis();
+        Map<String, Long> deliveredAtByAsset = DELIVERED_AT_BY_VIEWER.computeIfAbsent(
+                viewerUuid,
+                ignored -> new ConcurrentHashMap<>()
+        );
         LinkedHashMap<String, MarkerAsset> pendingAssets = new LinkedHashMap<>();
         for (String imageName : imageNames) {
             String assetPath = toAssetPath(imageName);
-            if (assetPath == null || deliveredAssets.contains(assetPath)) {
+            if (assetPath == null) {
+                continue;
+            }
+
+            Long deliveredAt = deliveredAtByAsset.get(assetPath);
+            if (deliveredAt != null && now >= deliveredAt && now - deliveredAt < ASSET_REFRESH_INTERVAL_MS) {
                 continue;
             }
 
@@ -104,7 +113,9 @@ public final class CitizenMapMarkerAsset {
         for (MarkerAsset asset : pendingAssets.values()) {
             MarkerAsset.sendToPlayer(packetHandler, asset);
         }
-        deliveredAssets.addAll(pendingAssets.keySet());
+        for (String assetPath : pendingAssets.keySet()) {
+            deliveredAtByAsset.put(assetPath, now);
+        }
         scheduleRebuild(viewerUuid, packetHandler);
     }
 
@@ -113,7 +124,7 @@ public final class CitizenMapMarkerAsset {
             return;
         }
 
-        DELIVERED_BY_VIEWER.remove(viewerUuid);
+        DELIVERED_AT_BY_VIEWER.remove(viewerUuid);
         ScheduledFuture<?> future = PENDING_REBUILDS.remove(viewerUuid);
         if (future != null && !future.isCancelled()) {
             future.cancel(false);
@@ -121,7 +132,7 @@ public final class CitizenMapMarkerAsset {
     }
 
     public static void clearAllViewers() {
-        DELIVERED_BY_VIEWER.clear();
+        DELIVERED_AT_BY_VIEWER.clear();
         for (ScheduledFuture<?> future : PENDING_REBUILDS.values()) {
             if (future != null && !future.isCancelled()) {
                 future.cancel(false);

@@ -113,76 +113,94 @@ public class SkinCustomizerUI {
         String colorStrip      = buildColorStrip(state);
 
         String currentValue    = SkinUtilities.getSkinField(state.workingSkin, state.selectedSlot);
-        String currentDisplay  = currentValue != null ? currentValue : "(none)";
+        String currentDisplay  = formatCosmeticValue(currentValue);
         String slotDisplayName = SkinUtilities.slotDisplayName(state.selectedSlot);
 
         return new TemplateProcessor().process(getStyles() + """
-                <div class="overlay">
-                    <div class="panel">
-                        <div class="panel-body">
+                <div class="page-overlay">
+                    <div class="main-container decorated-container" style="anchor-width: 980; anchor-height: 900;">
 
-                            <!-- Header -->
-                            <div class="panel-header">
-                                <p class="title">Skin Customizer</p>
-                                <p class="subtitle">%s</p>
-                            </div>
-
-                            <!-- Content: Sidebar + Main -->
-                            <div class="content-row">
-
-                                <!-- Category Sidebar -->
-                                <div class="cat-sidebar">
-                                    %s
-                                </div>
-
-                                <!-- Main Area -->
-                                <div class="main-area">
-
-                                    <!-- Slot Tabs -->
-                                    <div class="slot-tabs-row">
-                                        %s
-                                    </div>
-
-                                    <!-- Current Value Info -->
-                                    <div class="info-bar">
-                                        <p class="info-label">%s:</p>
-                                        <div class="sp-h-xs"></div>
-                                        <p class="info-value">%s</p>
-                                        <div style="flex-weight: 1;"></div>
-                                        <button id="slot-random-btn" class="btn-small-accent" style="anchor-width: 140;">Random</button>
-                                        <div class="sp-h-xs"></div>
-                                        <button id="slot-clear-btn" class="btn-small-ghost" style="anchor-width: 120;">Clear</button>
-                                    </div>
-
-                                    <!-- Part Grid -->
-                                    <div class="grid-scroll">
-                                        %s
-                                    </div>
-
-                                    <!-- Color Strip (only visible when a part is selected) -->
-                                    %s
-
-                                </div>
-
-                            </div>
-
-                            <!-- Action Bar -->
-                            <div class="action-bar">
-                                <button id="randomize-all-btn" class="btn-accent" style="anchor-width: 140;">Randomize</button>
-                                <div style="flex-weight: 1;"></div>
-                                <button id="done-btn" class="btn-success" style="anchor-width: 120;">Done</button>
-                                <div class="sp-h-sm"></div>
-                                <button id="cancel-btn" class="btn-ghost" style="anchor-width: 125;">Cancel</button>
+                        <div class="header container-title">
+                            <div class="header-content">
+                                <p class="header-title">Skin Customizer</p>
+                                <p class="header-subtitle">%s</p>
                             </div>
                         </div>
+
+                        <div class="body">
+                            <div class="editor-row">
+
+                                <div class="cat-sidebar">
+                                    <div class="section-label-block">
+                                        <p class="section-kicker">Categories</p>
+                                        <p class="section-hint">Pick a cosmetic group</p>
+                                    </div>
+                                    <div class="spacer-sm"></div>
+                                    %s
+                                </div>
+
+                                <div class="main-area">
+
+                                    <div class="skin-summary">
+                                        <div class="summary-text">
+                                            <p class="summary-label">%s</p>
+                                            <p class="summary-value">%s</p>
+                                        </div>
+                                        <div style="flex-weight: 1;"></div>
+                                        <button id="slot-random-btn" class="secondary-button small-secondary-button" style="anchor-width: 135;">Random</button>
+                                        <div class="spacer-h-sm"></div>
+                                        <button id="slot-clear-btn" class="secondary-button small-secondary-button" style="anchor-width: 120;">Clear</button>
+                                    </div>
+
+                                    <div class="spacer-md"></div>
+
+                                    <div class="section slot-section">
+                                        <div class="section-header-compact">
+                                            <p class="section-title-left">Slots</p>
+                                            <p class="section-description-left">Choose the exact skin slot to edit</p>
+                                        </div>
+                                        <div class="spacer-sm"></div>
+                                        <div class="slot-tabs-row">
+                                            %s
+                                        </div>
+                                    </div>
+
+                                    <div class="spacer-md"></div>
+
+                                    <div class="section parts-section">
+                                        <div class="section-header-compact">
+                                            <p class="section-title-left">Cosmetics</p>
+                                            <p class="section-description-left">Selected options preview immediately on the citizen</p>
+                                        </div>
+                                        <div class="spacer-sm"></div>
+                                        <div class="grid-scroll" data-hyui-scrollbar-style='"Common.ui" "DefaultScrollbarStyle"'>
+                                            %s
+                                        </div>
+                                    </div>
+
+                                    %s
+
+                                </div>
+
+                            </div>
+                        </div>
+
+                        <div class="footer">
+                            <button id="randomize-all-btn" class="secondary-button" style="anchor-width: 160; anchor-height: 40;">Randomize</button>
+                            <div style="flex-weight: 1;"></div>
+                            <button id="cancel-btn" class="secondary-button" style="anchor-width: 130; anchor-height: 40;">Cancel</button>
+                            <div class="spacer-h-md"></div>
+                            <button id="done-btn" class="secondary-button" style="anchor-width: 150; anchor-height: 40;">Done</button>
+                        </div>
+
                     </div>
                 </div>
                 """.formatted(
-                escapeHtml(state.citizen.getName()),
+                "Editing " + escapeHtml(state.citizen.getName()),
                 categorySidebar,
-                slotTabs,
                 escapeHtml(slotDisplayName),
                 escapeHtml(currentDisplay),
+                slotTabs,
                 partGrid,
                 colorStrip
         ));
@@ -193,9 +211,12 @@ public class SkinCustomizerUI {
         for (int i = 0; i < SkinUtilities.SLOT_CATEGORIES.length; i++) {
             String catName  = SkinUtilities.SLOT_CATEGORIES[i][0];
             boolean isActive = (i == state.selectedCategoryIndex);
-            String btnClass  = isActive ? "cat-btn cat-btn-active" : "cat-btn";
-            sb.append("<button id=\"cat-%d\" class=\"%s\">%s</button>\n".formatted(i, btnClass, escapeHtml(catName)));
-            sb.append("<div class=\"sp-sm\"></div>\n");
+            String btnClass  = isActive
+                    ? "secondary-button small-secondary-button button-selected"
+                    : "secondary-button small-secondary-button";
+            sb.append("<button id=\"cat-%d\" class=\"%s\" style=\"anchor-width: 150;\">%s</button>\n"
+                    .formatted(i, btnClass, escapeHtml(catName)));
+            sb.append("<div class=\"spacer-xs\"></div>\n");
         }
         return sb.toString();
     }
@@ -207,11 +228,13 @@ public class SkinCustomizerUI {
             String slot        = category[i];
             String displayName = SkinUtilities.slotDisplayName(slot);
             boolean isActive   = slot.equals(state.selectedSlot);
-            String btnClass    = isActive ? "slot-tab slot-tab-active" : "slot-tab";
-            sb.append("<button id=\"slot-%s\" class=\"%s\">%s</button>\n"
+            String btnClass    = isActive
+                    ? "secondary-button small-secondary-button button-selected"
+                    : "secondary-button small-secondary-button";
+            sb.append("<button id=\"slot-%s\" class=\"%s\" style=\"anchor-width: 118;\">%s</button>\n"
                     .formatted(slot, btnClass, escapeHtml(displayName)));
             if (i < category.length - 1) {
-                sb.append("<div class=\"sp-h-xs\"></div>\n");
+                sb.append("<div class=\"spacer-h-sm\"></div>\n");
             }
         }
         return sb.toString();
@@ -226,20 +249,32 @@ public class SkinCustomizerUI {
         StringBuilder sb = new StringBuilder();
         boolean isBodyType = state.selectedSlot.equalsIgnoreCase("bodyCharacteristic");
 
+        if (entries.isEmpty() && isBodyType) {
+            return """
+                    <div class="empty-state">
+                        <p class="empty-state-title">No cosmetic options found</p>
+                        <p class="empty-state-description">Try another slot or randomize the full skin.</p>
+                    </div>
+                    """;
+        }
+
         sb.append("<div class=\"grid-row\">\n");
         int col = 0;
 
         // "None" tile
         if (!isBodyType) {
             boolean noneSelected = (currentValue == null || currentValue.isEmpty());
-            String noneClass     = noneSelected ? "tile tile-none tile-selected" : "tile tile-none";
-            sb.append("<button id=\"part-none\" class=\"%s\">None</button>\n".formatted(noneClass));
+            String noneClass     = noneSelected
+                    ? "secondary-button small-secondary-button button-selected"
+                    : "secondary-button small-secondary-button";
+            sb.append("<button id=\"part-none\" class=\"%s\" style=\"anchor-width: 142;\">None</button>\n"
+                    .formatted(noneClass));
             col = 1;
         }
 
         for (int i = 0; i < entries.size(); i++) {
             if (col >= TILES_PER_ROW) {
-                sb.append("</div>\n<div class=\"sp-tile-row\"></div>\n<div class=\"grid-row\">\n");
+                sb.append("</div>\n<div class=\"spacer-sm\"></div>\n<div class=\"grid-row\">\n");
                 col = 0;
             }
 
@@ -250,23 +285,27 @@ public class SkinCustomizerUI {
             boolean isEquipped = entry.partId.equalsIgnoreCase(currentPartId != null ? currentPartId : "");
             String tileClass;
             if (isEquipped) {
-                tileClass = "tile tile-selected";
+                tileClass = "secondary-button small-secondary-button button-selected";
             } else if (isPartSelected) {
-                tileClass = "tile tile-part-focused";
+                tileClass = "secondary-button small-secondary-button button-selected";
             } else {
-                tileClass = "tile";
+                tileClass = "secondary-button small-secondary-button";
             }
 
             String displayName = formatCosmeticName(entry.partId);
-            sb.append("<div class=\"sp-h-tile\"></div>\n");
-            sb.append("<button id=\"part-%d\" class=\"%s\">%s</button>\n"
+            if (col > 0) {
+                sb.append("<div class=\"spacer-h-sm\"></div>\n");
+            }
+            sb.append("<button id=\"part-%d\" class=\"%s\" style=\"anchor-width: 142;\">%s</button>\n"
                     .formatted(i, tileClass, escapeHtml(displayName)));
             col++;
         }
 
         // Fill remainder of last row
         while (col < TILES_PER_ROW) {
-            sb.append("<div class=\"sp-h-tile\"></div>\n");
+            if (col > 0) {
+                sb.append("<div class=\"spacer-h-sm\"></div>\n");
+            }
             sb.append("<div class=\"tile-spacer\"></div>\n");
             col++;
         }
@@ -298,38 +337,47 @@ public class SkinCustomizerUI {
         String partDisplayName = formatCosmeticName(state.selectedPartId);
 
         StringBuilder sb = new StringBuilder();
-        sb.append("<div class=\"color-strip-label\"><p class=\"info-label\">Color — %s:</p></div>\n"
+        sb.append("<div class=\"spacer-md\"></div>\n");
+        sb.append("<div class=\"section color-section\">\n");
+        sb.append("<div class=\"section-header-compact\"><p class=\"section-title-left\">Color</p><p class=\"section-description-left\">%s variants</p></div>\n"
                 .formatted(escapeHtml(partDisplayName)));
-        sb.append("<div class=\"color-strip-scroll\">\n");
+        sb.append("<div class=\"spacer-sm\"></div>\n");
+        sb.append("<div class=\"color-strip-scroll\" data-hyui-scrollbar-style='\"Common.ui\" \"DefaultScrollbarStyle\"'>\n");
         sb.append("<div class=\"color-row\">\n");
 
         int col = 0;
         for (int i = 0; i < focusedEntry.colorOptions.size(); i++) {
             if (col >= COLOR_TILES_PER_ROW) {
-                sb.append("</div>\n<div class=\"sp-tile-row\"></div>\n<div class=\"color-row\">\n");
+                sb.append("</div>\n<div class=\"spacer-sm\"></div>\n<div class=\"color-row\">\n");
                 col = 0;
             }
 
             String fullId = focusedEntry.colorOptions.get(i);
             boolean isSelected = fullId.equalsIgnoreCase(currentValue != null ? currentValue : "");
-            String tileClass = isSelected ? "color-tile color-tile-selected" : "color-tile";
+            String tileClass = isSelected
+                    ? "secondary-button small-secondary-button button-selected"
+                    : "secondary-button small-secondary-button";
 
             String colorLabel = colorLabelOf(fullId);
 
-            sb.append("<div class=\"sp-h-tile\"></div>\n");
-            sb.append("<button id=\"color-%d\" class=\"%s\">%s</button>\n"
+            if (col > 0) {
+                sb.append("<div class=\"spacer-h-sm\"></div>\n");
+            }
+            sb.append("<button id=\"color-%d\" class=\"%s\" style=\"anchor-width: 93;\">%s</button>\n"
                     .formatted(i, tileClass, escapeHtml(colorLabel)));
             col++;
         }
 
         // Fill remainder
         while (col < COLOR_TILES_PER_ROW) {
-            sb.append("<div class=\"sp-h-tile\"></div>\n");
+            if (col > 0) {
+                sb.append("<div class=\"spacer-h-sm\"></div>\n");
+            }
             sb.append("<div class=\"color-tile-spacer\"></div>\n");
             col++;
         }
 
-        sb.append("</div>\n</div>\n");
+        sb.append("</div>\n</div>\n</div>\n");
         return sb.toString();
     }
 
@@ -492,6 +540,17 @@ public class SkinCustomizerUI {
         return variantPart != null ? colorPart + " (" + variantPart + ")" : colorPart;
     }
 
+    private static String formatCosmeticValue(String value) {
+        if (value == null || value.isEmpty()) return "None";
+        String[] parts = value.split("\\.");
+        StringBuilder sb = new StringBuilder();
+        for (String part : parts) {
+            if (sb.length() > 0) sb.append(" / ");
+            sb.append(formatCosmeticName(part));
+        }
+        return sb.toString();
+    }
+
     private static String formatCosmeticName(String value) {
         if (value == null || value.isEmpty()) return "None";
         String[] words = value.split("_");
@@ -539,56 +598,62 @@ public class SkinCustomizerUI {
     private String getStyles() {
         return """
                 <style>
-                    .overlay {
+                    .page-overlay {
                         layout: right;
+                        flex-weight: 1;
                         anchor-width: 100%;
                         anchor-height: 100%;
                         padding: 20;
                     }
 
-                    .panel {
-                        layout: top;
-                        anchor-width: 680;
-                        anchor-height: 850;
-                        background-color: #0d1117(0.97);
-                        border-radius: 12;
+                    .main-container {
                     }
 
-                    .panel-header {
+                    .container-title {
                         layout: top;
                         flex-weight: 0;
-                        background-color: #161b22;
-                        padding: 14 20 14 20;
-                        border-radius: 12 12 0 0;
                     }
 
-                    .title {
-                        color: #e6edf3;
-                        font-size: 20;
+                    .header {
+                        layout: top;
+                        flex-weight: 0;
+                        padding: 18 18 12 18;
+                    }
+
+                    .header-content {
+                        layout: top;
+                        flex-weight: 0;
+                        anchor-width: 100%;
+                    }
+
+                    .header-title {
+                        color: #f3f7ff;
+                        font-size: 26;
                         font-weight: bold;
                         text-align: center;
                     }
 
-                    .subtitle {
-                        color: #8b949e;
+                    .header-subtitle {
+                        color: #91a5bf;
                         font-size: 12;
                         text-align: center;
-                        padding-top: 2;
+                        anchor-width: 100%;
+                        padding-top: 6;
                     }
 
-                    .action-bar {
-                        layout: left;
-                        flex-weight: 0;
-                        padding: 8 12 8 12;
-                        background-color: #161b22;
-                    }
-
-                    .panel-body {
+                    .body {
                         layout: top;
                         flex-weight: 1;
+                        padding: 18 20 10 20;
                     }
 
-                    .content-row {
+                    .footer {
+                        layout: center;
+                        flex-weight: 0;
+                        padding: 14 16 16 16;
+                    }
+
+                    .editor-row {
                         layout: left;
                         flex-weight: 1;
                     }
@@ -596,75 +661,115 @@ public class SkinCustomizerUI {
                     .cat-sidebar {
                         layout: top;
                         flex-weight: 0;
-                        anchor-width: 82;
-                        padding: 8 4 8 8;
-                        background-color: #0d1117;
+                        anchor-width: 178;
+                        background-color: #101a27(0.78);
+                        border-radius: 10;
+                        padding: 14;
                     }
 
-                    .cat-btn {
+                    .section-label-block {
+                        layout: top;
                         flex-weight: 0;
-                        anchor-width: 125;
-                        anchor-height: 42;
-                        border-radius: 6;
-                        font-size: 11;
-                        background-color: #21262d;
                     }
 
-                    .cat-btn-active {
-                        background-color: #1f6feb;
+                    .section-kicker {
+                        color: #f2f6ff;
+                        font-size: 14;
+                        font-weight: bold;
+                        text-align: center;
+                    }
+
+                    .section-hint {
+                        color: #8ea4c0;
+                        font-size: 11;
+                        text-align: center;
+                        padding-top: 4;
+                    }
+
+                    .button-selected {
+                        font-weight: bold;
                     }
 
                     .main-area {
                         layout: top;
                         flex-weight: 1;
-                        padding: 8;
+                        padding-left: 16;
+                    }
+
+                    .skin-summary {
+                        layout: left;
+                        flex-weight: 0;
+                        background-color: #1e4871(0.34);
+                        border-radius: 10;
+                        padding: 12 14 12 14;
+                    }
+
+                    .summary-text {
+                        layout: top;
+                        flex-weight: 1;
+                    }
+
+                    .summary-label {
+                        color: #f2f6ff;
+                        font-size: 14;
+                        font-weight: bold;
+                    }
+
+                    .summary-value {
+                        color: #9cc9ff;
+                        font-size: 12;
+                        padding-top: 4;
+                    }
+
+                    .section {
+                        layout: top;
+                        flex-weight: 0;
+                        background-color: #1b2737(0.88);
+                        padding: 14;
+                        border-radius: 10;
+                    }
+
+                    .parts-section {
+                        flex-weight: 1;
+                    }
+
+                    .slot-section {
+                        flex-weight: 0;
+                    }
+
+                    .color-section {
+                        flex-weight: 0;
+                    }
+
+                    .section-header-compact {
+                        layout: top;
+                        flex-weight: 0;
+                    }
+
+                    .section-title-left {
+                        color: #f2f6ff;
+                        font-size: 14;
+                        font-weight: bold;
+                    }
+
+                    .section-description-left {
+                        color: #92a6c0;
+                        font-size: 12;
+                        padding-top: 4;
                     }
 
                     .slot-tabs-row {
                         layout: left;
                         flex-weight: 0;
-                        padding-bottom: 6;
-                    }
-
-                    .slot-tab {
-                        flex-weight: 0;
-                        anchor-height: 30;
-                        border-radius: 6;
-                        font-size: 10;
-                        padding-left: 8;
-                        padding-right: 8;
-                        background-color: #21262d;
-                    }
-
-                    .slot-tab-active {
-                        background-color: #30363d;
-                    }
-
-                    .info-bar {
-                        layout: left;
-                        flex-weight: 0;
-                        padding: 6 8 6 8;
-                        background-color: #161b22;
-                        border-radius: 6;
-                    }
-
-                    .info-label {
-                        color: #8b949e;
-                        font-size: 11;
-                        font-weight: bold;
-                        flex-weight: 0;
-                    }
-
-                    .info-value {
-                        color: #58a6ff;
-                        font-size: 11;
-                        flex-weight: 0;
                     }
 
                     .grid-scroll {
                         layout-mode: TopScrolling;
-                        flex-weight: 1;
-                        padding: 6 0 6 0;
+                        flex-weight: 0;
+                        anchor-height: 280;
+                        background-color: #101a27(0.58);
+                        border-radius: 10;
+                        padding: 8;
                     }
 
                     .grid-row {
@@ -672,46 +777,17 @@ public class SkinCustomizerUI {
                         flex-weight: 0;
                     }
 
-                    .tile {
-                        flex-weight: 0;
-                        anchor-width: 130;
-                        anchor-height: 38;
-                        border-radius: 6;
-                        font-size: 10;
-                        background-color: #21262d;
-                    }
-
-                    .tile-selected {
-                        background-color: #1f6feb;
-                    }
-
-                    .tile-part-focused {
-                        background-color: #2d4a7a;
-                    }
-
-                    .tile-none {
-                        background-color: #30363d;
-                    }
-
                     .tile-spacer {
                         flex-weight: 0;
-                        anchor-width: 130;
-                        anchor-height: 38;
-                    }
-
-                    .color-strip-label {
-                        layout: left;
-                        flex-weight: 0;
-                        padding: 6 0 2 0;
+                        anchor-width: 142;
+                        anchor-height: 33;
                     }
 
                     .color-strip-scroll {
                         layout-mode: TopScrolling;
                         flex-weight: 0;
-                        max-anchor-height: 130;
-                        background-color: #161b22;
-                        border-radius: 6;
-                        padding: 4 0 4 0;
+                        anchor-height: 160;
+                        padding: 2;
                     }
 
                     .color-row {
@@ -719,63 +795,53 @@ public class SkinCustomizerUI {
                         flex-weight: 0;
                     }
 
-                    .color-tile {
-                        flex-weight: 0;
-                        anchor-width: 90;
-                        anchor-height: 32;
-                        border-radius: 5;
-                        font-size: 9;
-                        background-color: #21262d;
-                    }
-
-                    .color-tile-selected {
-                        background-color: #1f6feb;
-                    }
-
                     .color-tile-spacer {
                         flex-weight: 0;
-                        anchor-width: 90;
-                        anchor-height: 32;
+                        anchor-width: 93;
+                        anchor-height: 33;
                     }
 
-                    .btn-accent {
+                    .empty-state {
+                        layout: top;
                         flex-weight: 0;
-                        anchor-height: 36;
-                        border-radius: 6;
+                        padding: 24;
+                        background-color: #101a27(0.52);
+                        border-radius: 10;
                     }
 
-                    .btn-success {
+                    .empty-state-title {
+                        color: #dce8f8;
+                        font-size: 14;
+                        font-weight: bold;
+                        text-align: center;
+                    }
+
+                    .empty-state-description {
+                        color: #8ea4c0;
+                        font-size: 12;
+                        text-align: center;
+                        padding-top: 6;
+                    }
+
+                    .secondary-button {
                         flex-weight: 0;
-                        anchor-height: 36;
-                        border-radius: 6;
+                        anchor-height: 40;
+                        anchor-width: 140;
+                        border-radius: 8;
                     }
 
-                    .btn-ghost {
+                    .small-secondary-button {
                         flex-weight: 0;
-                        anchor-height: 36;
-                        border-radius: 6;
+                        anchor-height: 33;
+                        anchor-width: 100;
+                        border-radius: 8;
                     }
 
-                    .btn-small-accent {
-                        flex-weight: 0;
-                        anchor-height: 26;
-                        border-radius: 4;
-                        font-size: 10;
-                    }
-
-                    .btn-small-ghost {
-                        flex-weight: 0;
-                        anchor-height: 26;
-                        border-radius: 4;
-                        font-size: 10;
-                    }
-
-                    .sp-xs  { flex-weight: 0; anchor-height: 4; }
-                    .sp-sm  { flex-weight: 0; anchor-height: 6; }
-                    .sp-h-xs  { flex-weight: 0; anchor-width: 4; }
-                    .sp-h-sm  { flex-weight: 0; anchor-width: 8; }
-                    .sp-h-tile  { flex-weight: 0; anchor-width: 5; }
-                    .sp-tile-row { flex-weight: 0; anchor-height: 5; }
+                    .spacer-xs { flex-weight: 0; anchor-height: 4; }
+                    .spacer-sm { flex-weight: 0; anchor-height: 8; }
+                    .spacer-md { flex-weight: 0; anchor-height: 16; }
+                    .spacer-h-sm { flex-weight: 0; anchor-width: 8; }
+                    .spacer-h-md { flex-weight: 0; anchor-width: 16; }
                 </style>
                 """;
     }

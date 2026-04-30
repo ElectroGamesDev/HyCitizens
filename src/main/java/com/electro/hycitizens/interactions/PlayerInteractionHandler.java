@@ -144,7 +144,9 @@ public class PlayerInteractionHandler implements PacketWatcher {
             }
 
             if (!handleCitizenStick(playerRef, citizen)) {
-                CitizenInteraction.handleInteraction(citizen, playerRef, interactionSource);
+                if (CitizenInteraction.hasConfiguredInteraction(citizen, interactionSource)) {
+                    CitizenInteraction.handleInteraction(citizen, playerRef, interactionSource);
+                }
             }
             break;
         }

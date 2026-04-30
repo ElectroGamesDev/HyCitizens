@@ -84,6 +84,8 @@ public class EntityDamageListener extends DamageEventSystem {
                 return;
             }
 
+            HyCitizensPlugin.get().getCitizensManager().ensureSafeModelComponent(targetRef);
+
             boolean cancelDamage = !targetCitizen.isTakesDamage();
 
             // Trigger ON_ATTACK animations regardless of damage setting

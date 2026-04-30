@@ -2777,6 +2777,7 @@ public class CitizensUI {
         clonedCitizen.setMovementBehavior(new MovementBehavior(
                 citizen.getMovementBehavior().getType(),
                 citizen.getMovementBehavior().getWalkSpeed(),
+                citizen.getMovementBehavior().getRunSpeed(),
                 citizen.getMovementBehavior().getWanderRadius(),
                 citizen.getMovementBehavior().getWanderWidth(),
                 citizen.getMovementBehavior().getWanderDepth()));
@@ -4508,11 +4509,15 @@ public class CitizensUI {
                                 || "WANDER_CIRCLE".equals(mb.getType())
                                 || "WANDER_RECT".equals(mb.getType())
                                 || "FOLLOW_CITIZEN".equals(mb.getType()))
+                .setVariable("hasRunSpeedControl",
+                        "PATROL".equals(mb.getType())
+                                || "FOLLOW_CITIZEN".equals(mb.getType()))
                 .setVariable("hasWanderRadiusControl",
                         "WANDER".equals(mb.getType())
                                 || "WANDER_CIRCLE".equals(mb.getType())
                                 || "WANDER_RECT".equals(mb.getType()))
                 .setVariable("walkSpeed", mb.getWalkSpeed())
+                .setVariable("runSpeed", mb.getRunSpeed())
                 .setVariable("wanderRadius", mb.getWanderRadius())
                 .setVariable("wanderWidth", mb.getWanderWidth())
                 .setVariable("wanderDepth", mb.getWanderDepth())
@@ -4535,6 +4540,7 @@ public class CitizensUI {
                 .setVariable("healthRegenDelayAfterDamage", citizen.getHealthRegenDelayAfterDamageSeconds())
                 .setVariable("isPatrol", "PATROL".equals(mb.getType()))
                 .setVariable("patrolPathOptions", generatePatrolPathOptions(citizen.getPathConfig().getPluginPatrolPath()))
+                .setVariable("patrolSpeed", citizen.getPathConfig().getPluginPatrolSpeed())
                 .setVariable("hasPatrolPaths", !plugin.getCitizensManager().getPatrolManager().getAllPathNames().isEmpty())
                 .setVariable("respawnOnDeath", citizen.isRespawnOnDeath())
                 .setVariable("respawnDelay", citizen.getRespawnDelaySeconds())
@@ -4770,6 +4776,16 @@ public class CitizensUI {
                                 <select id="plugin-patrol-path-behavior" data-hyui-showlabel="true">
                                     {{{$patrolPathOptions}}}
                                 </select>
+                                <div class="spacer-sm"></div>
+                                <div class="form-row">
+                                    <div style="flex-weight: 1;">
+                                        {{@numberField:id=patrol-speed,label=Patrol Speed,value={{$patrolSpeed}},placeholder=2,min=0.1,max=100,step=0.5,decimals=1}}
+                                    </div>
+                                    <div class="spacer-h-sm"></div>
+                                    <div style="flex-weight: 1;">
+                                        {{@numberField:id=run-speed,label=Run Speed,value={{$runSpeed}},placeholder=6,min=0.1,max=100,step=0.5,decimals=1}}
+                                    </div>
+                                </div>
                                 <div class="spacer-xs"></div>
                                 <button id="manage-paths-from-behaviors-btn" class="secondary-button" style="anchor-width: 200;">Manage Patrol Paths</button>
                                 {{else}}
@@ -4781,9 +4797,23 @@ public class CitizensUI {
 
                                 {{#if hasWalkSpeedControl}}
                                 <div class="spacer-sm"></div>
+                                {{#if hasRunSpeedControl}}
                                 <div class="form-row">
-                                    {{@numberField:id=walk-speed,label=Walk Speed,value={{$walkSpeed}},placeholder=10,min=1,max=100,step=1,decimals=0}}
+                                    <div style="flex-weight: 1;">
+                                        {{@numberField:id=walk-speed,label=Walk Speed,value={{$walkSpeed}},placeholder=10,min=0.1,max=100,step=0.5,decimals=1}}
+                                    </div>
+                                    <div class="spacer-h-sm"></div>
+                                    <div style="flex-weight: 1;">
+                                        {{@numberField:id=run-speed,label=Run Speed,value={{$runSpeed}},placeholder=6,min=0.1,max=100,step=0.5,decimals=1}}
+                                    </div>
                                 </div>
+                                {{else}}
+                                <div class="form-row">
+                                    <div style="anchor-width: 220;">
+                                        {{@numberField:id=walk-speed,label=Walk Speed,value={{$walkSpeed}},placeholder=10,min=0.1,max=100,step=0.5,decimals=1}}
+                                    </div>
+                                </div>
+                                {{/if}}
                                 {{/if}}
 
                                 {{#if hasWanderRadiusControl}}
@@ -4911,10 +4941,12 @@ public class CitizensUI {
         final MovementBehavior mb = citizen.getMovementBehavior();
         final String moveType = mb.getType();
         final float[] walkSpeed = {mb.getWalkSpeed()};
+        final float[] runSpeed = {mb.getRunSpeed()};
         final float[] wanderRadius = {mb.getWanderRadius()};
         final float[] wanderWidth = {mb.getWanderWidth()};
         final float[] wanderDepth = {mb.getWanderDepth()};
         final float[] followDistance = {citizen.getFollowDistance()};
+        final float[] patrolSpeed = {citizen.getPathConfig().getPluginPatrolSpeed()};
         List<AnimationBehavior> anims = new ArrayList<>(citizen.getAnimationBehaviors());
 
         page.addEventListener("player-attitude", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
@@ -5029,7 +5061,7 @@ public class CitizensUI {
                 plugin.getCitizensManager().stopCitizenPatrol(citizen.getId());
             }
             citizen.setFollowCitizenEnabled(false);
-            citizen.setMovementBehavior(new MovementBehavior("IDLE", walkSpeed[0], wanderRadius[0], wanderWidth[0], wanderDepth[0]));
+            citizen.setMovementBehavior(new MovementBehavior("IDLE", walkSpeed[0], runSpeed[0], wanderRadius[0], wanderWidth[0], wanderDepth[0]));
             plugin.getCitizensManager().saveCitizen(citizen, true);
             openBehaviorsGUI(playerRef, store, citizen);
         });
@@ -5039,14 +5071,14 @@ public class CitizensUI {
                 plugin.getCitizensManager().stopCitizenPatrol(citizen.getId());
             }
             citizen.setFollowCitizenEnabled(false);
-            citizen.setMovementBehavior(new MovementBehavior("WANDER", walkSpeed[0], wanderRadius[0], wanderWidth[0], wanderDepth[0]));
+            citizen.setMovementBehavior(new MovementBehavior("WANDER", walkSpeed[0], runSpeed[0], wanderRadius[0], wanderWidth[0], wanderDepth[0]));
             plugin.getCitizensManager().saveCitizen(citizen, true);
             openBehaviorsGUI(playerRef, store, citizen);
         });
 
         page.addEventListener("move-patrol", CustomUIEventBindingType.Activating, event -> {
             citizen.setFollowCitizenEnabled(false);
-            citizen.setMovementBehavior(new MovementBehavior("PATROL", walkSpeed[0], wanderRadius[0], wanderWidth[0], wanderDepth[0]));
+            citizen.setMovementBehavior(new MovementBehavior("PATROL", walkSpeed[0], runSpeed[0], wanderRadius[0], wanderWidth[0], wanderDepth[0]));
             plugin.getCitizensManager().saveCitizen(citizen, true);
             String patrolPath = citizen.getPathConfig().getPluginPatrolPath();
             if (!patrolPath.isEmpty()) {
@@ -5060,7 +5092,8 @@ public class CitizensUI {
                 plugin.getCitizensManager().stopCitizenPatrol(citizen.getId());
             }
             citizen.setFollowCitizenEnabled(true);
-            citizen.setMovementBehavior(new MovementBehavior("FOLLOW_CITIZEN", walkSpeed[0], wanderRadius[0], wanderWidth[0], wanderDepth[0]));
+            walkSpeed[0] = 4.0f;
+            citizen.setMovementBehavior(new MovementBehavior("FOLLOW_CITIZEN", walkSpeed[0], runSpeed[0], wanderRadius[0], wanderWidth[0], wanderDepth[0]));
             plugin.getCitizensManager().saveCitizen(citizen, true);
             openBehaviorsGUI(playerRef, store, citizen);
         });
@@ -5075,6 +5108,22 @@ public class CitizensUI {
                         if (!newPath.isEmpty()) {
                             plugin.getCitizensManager().startCitizenPatrol(citizen.getId(), newPath);
                         }
+                    });
+                });
+
+                page.addEventListener("patrol-speed", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
+                    ctx.getValue("patrol-speed", Double.class).ifPresent(v -> {
+                        patrolSpeed[0] = Math.max(0.1f, v.floatValue());
+                        citizen.getPathConfig().setPluginPatrolSpeed(patrolSpeed[0]);
+                        plugin.getCitizensManager().saveCitizen(citizen, true);
+                    });
+                });
+
+                page.addEventListener("run-speed", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
+                    ctx.getValue("run-speed", Double.class).ifPresent(v -> {
+                        runSpeed[0] = Math.max(0.1f, v.floatValue());
+                        citizen.setMovementBehavior(new MovementBehavior(moveType, walkSpeed[0], runSpeed[0], wanderRadius[0], wanderWidth[0], wanderDepth[0]));
+                        plugin.getCitizensManager().saveCitizen(citizen, true);
                     });
                 });
             }
@@ -5096,10 +5145,20 @@ public class CitizensUI {
             page.addEventListener("walk-speed", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
                 ctx.getValue("walk-speed", Double.class).ifPresent(v -> {
                     walkSpeed[0] = v.floatValue();
-                    citizen.setMovementBehavior(new MovementBehavior(moveType, walkSpeed[0], wanderRadius[0], wanderWidth[0], wanderDepth[0]));
+                    citizen.setMovementBehavior(new MovementBehavior(moveType, walkSpeed[0], runSpeed[0], wanderRadius[0], wanderWidth[0], wanderDepth[0]));
                     plugin.getCitizensManager().saveCitizen(citizen, true);
                 });
             });
+
+            if ("FOLLOW_CITIZEN".equals(moveType)) {
+                page.addEventListener("run-speed", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
+                    ctx.getValue("run-speed", Double.class).ifPresent(v -> {
+                        runSpeed[0] = Math.max(0.1f, v.floatValue());
+                        citizen.setMovementBehavior(new MovementBehavior(moveType, walkSpeed[0], runSpeed[0], wanderRadius[0], wanderWidth[0], wanderDepth[0]));
+                        plugin.getCitizensManager().saveCitizen(citizen, true);
+                    });
+                });
+            }
         }
 
         // Wander radius input
@@ -5107,7 +5166,7 @@ public class CitizensUI {
             page.addEventListener("wander-radius", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
                 ctx.getValue("wander-radius", Double.class).ifPresent(v -> {
                     wanderRadius[0] = Math.max(1, v.floatValue());
-                    citizen.setMovementBehavior(new MovementBehavior(moveType, walkSpeed[0], wanderRadius[0], wanderWidth[0], wanderDepth[0]));
+                    citizen.setMovementBehavior(new MovementBehavior(moveType, walkSpeed[0], runSpeed[0], wanderRadius[0], wanderWidth[0], wanderDepth[0]));
                     plugin.getCitizensManager().saveCitizen(citizen, true);
                 });
             });

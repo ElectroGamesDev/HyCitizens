@@ -20,6 +20,9 @@ import java.util.concurrent.ConcurrentHashMap;
 import static com.hypixel.hytale.logger.HytaleLogger.getLogger;
 
 public class RoleGenerator {
+    private static final float MARKER_ROLE_MAX_SPEED = 18.0f;
+    private static final float COMBAT_MOVE_SPEED_RATIO = 0.67f;
+    private static final float COMBAT_BACKWARDS_SPEED_RATIO = 0.33f;
     private final File generatedRolesDir;
     private final Gson gson;
     private final Map<String, String> lastGeneratedContent = new ConcurrentHashMap<>();
@@ -179,8 +182,9 @@ public class RoleGenerator {
         } else if (isPatrol) {
             return generatePatrolRole(citizen);
         } else if (isFollowCitizen) {
-            return generateSeekRole(citizen, citizen.getMovementBehavior().getWalkSpeed(), 0.05f,
-                    Math.max(0.6f, Math.min(1.4f, citizen.getFollowDistance() + 0.35f)));
+            float followStopDistance = getFollowStopDistance(citizen.getFollowDistance());
+            return generateMoveTargetRole(citizen, citizen.getMovementBehavior().getWalkSpeed(), followStopDistance,
+                    Math.max(followStopDistance + 0.25f, Math.min(1.4f, citizen.getFollowDistance() + 0.35f)));
         } else {
             return generateVariantRole(citizen);
         }
@@ -253,36 +257,7 @@ public class RoleGenerator {
 
     @Nonnull
     private JsonObject generatePatrolRole(@Nonnull CitizenData citizen) {
-        JsonObject role = new JsonObject();
-        role.addProperty("Type", "Generic");
-        role.addProperty("Appearance", citizen.getModelId());
-
-        JsonArray motionControllers = new JsonArray();
-        JsonObject walkController = new JsonObject();
-        walkController.addProperty("Type", "Walk");
-        motionControllers.add(walkController);
-        role.add("MotionControllerList", motionControllers);
-
-        JsonObject maxHealthCompute = new JsonObject();
-        maxHealthCompute.addProperty("Compute", "MaxHealth");
-        role.add("MaxHealth", maxHealthCompute);
-
-        JsonObject parameters = new JsonObject();
-        JsonObject maxHealthParam = new JsonObject();
-        maxHealthParam.addProperty("Value", 100);
-        maxHealthParam.addProperty("Description", "Max health for the NPC");
-        parameters.add("MaxHealth", maxHealthParam);
-        role.add("Parameters", parameters);
-
-        role.addProperty("KnockbackScale", citizen.getKnockbackScale());
-
-        JsonArray instructions = new JsonArray();
-        instructions.add(buildSeekInstruction(citizen.getMovementBehavior().getWalkSpeed(), 0.05f, 1.0f));
-        role.add("Instructions", instructions);
-
-        role.addProperty("NameTranslationKey", citizen.getNameTranslationKey());
-
-        return role;
+        return generateMoveTargetRole(citizen, citizen.getPathConfig().getPluginPatrolSpeed(), 0.05f, 1.0f);
     }
 
     @Nonnull
@@ -295,11 +270,38 @@ public class RoleGenerator {
         return switch (entry.getActivityType()) {
             case IDLE -> generateIdleRole(citizen);
             case WANDER -> generateScheduleWanderRole(citizen, entry);
-            case PATROL -> generateSeekRole(citizen, entry.getTravelSpeed(), 0.05f,
+            case PATROL -> generateMoveTargetRole(citizen, entry.getTravelSpeed(), 0.05f,
                     Math.max(0.75f, entry.getArrivalRadius() + 0.5f));
-            case FOLLOW_CITIZEN -> generateSeekRole(citizen, entry.getTravelSpeed(), 0.05f,
-                    Math.max(0.6f, Math.min(1.4f, entry.getFollowDistance() + 0.35f)));
+            case FOLLOW_CITIZEN -> {
+                float followStopDistance = getFollowStopDistance(entry.getFollowDistance());
+                yield generateMoveTargetRole(citizen, entry.getTravelSpeed(), followStopDistance,
+                        Math.max(followStopDistance + 0.25f, Math.min(1.4f, entry.getFollowDistance() + 0.35f)));
+            }
         };
+    }
+
+    private float getFollowStopDistance(float followDistance) {
+        return Math.max(0.35f, Math.min(0.9f, followDistance * 0.35f));
+    }
+
+    @Nonnull
+    private JsonObject generateMoveTargetRole(@Nonnull CitizenData citizen, float walkSpeed, float stopDistance, float slowDownDistance) {
+        JsonObject role = generateVariantRole(citizen);
+        JsonObject modify = role.getAsJsonObject("Modify");
+        modify.addProperty("MaxSpeed", MARKER_ROLE_MAX_SPEED);
+        modify.addProperty("FollowPatrolPath", false);
+        modify.addProperty("PatrolPathName", "");
+        modify.addProperty("Patrol", false);
+        modify.addProperty("PatrolWanderDistance", 0.0f);
+        modify.addProperty("FollowMoveTarget", true);
+        modify.addProperty("MoveTargetStopDistance", Math.max(0.05f, stopDistance));
+        modify.addProperty("MoveTargetSlowDownDistance", Math.max(stopDistance + 0.25f, slowDownDistance));
+        modify.addProperty("MoveTargetRelativeSpeed", Math.max(0.05f, Math.min(3.0f, walkSpeed / MARKER_ROLE_MAX_SPEED)));
+        float runSpeed = Math.max(0.1f, citizen.getMovementBehavior().getRunSpeed());
+        modify.addProperty("ChaseRelativeSpeed", Math.min(3.0f, runSpeed / MARKER_ROLE_MAX_SPEED));
+        modify.addProperty("CombatMovingRelativeSpeed", Math.min(3.0f, (runSpeed * COMBAT_MOVE_SPEED_RATIO) / MARKER_ROLE_MAX_SPEED));
+        modify.addProperty("CombatBackwardsRelativeSpeed", Math.min(3.0f, (runSpeed * COMBAT_BACKWARDS_SPEED_RATIO) / MARKER_ROLE_MAX_SPEED));
+        return role;
     }
 
     @Nonnull
@@ -438,7 +440,7 @@ public class RoleGenerator {
         modify.addProperty("RandomIdleHotbarSlot", citizen.getRandomIdleHotbarSlot());
         modify.addProperty("ChanceToEquipFromIdleHotbarSlot", citizen.getChanceToEquipFromIdleHotbarSlot());
         modify.addProperty("DefaultOffHandSlot", citizen.getDefaultOffHandSlot());
-        modify.addProperty("NighttimeOffhandSlot", citizen.getNighttimeOffhandSlot());
+        modify.addProperty("NighttimeOffhandSlot", getGeneratedNighttimeOffhandSlot(citizen));
 
         addStringArrayIfNotEmpty(modify, "CombatMessageTargetGroups", citizen.getCombatMessageTargetGroups());
         addStringArrayIfNotEmpty(modify, "FlockArray", citizen.getFlockArray());
@@ -598,6 +600,20 @@ public class RoleGenerator {
         if (!values.isEmpty()) {
             addStringArray(obj, key, values);
         }
+    }
+
+    private int getGeneratedNighttimeOffhandSlot(@Nonnull CitizenData citizen) {
+        int slot = citizen.getNighttimeOffhandSlot();
+        if (slot != 0 || citizen.getDefaultOffHandSlot() >= 0) {
+            return slot;
+        }
+
+        List<String> offHandItems = citizen.getOffHandItems();
+        if (offHandItems.size() == 1 && "Furniture_Crude_Torch".equals(offHandItems.get(0))) {
+            return -1;
+        }
+
+        return slot;
     }
 
     // Helper: add a string array to a JsonObject

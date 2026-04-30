@@ -878,11 +878,14 @@ public class CitizensManager {
 
         // Load movement behavior
         String moveType = config.getString(basePath + ".movement.type", "IDLE");
-        float walkSpeed = config.getFloat(basePath + ".movement.walk-speed", 10.0f);
+        String walkSpeedPath = basePath + ".movement.walk-speed";
+        float defaultWalkSpeed = "FOLLOW_CITIZEN".equals(moveType) ? 4.0f : 10.0f;
+        float walkSpeed = config.getFloat(walkSpeedPath, defaultWalkSpeed);
+        float runSpeed = config.getFloat(basePath + ".movement.run-speed", 6.0f);
         float wanderRadius = config.getFloat(basePath + ".movement.wander-radius", 10.0f);
         float wanderWidth = config.getFloat(basePath + ".movement.wander-width", 10.0f);
         float wanderDepth = config.getFloat(basePath + ".movement.wander-depth", 10.0f);
-        citizenData.setMovementBehavior(new MovementBehavior(moveType, walkSpeed, wanderRadius, wanderWidth, wanderDepth));
+        citizenData.setMovementBehavior(new MovementBehavior(moveType, walkSpeed, runSpeed, wanderRadius, wanderWidth, wanderDepth));
         citizenData.setFollowCitizenEnabled(config.getBoolean(basePath + ".follow-citizen.enabled", false));
         citizenData.setFollowCitizenId(config.getString(basePath + ".follow-citizen.id", ""));
         citizenData.setFollowDistance(config.getFloat(basePath + ".follow-citizen.distance", 2.0f));
@@ -1128,6 +1131,7 @@ public class CitizensManager {
         pathConfig.setPatrolWanderDistance(config.getFloat(basePath + ".path.patrol-wander-distance", 25));
         pathConfig.setLoopMode(config.getString(basePath + ".path.loop-mode", "LOOP"));
         pathConfig.setPluginPatrolPath(config.getString(basePath + ".path.plugin-patrol-path", ""));
+        pathConfig.setPluginPatrolSpeed(config.getFloat(basePath + ".path.plugin-patrol-speed", 2.0f));
         citizenData.setPathConfig(pathConfig);
 
         // Load extended Template_Citizen parameters
@@ -1148,7 +1152,7 @@ public class CitizensManager {
         citizenData.setRandomIdleHotbarSlot(config.getInt(basePath + ".random-idle-hotbar-slot", -1));
         citizenData.setChanceToEquipFromIdleHotbarSlot(config.getInt(basePath + ".chance-equip-idle-hotbar", 5));
         citizenData.setDefaultOffHandSlot(config.getInt(basePath + ".default-offhand-slot", -1));
-        citizenData.setNighttimeOffhandSlot(config.getInt(basePath + ".nighttime-offhand-slot", 0));
+        citizenData.setNighttimeOffhandSlot(config.getInt(basePath + ".nighttime-offhand-slot", -1));
         citizenData.setKnockbackScale(config.getFloat(basePath + ".knockback-scale", 0.5f));
         citizenData.setHealthRegenEnabled(config.getBoolean(basePath + ".health-regen.enabled", false));
         citizenData.setHealthRegenAmount(config.getFloat(basePath + ".health-regen.amount", 1.0f));
@@ -1365,6 +1369,7 @@ public class CitizensManager {
             MovementBehavior mb = citizen.getMovementBehavior();
             config.set(basePath + ".movement.type", mb.getType());
             config.set(basePath + ".movement.walk-speed", mb.getWalkSpeed());
+            config.set(basePath + ".movement.run-speed", mb.getRunSpeed());
             config.set(basePath + ".movement.wander-radius", mb.getWanderRadius());
             config.set(basePath + ".movement.wander-width", mb.getWanderWidth());
             config.set(basePath + ".movement.wander-depth", mb.getWanderDepth());
@@ -1545,6 +1550,7 @@ public class CitizensManager {
             config.set(basePath + ".path.patrol-wander-distance", pathCfg.getPatrolWanderDistance());
             config.set(basePath + ".path.loop-mode", pathCfg.getLoopMode());
             config.set(basePath + ".path.plugin-patrol-path", pathCfg.getPluginPatrolPath());
+            config.set(basePath + ".path.plugin-patrol-speed", pathCfg.getPluginPatrolSpeed());
 
             // Save extended Template_Citizen parameters
             config.set(basePath + ".drop-list", citizen.getDropList());
@@ -1843,6 +1849,7 @@ public class CitizensManager {
                                             @Nonnull Ref<EntityStore> resolvedRef,
                                             boolean save) {
         bindCitizenEntityRef(citizen, resolvedRef);
+        ensureSafeModelComponent(resolvedRef);
 
         TransformComponent transformComponent =
                 resolvedRef.getStore().getComponent(resolvedRef, TransformComponent.getComponentType());
@@ -1888,6 +1895,7 @@ public class CitizensManager {
         cancelPendingNpcSpawnRetry(citizen.getId());
         ref.getStore().putComponent(ref, CitizenNpcIdentityComponent.getComponentType(),
                 new CitizenNpcIdentityComponent(citizen.getId()));
+        ensureSafeModelComponent(ref);
 
         UUIDComponent uuidComponent = ref.getStore().getComponent(ref, UUIDComponent.getComponentType());
         if (uuidComponent != null) {
@@ -2133,7 +2141,18 @@ public class CitizensManager {
             }
 
             RoleChangeSystem.requestRoleChange(liveRef, npcEntity.getRole(), desiredRoleIndex, true, liveRef.getStore());
-            HytaleServer.SCHEDULED_EXECUTOR.schedule(() -> refreshSpawnedCitizenAppearance(citizen), 50, TimeUnit.MILLISECONDS);
+            HytaleServer.SCHEDULED_EXECUTOR.schedule(() -> {
+                refreshSpawnedCitizenAppearance(citizen);
+                World currentWorld = Universe.get().getWorld(citizen.getWorldUUID());
+                if (currentWorld != null) {
+                    currentWorld.execute(() -> {
+                        Ref<EntityStore> currentRef = citizen.getNpcRef();
+                        if (currentRef != null && currentRef.isValid()) {
+                            ensureSafeModelComponent(currentRef);
+                        }
+                    });
+                }
+            }, 50, TimeUnit.MILLISECONDS);
         });
     }
 
@@ -2142,26 +2161,71 @@ public class CitizensManager {
     }
 
     @Nullable
-    private Model createFallbackSpawnModel(@Nonnull CitizenData citizen, @Nonnull String roleName, float scale) {
+    private Model createSpawnModel(@Nonnull CitizenData citizen, float scale) {
         if (citizen.isPlayerModel() || "Player".equals(citizen.getModelId())) {
-            return null;
-        }
-
-        if (!roleGenerator.getFallbackRoleName(citizen).equals(roleName)) {
             return null;
         }
 
         ModelAsset modelAsset = ModelAsset.getAssetMap().getAsset(citizen.getModelId());
         if (modelAsset == null) {
-            getLogger().atWarning().log("Unable to create fallback model for citizen '" + citizen.getId() + "': unknown model '" + citizen.getModelId() + "'.");
+            getLogger().atWarning().log("Unable to create spawn model for citizen '" + citizen.getId() + "': unknown model '" + citizen.getModelId() + "'.");
             return null;
         }
 
         try {
-            return Model.createStaticScaledModel(modelAsset, scale);
+            return withSafeAnimationSetMap(Model.createScaledModel(modelAsset, scale));
         } catch (Exception e) {
-            getLogger().atWarning().log("Unable to create fallback model for citizen '" + citizen.getId() + "': " + e.getMessage());
+            getLogger().atWarning().log("Unable to create spawn model for citizen '" + citizen.getId() + "': " + e.getMessage());
             return null;
+        }
+    }
+
+    @Nullable
+    private Model withSafeAnimationSetMap(@Nullable Model model) {
+        if (model == null || model.getAnimationSetMap() != null) {
+            return model;
+        }
+
+        return new Model(
+                model.getModelAssetId(),
+                model.getScale(),
+                model.getRandomAttachmentIds(),
+                model.getAttachments(),
+                model.getBoundingBox(),
+                model.getModel(),
+                model.getTexture(),
+                model.getGradientSet(),
+                model.getGradientId(),
+                model.getEyeHeight(),
+                model.getCrouchOffset(),
+                model.getSittingOffset(),
+                model.getSleepingOffset(),
+                Collections.<String, ModelAsset.AnimationSet>emptyMap(),
+                model.getCamera(),
+                model.getLight(),
+                model.getParticles(),
+                model.getTrails(),
+                model.getPhysicsValues(),
+                model.getDetailBoxes(),
+                model.getPhobia(),
+                model.getPhobiaModelAssetId()
+        );
+    }
+
+    public void ensureSafeModelComponent(@Nonnull Ref<EntityStore> ref) {
+        if (!ref.isValid()) {
+            return;
+        }
+
+        ModelComponent modelComponent = ref.getStore().getComponent(ref, ModelComponent.getComponentType());
+        if (modelComponent == null) {
+            return;
+        }
+
+        Model model = modelComponent.getModel();
+        Model safeModel = withSafeAnimationSetMap(model);
+        if (safeModel != model) {
+            ref.getStore().putComponent(ref, ModelComponent.getComponentType(), new ModelComponent(safeModel));
         }
     }
 
@@ -2221,15 +2285,17 @@ public class CitizensManager {
         float scale = Math.max((float)0.01, citizen.getScale());
 
         String roleName = resolveSpawnRoleName(citizen);
-        Model fallbackSpawnModel = createFallbackSpawnModel(citizen, roleName, scale);
+        Model spawnModel = createSpawnModel(citizen, scale);
 
-        // Let generated roles resolve models, but provide an explicit model when temporarily using the generic fallback role.
+        // Always provide an explicit spawn model for non-player NPCs so RoleBuilderSystem skips
+        // its model-creation branch (which would override the citizen's scale with the model
+        // asset's random default scale). See createSpawnModel for details.
         Pair<Ref<EntityStore>, NPCEntity> npc = NPCPlugin.get().spawnEntity(
                 world.getEntityStore().getStore(),
                 NPCPlugin.get().getIndex(roleName),
                 citizen.getPosition(),
                 citizen.getRotation(),
-                fallbackSpawnModel,
+                spawnModel,
                 (npcComponent, holder, store) -> npcComponent.setInitialModelScale(scale),
                 null
         );
@@ -2316,6 +2382,7 @@ public class CitizensManager {
             Map<String, String> randomAttachmentIds = new HashMap<>();
             playerModel = new Model.ModelReference("Player", scale, randomAttachmentIds).toModel();
         }
+        playerModel = withSafeAnimationSetMap(playerModel);
         //Map<String, String> randomAttachmentIds = new HashMap<>();
         //Model playerModel = new Model.ModelReference("PlayerTestModel_V", scale, randomAttachmentIds).toModel();
 
@@ -2612,7 +2679,7 @@ public class CitizensManager {
         }
 
         float scale = Math.max(0.01f, citizen.getNametagModelScale());
-        return Model.createStaticScaledModel(nametagAsset, scale);
+        return withSafeAnimationSetMap(Model.createStaticScaledModel(nametagAsset, scale));
     }
 
     @Nullable
@@ -2799,6 +2866,7 @@ public class CitizensManager {
             getLogger().atWarning().log("Failed to create skin model while restoring appearance for citizen '" + citizen.getId() + "'.");
             return;
         }
+        newModel = withSafeAnimationSetMap(newModel);
 
         npcRef.getStore().putComponent(npcRef, PlayerSkinComponent.getComponentType(), new PlayerSkinComponent(skin));
         npcRef.getStore().putComponent(npcRef, ModelComponent.getComponentType(), new ModelComponent(newModel));
@@ -2929,6 +2997,7 @@ public class CitizensManager {
                             getLogger().atWarning().log("Failed to create skin model while previewing skin for citizen '" + citizen.getId() + "'.");
                             return;
                         }
+                        newModel = withSafeAnimationSetMap(newModel);
 
                         PlayerSkinComponent skinComponent = new PlayerSkinComponent(skin);
                         npcRef.getStore().putComponent(npcRef, PlayerSkinComponent.getComponentType(), skinComponent);
@@ -4028,19 +4097,20 @@ public class CitizensManager {
         double dz = playerPos.z - entityPos.z;
         float yaw = (float) (Math.atan2(dx, dz) + Math.PI);
 
-        double dy = playerPos.y - entityPos.y;
-        double horizontalDistance = Math.sqrt(dx * dx + dz * dz);
-        float pitch = (float) Math.atan2(dy, horizontalDistance);
+//        double dy = playerPos.y - entityPos.y;
+//        double horizontalDistance = Math.sqrt(dx * dx + dz * dz);
+//        float pitch = (float) Math.atan2(dy, horizontalDistance);
 
-        Direction lookDirection = new Direction(yaw, pitch, 0f);
-        Direction bodyDirection = new Direction(yaw, pitch, 0f);
+        Direction lookDirection = new Direction(yaw, 0f, 0f);
+        Direction bodyDirection = new Direction(yaw, 0f, 0f);
 
         UUID playerUuid = playerRef.getUuid();
         Direction lastLook = citizen.lastNametagLookDirections.get(playerUuid);
         if (lastLook != null) {
             float yawDiff = Math.abs(lookDirection.yaw - lastLook.yaw);
-            float pitchDiff = Math.abs(lookDirection.pitch - lastLook.pitch);
-            if (yawDiff < 0.02f && pitchDiff < 0.02f) {
+//            float pitchDiff = Math.abs(lookDirection.pitch - lastLook.pitch);
+//            if (yawDiff < 0.02f && pitchDiff < 0.02f) {
+            if (yawDiff < 0.02f) {
                 return;
             }
         }
@@ -4441,21 +4511,40 @@ public class CitizensManager {
     }
 
     public boolean isCitizenInCombat(@Nonnull CitizenData citizen) {
+        String stateName = getCitizenStateName(citizen);
+        return stateName != null && stateName.toLowerCase(Locale.ROOT).contains("combat");
+    }
+
+    public boolean isCitizenInAiBusyState(@Nonnull CitizenData citizen) {
+        String stateName = getCitizenStateName(citizen);
+        if (stateName == null) {
+            return false;
+        }
+
+        String normalized = stateName.toLowerCase(Locale.ROOT);
+        return normalized.contains("combat")
+                || normalized.contains("alerted")
+                || normalized.contains("investigate")
+                || normalized.contains("returnhome")
+                || normalized.contains("search");
+    }
+
+    @Nullable
+    private String getCitizenStateName(@Nonnull CitizenData citizen) {
         Ref<EntityStore> npcRef = citizen.getNpcRef();
         if (npcRef == null || !npcRef.isValid()) {
-            return false;
+            return null;
         }
 
         try {
             NPCEntity npcEntity = npcRef.getStore().getComponent(npcRef, NPCEntity.getComponentType());
             if (npcEntity == null || npcEntity.getRole() == null || npcEntity.getRole().getStateSupport() == null) {
-                return false;
+                return null;
             }
 
-            String stateName = npcEntity.getRole().getStateSupport().getStateName();
-            return stateName != null && stateName.toLowerCase(Locale.ROOT).contains("combat");
+            return npcEntity.getRole().getStateSupport().getStateName();
         } catch (Exception e) {
-            return false;
+            return null;
         }
     }
 
@@ -4787,6 +4876,9 @@ public class CitizensManager {
             clearStandaloneFollowState(citizen.getId(), standaloneFollowSessions.containsKey(citizen.getId()));
             return;
         }
+        if (isCitizenInAiBusyState(citizen)) {
+            return;
+        }
 
         CitizenData leader = citizens.get(citizen.getFollowCitizenId());
         if (leader == null || leader.getId().equals(citizen.getId()) || !citizen.getWorldUUID().equals(leader.getWorldUUID())) {
@@ -4830,7 +4922,7 @@ public class CitizensManager {
             updateCitizenMoveTarget(citizen.getId(), targetPosition);
             session.lastTargetPosition = new Vector3d(targetPosition.x, targetPosition.y, targetPosition.z);
         } else if (followerDistanceSq <= settleRadiusSq) {
-            stopCitizenMovement(citizen.getId());
+            updateCitizenMoveTarget(citizen.getId(), targetPosition);
         }
     }
 
@@ -4985,7 +5077,12 @@ public class CitizensManager {
         }
 
         world.execute(() -> {
-            NPCEntity npcEntity = npcRef.getStore().getComponent(npcRef, NPCEntity.getComponentType());
+            Ref<EntityStore> liveRef = citizen.getNpcRef();
+            if (liveRef == null || !liveRef.isValid()) {
+                return;
+            }
+
+            NPCEntity npcEntity = liveRef.getStore().getComponent(liveRef, NPCEntity.getComponentType());
             if (npcEntity != null) {
                 npcEntity.setLeashPoint(position);
             }

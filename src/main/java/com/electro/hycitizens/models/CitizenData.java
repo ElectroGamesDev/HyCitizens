@@ -177,7 +177,7 @@ public class CitizenData {
     private int randomIdleHotbarSlot = -1;
     private int chanceToEquipFromIdleHotbarSlot = 5;
     private int defaultOffHandSlot = -1;
-    private int nighttimeOffhandSlot = 0;
+    private int nighttimeOffhandSlot = -1;
 
     // KnockbackScale
     private float knockbackScale = 0.5f;
