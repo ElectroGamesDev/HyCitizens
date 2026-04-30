@@ -5,13 +5,19 @@ import javax.annotation.Nonnull;
 public class MovementBehavior {
     private String type;
     private float walkSpeed;
+    private float runSpeed;
     private float wanderRadius;
     private float wanderWidth;
     private float wanderDepth;
 
     public MovementBehavior(@Nonnull String type, float walkSpeed, float wanderRadius, float wanderWidth, float wanderDepth) {
+        this(type, walkSpeed, 6.0f, wanderRadius, wanderWidth, wanderDepth);
+    }
+
+    public MovementBehavior(@Nonnull String type, float walkSpeed, float runSpeed, float wanderRadius, float wanderWidth, float wanderDepth) {
         this.type = type;
         this.walkSpeed = walkSpeed;
+        this.runSpeed = runSpeed;
         this.wanderRadius = wanderRadius;
         this.wanderWidth = wanderWidth;
         this.wanderDepth = wanderDepth;
@@ -20,6 +26,7 @@ public class MovementBehavior {
     public MovementBehavior() {
         this.type = "IDLE";
         this.walkSpeed = 10.0f;
+        this.runSpeed = 6.0f;
         this.wanderRadius = 10.0f;
         this.wanderWidth = 10.0f;
         this.wanderDepth = 10.0f;
@@ -40,6 +47,14 @@ public class MovementBehavior {
 
     public void setWalkSpeed(float walkSpeed) {
         this.walkSpeed = walkSpeed;
+    }
+
+    public float getRunSpeed() {
+        return runSpeed;
+    }
+
+    public void setRunSpeed(float runSpeed) {
+        this.runSpeed = runSpeed;
     }
 
     public float getWanderRadius() {

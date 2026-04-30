@@ -9,6 +9,7 @@ public class PathConfig {
     private float patrolWanderDistance;
     private String loopMode;
     private String pluginPatrolPath;
+    private float pluginPatrolSpeed;
 
     public PathConfig() {
         this.followPath = false;
@@ -17,6 +18,7 @@ public class PathConfig {
         this.patrolWanderDistance = 25;
         this.loopMode = "LOOP";
         this.pluginPatrolPath = "";
+        this.pluginPatrolSpeed = 2.0f;
     }
 
     public void copyFrom(@Nonnull PathConfig other) {
@@ -26,6 +28,7 @@ public class PathConfig {
         this.patrolWanderDistance = other.patrolWanderDistance;
         this.loopMode = other.loopMode;
         this.pluginPatrolPath = other.pluginPatrolPath;
+        this.pluginPatrolSpeed = other.pluginPatrolSpeed;
     }
 
     public boolean isFollowPath() { return followPath; }
@@ -48,4 +51,7 @@ public class PathConfig {
     @Nonnull
     public String getPluginPatrolPath() { return pluginPatrolPath; }
     public void setPluginPatrolPath(@Nonnull String pluginPatrolPath) { this.pluginPatrolPath = pluginPatrolPath; }
+
+    public float getPluginPatrolSpeed() { return pluginPatrolSpeed; }
+    public void setPluginPatrolSpeed(float pluginPatrolSpeed) { this.pluginPatrolSpeed = Math.max(0.1f, pluginPatrolSpeed); }
 }

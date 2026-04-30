@@ -83,6 +83,22 @@
       "Value": 25,
       "Description": "How far to wander when patrolling and not following a path before taking a break."
     },
+    "FollowMoveTarget": {
+      "Value": false,
+      "Description": "Whether this NPC should seek a plugin-managed movement marker while still using the normal combat state machine."
+    },
+    "MoveTargetStopDistance": {
+      "Value": 0.05,
+      "Description": "Distance from the plugin-managed movement marker where the NPC should stop."
+    },
+    "MoveTargetSlowDownDistance": {
+      "Value": 1,
+      "Description": "Distance from the plugin-managed movement marker where the NPC should slow down."
+    },
+    "MoveTargetRelativeSpeed": {
+      "Value": 0.55,
+      "Description": "Relative speed used when seeking a plugin-managed movement marker."
+    },
     "Weapons": {
       "Value": [ "Weapon_Sword_Iron" ],
       "Description": "NPC Weapons (and other main hand items)."
@@ -507,6 +523,27 @@
                   ]
                 }
               ]
+            },
+            {
+              "$Comment": "Seek plugin-managed patrol/follow markers without taking over the combat target slot.",
+              "Enabled": { "Compute": "FollowMoveTarget" },
+              "Sensor": {
+                "Type": "Target",
+                "TargetSlot": "MoveTarget"
+              },
+              "HeadMotion": {
+                "Type": "Observe",
+                "AngleRange": [ -5.0, 5.0 ],
+                "PickRandomAngle": true
+              },
+              "BodyMotion": {
+                "Type": "Seek",
+                "StopDistance": { "Compute": "MoveTargetStopDistance" },
+                "SlowDownDistance": { "Compute": "MoveTargetSlowDownDistance" },
+                "AbortDistance": 500.0,
+                "RelativeSpeed": { "Compute": "MoveTargetRelativeSpeed" },
+                "UsePathfinder": true
+              }
             },
             {
               "$Comment": "Execute idle behaviors.",

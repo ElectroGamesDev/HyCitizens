@@ -29,6 +29,8 @@ import java.util.concurrent.TimeUnit;
 import static com.hypixel.hytale.logger.HytaleLogger.getLogger;
 
 public class PatrolManager {
+    private static final String LOCKED_TARGET_SLOT = "LockedTarget";
+    private static final String MOVE_TARGET_SLOT = "MoveTarget";
     private static final double ARRIVAL_DISTANCE_SQUARED = 4.0;
     private static final long MONITOR_INTERVAL_MS = 250;
     private static final long PATROL_STUCK_TIMEOUT_MS = 10_000L;
@@ -112,6 +114,10 @@ public class PatrolManager {
             return;
         }
         if (citizen.isAwaitingRespawn() || citizensManager.isCitizenSpawning(citizen.getId())) {
+            return;
+        }
+        if (citizensManager.isCitizenInAiBusyState(citizen)) {
+            session.lastProgressAtMs = System.currentTimeMillis();
             return;
         }
 
@@ -367,7 +373,7 @@ public class PatrolManager {
             }
 
             Role role = npcEntity.getRole();
-            role.getMarkedEntitySupport().setMarkedEntity("LockedTarget", targetRef);
+            role.getMarkedEntitySupport().setMarkedEntity(getMovementTargetSlot(role), targetRef);
         } catch (Exception e) {
             getLogger().atWarning().log("Failed to create move target for citizen " + citizen.getId() + ": " + e.getMessage());
         }
@@ -409,8 +415,13 @@ public class PatrolManager {
             return;
         }
 
-        npcEntity.getRole().getMarkedEntitySupport().setMarkedEntity("LockedTarget", targetRef);
+        npcEntity.getRole().getMarkedEntitySupport().setMarkedEntity(getMovementTargetSlot(npcEntity.getRole()), targetRef);
         npcEntity.setLeashPoint(targetTransform.getPosition());
+    }
+
+    @Nonnull
+    private String getMovementTargetSlot(@Nonnull Role role) {
+        return role.getStateSupport() != null ? MOVE_TARGET_SLOT : LOCKED_TARGET_SLOT;
     }
 
     public boolean citizenMayNeedMoveTarget(@Nonnull CitizenData citizen) {

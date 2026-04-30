@@ -470,6 +470,12 @@ public class ScheduleManager {
 
     private boolean updateFollowTarget(@Nonnull CitizenData citizen, @Nonnull ScheduleEntry entry,
                                        @Nonnull ScheduleSession session) {
+        if (citizensManager.isCitizenInAiBusyState(citizen)) {
+            citizen.setCurrentScheduleRuntimeState(ScheduleRuntimeState.ACTIVE);
+            citizen.setCurrentScheduleStatusText("Following paused while AI is busy");
+            return true;
+        }
+
         CitizenData leader = citizensManager.getCitizen(entry.getFollowCitizenId());
         if (leader == null) {
             setBlockedState(citizen, "Schedule blocked: follow target missing");
@@ -519,7 +525,7 @@ public class ScheduleManager {
             citizensManager.updateCitizenMoveTarget(citizen.getId(), targetPosition);
             session.lastFollowTargetPosition = new Vector3d(targetPosition.x, targetPosition.y, targetPosition.z);
         } else if (followerDistanceSq <= settleRadiusSq) {
-            citizensManager.stopCitizenMovement(citizen.getId());
+            citizensManager.updateCitizenMoveTarget(citizen.getId(), targetPosition);
         }
 
         citizen.setCurrentScheduleRuntimeState(ScheduleRuntimeState.ACTIVE);
@@ -657,7 +663,12 @@ public class ScheduleManager {
             return;
         }
         world.execute(() -> {
-            NPCEntity npcEntity = npcRef.getStore().getComponent(npcRef, NPCEntity.getComponentType());
+            Ref<EntityStore> liveRef = citizen.getNpcRef();
+            if (liveRef == null || !liveRef.isValid()) {
+                return;
+            }
+
+            NPCEntity npcEntity = liveRef.getStore().getComponent(liveRef, NPCEntity.getComponentType());
             if (npcEntity != null) {
                 npcEntity.setLeashPoint(position);
             }
