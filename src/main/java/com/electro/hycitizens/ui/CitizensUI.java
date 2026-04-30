@@ -4797,17 +4797,23 @@ public class CitizensUI {
 
                                 {{#if hasWalkSpeedControl}}
                                 <div class="spacer-sm"></div>
+                                {{#if hasRunSpeedControl}}
                                 <div class="form-row">
                                     <div style="flex-weight: 1;">
                                         {{@numberField:id=walk-speed,label=Walk Speed,value={{$walkSpeed}},placeholder=10,min=0.1,max=100,step=0.5,decimals=1}}
                                     </div>
-                                    {{#if hasRunSpeedControl}}
                                     <div class="spacer-h-sm"></div>
                                     <div style="flex-weight: 1;">
                                         {{@numberField:id=run-speed,label=Run Speed,value={{$runSpeed}},placeholder=6,min=0.1,max=100,step=0.5,decimals=1}}
                                     </div>
-                                    {{/if}}
                                 </div>
+                                {{else}}
+                                <div class="form-row">
+                                    <div style="anchor-width: 220;">
+                                        {{@numberField:id=walk-speed,label=Walk Speed,value={{$walkSpeed}},placeholder=10,min=0.1,max=100,step=0.5,decimals=1}}
+                                    </div>
+                                </div>
+                                {{/if}}
                                 {{/if}}
 
                                 {{#if hasWanderRadiusControl}}
