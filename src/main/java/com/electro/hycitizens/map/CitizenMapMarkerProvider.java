@@ -3,6 +3,9 @@ package com.electro.hycitizens.map;
 import com.electro.hycitizens.HyCitizensPlugin;
 import com.electro.hycitizens.models.CitizenData;
 import com.electro.hycitizens.util.VectorConversions;
+import com.hypixel.hytale.component.Ref;
+import com.hypixel.hytale.server.core.entity.UUIDComponent;
+import com.hypixel.hytale.server.core.universe.world.storage.EntityStore;
 import com.hypixel.hytale.math.vector.Transform;
 import org.joml.Vector3d;
 import com.hypixel.hytale.protocol.FormattedMessage;
@@ -43,7 +46,7 @@ public final class CitizenMapMarkerProvider implements WorldMapManager.MarkerPro
         }
 
         List<PendingMarker> pendingMarkers = new ArrayList<>();
-        PlayerRef viewerRef = findViewerRef(world.getPlayerRefs(), viewer.getUuid());
+        PlayerRef viewerRef = findViewerRef(world.getPlayerRefs(), resolveEntityUuid(viewer));
         Vector3d viewerPosition = viewerRef != null && viewerRef.getTransform() != null
                 ? new Vector3d(viewerRef.getTransform().getPosition())
                 : null;
@@ -132,6 +135,16 @@ public final class CitizenMapMarkerProvider implements WorldMapManager.MarkerPro
             }
         }
         return null;
+    }
+
+    @Nullable
+    private static UUID resolveEntityUuid(@Nonnull Player entity) {
+        Ref<EntityStore> ref = entity.getReference();
+        if (ref == null || !ref.isValid()) {
+            return null;
+        }
+        UUIDComponent component = ref.getStore().getComponent(ref, UUIDComponent.getComponentType());
+        return component != null ? component.getUuid() : null;
     }
 
     private static boolean isWithinCustomMarkerDistance(@Nonnull CitizenData citizen, @Nonnull Vector3d markerPosition, @Nullable Vector3d viewerPosition) {

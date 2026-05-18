@@ -6,6 +6,7 @@ import com.hypixel.hytale.component.Ref;
 import com.hypixel.hytale.server.core.HytaleServer;
 import com.hypixel.hytale.server.core.Message;
 import com.hypixel.hytale.server.core.entity.entities.Player;
+import com.hypixel.hytale.server.core.permissions.PermissionsModule;
 import com.hypixel.hytale.server.core.event.events.player.PlayerConnectEvent;
 import com.hypixel.hytale.server.core.event.events.player.PlayerDisconnectEvent;
 import com.hypixel.hytale.server.core.universe.PlayerRef;
@@ -79,7 +80,8 @@ public class PlayerConnectionListener {
                     futureRef[0].cancel(false);
                 }
 
-                if (!playerRef.hasPermission("hycitizens.admin")) {
+                PermissionsModule perms = PermissionsModule.get();
+                if (perms == null || !perms.hasPermission(playerRef.getUuid(), "hycitizens.admin")) {
                     return;
                 }
 

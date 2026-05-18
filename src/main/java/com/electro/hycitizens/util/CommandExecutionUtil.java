@@ -103,7 +103,7 @@ public final class CommandExecutionUtil {
 
         Set<String> missingPermissions = new LinkedHashSet<>();
         for (String permission : permissions) {
-            if (!playerRef.hasPermission(permission)) {
+            if (!permissionsModule.hasPermission(playerRef.getUuid(), permission)) {
                 missingPermissions.add(permission);
             }
         }

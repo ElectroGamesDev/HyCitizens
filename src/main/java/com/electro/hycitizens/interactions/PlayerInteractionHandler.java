@@ -5,6 +5,7 @@ import com.electro.hycitizens.models.CitizenData;
 import com.electro.hycitizens.util.InventoryAccess;
 import com.hypixel.hytale.component.Ref;
 import com.hypixel.hytale.component.Store;
+import com.hypixel.hytale.server.core.permissions.PermissionsModule;
 import com.hypixel.hytale.protocol.InteractionType;
 import com.hypixel.hytale.protocol.Packet;
 import com.hypixel.hytale.protocol.packets.interaction.SyncInteractionChain;
@@ -160,7 +161,8 @@ public class PlayerInteractionHandler implements PacketWatcher {
         if (held == null || !"CitizenStick".equals(held.getItemId())) {
             return false;
         }
-        if (!playerRef.hasPermission("hycitizens.admin")) {
+        PermissionsModule perms = PermissionsModule.get();
+        if (perms == null || !perms.hasPermission(playerRef.getUuid(), "hycitizens.admin")) {
             playerRef.sendMessage(Message.raw("You need hycitizens.admin to use the Citizen Stick.").color(Color.RED));
             return false;
         }

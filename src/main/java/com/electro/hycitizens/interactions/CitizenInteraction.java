@@ -7,6 +7,7 @@ import com.electro.hycitizens.models.CitizenMessage;
 import com.electro.hycitizens.models.CommandAction;
 import com.electro.hycitizens.models.MessagesConfig;
 import com.electro.hycitizens.util.CommandExecutionUtil;
+import com.hypixel.hytale.server.core.permissions.PermissionsModule;
 import org.joml.Vector3d;
 import com.hypixel.hytale.server.core.HytaleServer;
 import com.hypixel.hytale.server.core.Message;
@@ -286,7 +287,8 @@ public class CitizenInteraction {
 
         // Permission check
         if (!citizen.getRequiredPermission().isEmpty()) {
-            if (!playerRef.hasPermission(citizen.getRequiredPermission())) {
+            PermissionsModule perms = PermissionsModule.get();
+            if (perms == null || !perms.hasPermission(playerRef.getUuid(), citizen.getRequiredPermission())) {
                 String permissionMessage = citizen.getNoPermissionMessage();
 
                 if (permissionMessage.isEmpty()) {

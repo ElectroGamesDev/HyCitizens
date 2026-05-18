@@ -26,6 +26,7 @@ import com.hypixel.hytale.server.core.inventory.ItemStack;
 import com.hypixel.hytale.server.core.inventory.container.ItemContainer;
 import com.hypixel.hytale.server.core.modules.entity.component.TransformComponent;
 import com.hypixel.hytale.server.core.modules.entity.teleport.Teleport;
+import com.hypixel.hytale.server.core.permissions.PermissionsModule;
 import com.hypixel.hytale.server.core.modules.time.WorldTimeResource;
 import com.hypixel.hytale.server.core.universe.PlayerRef;
 import com.hypixel.hytale.server.core.universe.Universe;
@@ -2708,7 +2709,8 @@ public class CitizensUI {
                     return;
                 }
 
-                if (!playerRef.hasPermission("hycitizens.admin")) {
+                PermissionsModule perms = PermissionsModule.get();
+                if (perms == null || !perms.hasPermission(playerRef.getUuid(), "hycitizens.admin")) {
                     playerRef.sendMessage(Message.raw("You need hycitizens.admin to get the Citizen Stick.").color(Color.RED));
                     return;
                 }
