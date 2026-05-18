@@ -6,13 +6,13 @@ import com.electro.hycitizens.models.CitizenData;
 import com.electro.hycitizens.models.PathConfig;
 import com.electro.hycitizens.models.PatrolPath;
 import com.electro.hycitizens.models.PatrolWaypoint;
+import com.electro.hycitizens.util.InventoryAccess;
 import com.hypixel.hytale.codec.Codec;
-import com.hypixel.hytale.math.vector.Vector3d;
+import org.joml.Vector3d;
 import com.hypixel.hytale.protocol.Packet;
 import com.hypixel.hytale.protocol.packets.interaction.SyncInteractionChain;
 import com.hypixel.hytale.protocol.packets.interaction.SyncInteractionChains;
 import com.hypixel.hytale.server.core.Message;
-import com.hypixel.hytale.server.core.entity.entities.Player;
 import com.hypixel.hytale.server.core.io.adapter.PacketAdapters;
 import com.hypixel.hytale.server.core.io.PacketHandler;
 import com.hypixel.hytale.server.core.io.adapter.PacketWatcher;
@@ -109,14 +109,10 @@ public class PlayerItemInteractionHandler implements PacketWatcher {
             }
 
             Store<EntityStore> store = ref.getStore();
-            Player player = store.getComponent(ref, Player.getComponentType());
-            if (player == null) {
-                return;
-            }
 
             switch (itemId) {
                 case "PatrolStick" -> {
-                    if (!player.hasPermission("hycitizens.admin")) {
+                    if (!playerRef.hasPermission("hycitizens.admin")) {
                         playerRef.sendMessage(Message.raw("You need hycitizens.admin to use the Patrol Stick.").color(Color.RED));
                         return;
                     }
@@ -165,7 +161,7 @@ public class PlayerItemInteractionHandler implements PacketWatcher {
                     }
                 }
                 case "CitizenStick" -> {
-                    if (!player.hasPermission("hycitizens.admin")) {
+                    if (!playerRef.hasPermission("hycitizens.admin")) {
                         playerRef.sendMessage(Message.raw("You need hycitizens.admin to use the Citizen Stick.").color(Color.RED));
                         return;
                     }
@@ -190,13 +186,7 @@ public class PlayerItemInteractionHandler implements PacketWatcher {
 
         store.getExternalData().getWorld().execute(() -> {
             try {
-                Player player = store.getComponent(ref, Player.getComponentType());
-                if (player == null) {
-                    callback.accept(null);
-                    return;
-                }
-
-                callback.accept(player.getInventory().getItemInHand());
+                callback.accept(InventoryAccess.itemInHand(ref));
             } catch (Exception e) {
                 getLogger().atWarning().log("Failed to get held item", e.getMessage());
                 callback.accept(null);

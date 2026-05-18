@@ -6,16 +6,16 @@ import com.electro.hycitizens.interactions.CitizenInteraction;
 import com.electro.hycitizens.models.*;
 import com.electro.hycitizens.util.CommandExecutionUtil;
 import com.electro.hycitizens.util.UpdateChecker;
+import com.electro.hycitizens.util.VectorConversions;
 import com.hypixel.hytale.builtin.adventure.npcobjectives.resources.KillTrackerResource;
 import com.hypixel.hytale.builtin.adventure.npcobjectives.transaction.KillTaskTransaction;
 import com.hypixel.hytale.component.*;
 import com.hypixel.hytale.component.query.Query;
-import com.hypixel.hytale.math.vector.Vector3d;
-import com.hypixel.hytale.math.vector.Vector3f;
+import org.joml.Vector3d;
+import org.joml.Vector3f;
 import com.hypixel.hytale.server.core.HytaleServer;
 import com.hypixel.hytale.server.core.Message;
 import com.hypixel.hytale.server.core.entity.UUIDComponent;
-import com.hypixel.hytale.server.core.entity.entities.Player;
 import com.hypixel.hytale.server.core.inventory.ItemStack;
 import com.hypixel.hytale.server.core.modules.entity.component.TransformComponent;
 import com.hypixel.hytale.server.core.modules.entity.damage.Damage;
@@ -175,7 +175,7 @@ public class EntityDeathListener extends DeathSystems.OnDeathSystem {
                 ItemStack itemStack = new ItemStack(drop.getItemId(), drop.getQuantity());
 
                 Holder<EntityStore>[] entities = ItemComponent.generateItemDrops(
-                        accessor, new ArrayList<>(List.of(itemStack)), new Vector3d(position), Vector3f.ZERO);
+                        accessor, new ArrayList<>(List.of(itemStack)), new Vector3d(position), VectorConversions.zeroRotation3f());
 
                 accessor.addEntities(entities, AddReason.SPAWN);
             }
@@ -190,12 +190,6 @@ public class EntityDeathListener extends DeathSystems.OnDeathSystem {
         }
 
         UUID selectionContextUuid = attackerPlayerRef != null ? attackerPlayerRef.getUuid() : NON_PLAYER_CONTEXT_UUID;
-        Ref<EntityStore> attackerRef = attackerPlayerRef != null ? attackerPlayerRef.getReference() : null;
-        Player player = null;
-        if (attackerRef != null && attackerRef.isValid()) {
-            player = attackerRef.getStore().getComponent(attackerRef, Player.getComponentType());
-        }
-        final Player commandPlayer = player;
 
         List<CommandAction> eligible = commands.stream()
                 .filter(cmd -> RANDOM.nextFloat() * 100.0f <= cmd.getChancePercent())
@@ -238,11 +232,11 @@ public class EntityDeathListener extends DeathSystems.OnDeathSystem {
                     }
                     return CompletableFuture.completedFuture(null);
                 } else {
-                    if (!cmd.isRunAsServer() && commandPlayer == null) {
+                    if (!cmd.isRunAsServer() && attackerPlayerRef == null) {
                         getLogger().atWarning().log("[HyCitizens] Skipping death command as player: attacker entity is unavailable.");
                         return CompletableFuture.completedFuture(null);
                     }
-                    return CommandExecutionUtil.execute(commandPlayer, command, cmd.isRunAsServer());
+                    return CommandExecutionUtil.execute(attackerPlayerRef, command, cmd.isRunAsServer());
                 }
             });
         }

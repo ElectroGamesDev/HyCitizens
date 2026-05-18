@@ -6,12 +6,14 @@ import au.ellie.hyui.html.TemplateProcessor;
 import com.electro.hycitizens.HyCitizensPlugin;
 import com.electro.hycitizens.map.CitizenMapMarkerAsset;
 import com.electro.hycitizens.models.*;
+import com.electro.hycitizens.util.InventoryAccess;
+import com.electro.hycitizens.util.VectorConversions;
 import com.hypixel.hytale.codec.Codec;
 import com.hypixel.hytale.common.util.RandomUtil;
 import com.hypixel.hytale.component.Ref;
 import com.hypixel.hytale.component.Store;
-import com.hypixel.hytale.math.vector.Vector3d;
-import com.hypixel.hytale.math.vector.Vector3f;
+import org.joml.Vector3d;
+import org.joml.Vector3f;
 import com.hypixel.hytale.protocol.PlayerSkin;
 import com.hypixel.hytale.protocol.packets.interface_.CustomPageLifetime;
 import com.hypixel.hytale.protocol.packets.interface_.CustomUIEventBindingType;
@@ -21,6 +23,7 @@ import com.hypixel.hytale.server.core.asset.type.model.config.ModelAsset;
 import com.hypixel.hytale.server.core.cosmetics.CosmeticsModule;
 import com.hypixel.hytale.server.core.entity.entities.Player;
 import com.hypixel.hytale.server.core.inventory.ItemStack;
+import com.hypixel.hytale.server.core.inventory.container.ItemContainer;
 import com.hypixel.hytale.server.core.modules.entity.component.TransformComponent;
 import com.hypixel.hytale.server.core.modules.entity.teleport.Teleport;
 import com.hypixel.hytale.server.core.modules.time.WorldTimeResource;
@@ -707,7 +710,6 @@ public class CitizensUI {
         public String getRequiredPermission() { return escapeHtml(citizen.getRequiredPermission()); }
         public String getNoPermissionMessage() { return escapeHtml(citizen.getNoPermissionMessage()); }
         public boolean getRotateTowardsPlayer() { return citizen.getRotateTowardsPlayer(); }
-        public boolean getFKeyInteractionEnabled() { return citizen.getFKeyInteractionEnabled(); }
         public boolean isHideNametag() { return citizen.isHideNametag(); }
         public boolean isHideNpc() { return citizen.isHideNpc(); }
         public boolean isMapMarkerEnabled() { return citizen.isMapMarkerEnabled(); }
@@ -2706,22 +2708,13 @@ public class CitizensUI {
                     return;
                 }
 
-                if (!player.hasPermission("hycitizens.admin")) {
+                if (!playerRef.hasPermission("hycitizens.admin")) {
                     playerRef.sendMessage(Message.raw("You need hycitizens.admin to get the Citizen Stick.").color(Color.RED));
                     return;
                 }
 
                 ItemStack stack = new ItemStack("CitizenStick");
-                boolean added = false;
-                if (player.getInventory().getHotbar().canAddItemStack(stack)) {
-                    player.getInventory().getHotbar().addItemStack(stack);
-                    added = true;
-                } else if (player.getInventory().getStorage().canAddItemStack(stack)) {
-                    player.getInventory().getStorage().addItemStack(stack);
-                    added = true;
-                }
-
-                if (!added) {
+                if (!InventoryAccess.addToHotbarOrStorage(ref, stack)) {
                     playerRef.sendMessage(Message.raw("Your inventory is full.").color(Color.RED));
                     return;
                 }
@@ -2810,7 +2803,7 @@ public class CitizensUI {
         }
 
         playerRef.getReference().getStore().addComponent(playerRef.getReference(),
-                Teleport.getComponentType(), new Teleport(world, tpPos, new Vector3f(0, 0, 0)));
+                Teleport.getComponentType(), new Teleport(world, tpPos, VectorConversions.zeroRotation3f()));
 
         playerRef.sendMessage(Message.raw("Teleported to citizen '" + citizen.getName() + "'!").color(Color.GREEN));
     }
@@ -2823,7 +2816,7 @@ public class CitizensUI {
 
     private boolean cloneCitizenToPlayer(@Nonnull PlayerRef playerRef, @Nonnull CitizenData citizen) {
         Vector3d position = new Vector3d(playerRef.getTransform().getPosition());
-        Vector3f rotation = new Vector3f(playerRef.getTransform().getRotation());
+        Vector3f rotation = VectorConversions.toVector3f(playerRef.getTransform().getRotation());
 
         UUID worldUUID = playerRef.getWorldUuid();
         if (worldUUID == null) {
@@ -3833,7 +3826,7 @@ public class CitizensUI {
             }
 
             Vector3d position = new Vector3d(playerRef.getTransform().getPosition());
-            Vector3f rotation = new Vector3f(playerRef.getTransform().getRotation());
+            Vector3f rotation = VectorConversions.toVector3f(playerRef.getTransform().getRotation());
 
             UUID worldUUID = playerRef.getWorldUuid();
             if (worldUUID == null) {
@@ -4179,7 +4172,7 @@ public class CitizensUI {
 
         page.addEventListener("change-position-btn", CustomUIEventBindingType.Activating, event -> {
             Vector3d newPosition = new Vector3d(playerRef.getTransform().getPosition());
-            Vector3f newRotation = new Vector3f(playerRef.getTransform().getRotation());
+            Vector3f newRotation = VectorConversions.toVector3f(playerRef.getTransform().getRotation());
 
             UUID worldUUID = playerRef.getWorldUuid();
             if (worldUUID == null) {
@@ -4208,46 +4201,21 @@ public class CitizensUI {
                     return;
                 }
 
-                Player player = ref.getStore().getComponent(ref, Player.getComponentType());
-                if (player == null) {
-                    return;
-                }
+                ItemStack itemInHand = InventoryAccess.itemInHand(ref);
+                citizen.setNpcHand(itemInHand == null ? null : itemInHand.getItemId());
 
-                if (player.getInventory().getItemInHand() == null) {
-                    citizen.setNpcHand(null);
-                } else {
-                    citizen.setNpcHand(player.getInventory().getItemInHand().getItemId());
-                }
+                ItemStack utilityItem = InventoryAccess.utilityItem(ref);
+                citizen.setNpcOffHand(utilityItem == null ? null : utilityItem.getItemId());
 
-                if (player.getInventory().getUtilityItem() == null) {
-                    citizen.setNpcOffHand(null);
-                } else {
-                    citizen.setNpcOffHand(player.getInventory().getUtilityItem().getItemId());
-                }
-
-                if (player.getInventory().getArmor().getItemStack((short) 0) == null) {
-                    citizen.setNpcHelmet(null);
-                } else {
-                    citizen.setNpcHelmet(player.getInventory().getArmor().getItemStack((short) 0).getItemId());
-                }
-
-                if (player.getInventory().getArmor().getItemStack((short) 1) == null) {
-                    citizen.setNpcChest(null);
-                } else {
-                    citizen.setNpcChest(player.getInventory().getArmor().getItemStack((short) 1).getItemId());
-                }
-
-                if (player.getInventory().getArmor().getItemStack((short) 2) == null) {
-                    citizen.setNpcGloves(null);
-                } else {
-                    citizen.setNpcGloves(player.getInventory().getArmor().getItemStack((short) 2).getItemId());
-                }
-
-                if (player.getInventory().getArmor().getItemStack((short) 3) == null) {
-                    citizen.setNpcLeggings(null);
-                } else {
-                    citizen.setNpcLeggings(player.getInventory().getArmor().getItemStack((short) 3).getItemId());
-                }
+                ItemContainer armor = InventoryAccess.armor(ref);
+                ItemStack helmet = armor == null ? null : armor.getItemStack((short) 0);
+                ItemStack chest = armor == null ? null : armor.getItemStack((short) 1);
+                ItemStack gloves = armor == null ? null : armor.getItemStack((short) 2);
+                ItemStack leggings = armor == null ? null : armor.getItemStack((short) 3);
+                citizen.setNpcHelmet(helmet == null ? null : helmet.getItemId());
+                citizen.setNpcChest(chest == null ? null : chest.getItemId());
+                citizen.setNpcGloves(gloves == null ? null : gloves.getItemId());
+                citizen.setNpcLeggings(leggings == null ? null : leggings.getItemId());
 
                 plugin.getCitizensManager().saveCitizen(citizen);
                 plugin.getCitizensManager().updateCitizenNPCItems(citizen);
@@ -9074,7 +9042,7 @@ public class CitizensUI {
             }
 
             Vector3d position = new Vector3d(playerRef.getTransform().getPosition());
-            Vector3f rotation = new Vector3f(playerRef.getTransform().getRotation());
+            Vector3f rotation = VectorConversions.toVector3f(playerRef.getTransform().getRotation());
             ScheduleLocation location = new ScheduleLocation(
                     UUID.randomUUID().toString(),
                     "Location " + (scheduleConfig.getLocations().size() + 1),
@@ -9112,7 +9080,7 @@ public class CitizensUI {
                 ScheduleLocation location = scheduleConfig.getLocations().get(index);
                 location.setWorldUUID(worldUuid);
                 location.setPosition(new Vector3d(playerRef.getTransform().getPosition()));
-                location.setRotation(new Vector3f(playerRef.getTransform().getRotation()));
+                location.setRotation(VectorConversions.toVector3f(playerRef.getTransform().getRotation()));
                 plugin.getCitizensManager().saveCitizen(citizen);
                 plugin.getCitizensManager().getScheduleManager().refreshCitizen(citizen);
                 openScheduleGUI(playerRef, store, citizen);
@@ -10139,7 +10107,7 @@ public class CitizensUI {
                     return;
                 }
 
-                ref.getStore().addComponent(ref, Teleport.getComponentType(), new Teleport(world, tpPos, new Vector3f(0, 0, 0)));
+                ref.getStore().addComponent(ref, Teleport.getComponentType(), new Teleport(world, tpPos, VectorConversions.zeroRotation3f()));
 
                 playerRef.sendMessage(Message.raw("Teleported to waypoint!").color(Color.GREEN));
             });
@@ -10195,11 +10163,6 @@ public class CitizensUI {
                 return;
             }
 
-            Player player = ref.getStore().getComponent(ref, Player.getComponentType());
-            if (player == null) {
-                playerRef.sendMessage(Message.raw("An error occurred.").color(Color.RED));
-                return;
-            }
 
             ItemStack stack = new ItemStack("PatrolStick");
 
@@ -10208,16 +10171,9 @@ public class CitizensUI {
                     Codec.STRING,
                     path.getName()
             );
-
-            if (player.getInventory().getHotbar().canAddItemStack(waypointItemStack)) {
-                player.getInventory().getHotbar().addItemStack(waypointItemStack);
+            if (InventoryAccess.addToHotbarOrStorage(ref, waypointItemStack)) {
                 playerRef.sendMessage(Message.raw("You have received a patrol waypoint stick. Use LEFT click to open the waypoint menu, RIGHT click will add a waypoint to your position.").color(Color.GREEN));
-            }
-            else if (player.getInventory().getStorage().canAddItemStack(waypointItemStack)) {
-                player.getInventory().getStorage().addItemStack(waypointItemStack);
-                playerRef.sendMessage(Message.raw("You have received a patrol waypoint stick. Use LEFT click to open the waypoint menu, RIGHT click will add a waypoint to your position.").color(Color.GREEN));
-            }
-            else {
+            } else {
                 playerRef.sendMessage(Message.raw("Your inventory is full.").color(Color.RED));
             }
 

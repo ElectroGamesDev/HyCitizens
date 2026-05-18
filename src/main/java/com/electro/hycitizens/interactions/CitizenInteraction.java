@@ -7,13 +7,10 @@ import com.electro.hycitizens.models.CitizenMessage;
 import com.electro.hycitizens.models.CommandAction;
 import com.electro.hycitizens.models.MessagesConfig;
 import com.electro.hycitizens.util.CommandExecutionUtil;
-import com.hypixel.hytale.component.Ref;
-import com.hypixel.hytale.math.vector.Vector3d;
+import org.joml.Vector3d;
 import com.hypixel.hytale.server.core.HytaleServer;
 import com.hypixel.hytale.server.core.Message;
-import com.hypixel.hytale.server.core.entity.entities.Player;
 import com.hypixel.hytale.server.core.universe.PlayerRef;
-import com.hypixel.hytale.server.core.universe.world.storage.EntityStore;
 
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
@@ -282,24 +279,21 @@ public class CitizenInteraction {
             return;
         }
 
-        Ref<EntityStore> ref = playerRef.getReference();
-
-        Player player = ref.getStore().getComponent(ref, Player.getComponentType());
-        if (player == null) {
+        if (playerRef.getReference() == null || !playerRef.getReference().isValid()) {
             playerRef.sendMessage(Message.raw("An error occurred").color(Color.RED));
             return;
         }
 
         // Permission check
         if (!citizen.getRequiredPermission().isEmpty()) {
-            if (!player.hasPermission(citizen.getRequiredPermission())) {
+            if (!playerRef.hasPermission(citizen.getRequiredPermission())) {
                 String permissionMessage = citizen.getNoPermissionMessage();
 
                 if (permissionMessage.isEmpty()) {
                     permissionMessage = "You do not have permissions";
                 }
 
-                player.sendMessage(Message.raw(permissionMessage).color(Color.RED));
+                playerRef.sendMessage(Message.raw(permissionMessage).color(Color.RED));
                 return;
             }
         }
@@ -324,7 +318,6 @@ public class CitizenInteraction {
                 runCommandFlow(
                         playerRef,
                         citizen,
-                        player,
                         interactionSource,
                         citizen.getFirstInteractionCommandActions(),
                         citizen.getFirstInteractionCommandSelectionMode(),
@@ -344,7 +337,6 @@ public class CitizenInteraction {
             runCommandFlow(
                     playerRef,
                     citizen,
-                    player,
                     interactionSource,
                     citizen.getCommandActions(),
                     citizen.getCommandSelectionMode(),
@@ -386,7 +378,7 @@ public class CitizenInteraction {
     }
 
     private static void runCommandFlow(@Nonnull PlayerRef playerRef, @Nonnull CitizenData citizen,
-                                       @Nonnull Player player, @Nonnull String interactionSource,
+                                       @Nonnull String interactionSource,
                                        @Nonnull List<CommandAction> commands, @Nonnull String commandSelectionMode,
                                        @Nonnull Map<UUID, Integer> sequentialIndexMap) {
         List<CommandAction> matchingCommands = commands.stream()
@@ -400,7 +392,7 @@ public class CitizenInteraction {
 
         List<CommandAction> selected = selectCommandsByMode(
                 matchingCommands, commandSelectionMode, sequentialIndexMap, playerRef.getUuid());
-        runCommands(playerRef, citizen, player, selected);
+        runCommands(playerRef, citizen, selected);
     }
 
     @Nonnull
@@ -479,7 +471,7 @@ public class CitizenInteraction {
     }
 
     private static void runCommands(@Nonnull PlayerRef playerRef, @Nonnull CitizenData citizen,
-                                    @Nonnull Player player, @Nonnull List<CommandAction> commands) {
+                                    @Nonnull List<CommandAction> commands) {
         CompletableFuture<Void> chain = CompletableFuture.completedFuture(null);
 
         for (CommandAction commandAction : commands) {
@@ -505,7 +497,7 @@ public class CitizenInteraction {
                     return CompletableFuture.completedFuture(null);
                 }
 
-                return CommandExecutionUtil.execute(player, command, commandAction.isRunAsServer());
+                return CommandExecutionUtil.execute(playerRef, command, commandAction.isRunAsServer());
             });
         }
     }

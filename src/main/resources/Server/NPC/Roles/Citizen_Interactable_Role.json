@@ -26,16 +26,6 @@
               "Interactable": true
             }
           ]
-        },
-        {
-          "Sensor": {
-            "Type": "HasInteracted"
-          },
-          "Actions": [
-            {
-              "Type": "CitizenInteraction"
-            }
-          ]
         }
       ]
     },

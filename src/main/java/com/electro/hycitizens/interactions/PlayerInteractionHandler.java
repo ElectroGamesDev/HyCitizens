@@ -2,6 +2,7 @@ package com.electro.hycitizens.interactions;
 
 import com.electro.hycitizens.HyCitizensPlugin;
 import com.electro.hycitizens.models.CitizenData;
+import com.electro.hycitizens.util.InventoryAccess;
 import com.hypixel.hytale.component.Ref;
 import com.hypixel.hytale.component.Store;
 import com.hypixel.hytale.protocol.InteractionType;
@@ -10,7 +11,6 @@ import com.hypixel.hytale.protocol.packets.interaction.SyncInteractionChain;
 import com.hypixel.hytale.protocol.packets.interaction.SyncInteractionChains;
 import com.hypixel.hytale.server.core.Message;
 import com.hypixel.hytale.server.core.entity.UUIDComponent;
-import com.hypixel.hytale.server.core.entity.entities.Player;
 import com.hypixel.hytale.server.core.inventory.ItemStack;
 import com.hypixel.hytale.server.core.io.PacketHandler;
 import com.hypixel.hytale.server.core.io.adapter.PacketAdapters;
@@ -156,18 +156,12 @@ public class PlayerInteractionHandler implements PacketWatcher {
             return false;
         }
 
-        Player player = ref.getStore().getComponent(ref, Player.getComponentType());
-        if (player == null) {
-            return false;
-        }
-
-        ItemStack held = player.getInventory().getItemInHand();
+        ItemStack held = InventoryAccess.itemInHand(ref);
         if (held == null || !"CitizenStick".equals(held.getItemId())) {
             return false;
         }
-
-        if (!player.hasPermission("hycitizens.admin")) {
-            player.sendMessage(Message.raw("You need hycitizens.admin to use the Citizen Stick.").color(Color.RED));
+        if (!playerRef.hasPermission("hycitizens.admin")) {
+            playerRef.sendMessage(Message.raw("You need hycitizens.admin to use the Citizen Stick.").color(Color.RED));
             return false;
         }
 

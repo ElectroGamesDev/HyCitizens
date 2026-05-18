@@ -3,9 +3,11 @@ package com.electro.hycitizens.managers;
 import com.electro.hycitizens.models.*;
 import com.electro.hycitizens.roles.RoleGenerator;
 import com.electro.hycitizens.util.ThreadedScheduler;
+import com.electro.hycitizens.util.VectorConversions;
 import com.hypixel.hytale.component.Ref;
-import com.hypixel.hytale.math.vector.Vector3d;
-import com.hypixel.hytale.math.vector.Vector3f;
+import com.hypixel.hytale.math.vector.Rotation3f;
+import org.joml.Vector3d;
+import org.joml.Vector3f;
 import com.hypixel.hytale.server.core.HytaleServer;
 import com.hypixel.hytale.server.core.modules.entity.component.TransformComponent;
 import com.hypixel.hytale.server.core.modules.time.WorldTimeResource;
@@ -686,7 +688,7 @@ public class ScheduleManager {
             return;
         }
 
-        Vector3f targetRotation = new Vector3f(rotation);
+        Rotation3f targetRotation = VectorConversions.toRotation3f(rotation);
         world.execute(() -> {
             TransformComponent transformComponent = npcRef.getStore().getComponent(npcRef, TransformComponent.getComponentType());
             if (transformComponent != null) {

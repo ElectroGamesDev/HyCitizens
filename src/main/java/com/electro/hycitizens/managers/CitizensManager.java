@@ -14,13 +14,16 @@ import com.electro.hycitizens.events.CitizenRemovedListener;
 import com.electro.hycitizens.models.*;
 import com.electro.hycitizens.roles.RoleGenerator;
 import com.electro.hycitizens.util.ConfigManager;
+import com.electro.hycitizens.util.InventoryAccess;
 import com.electro.hycitizens.util.SkinUtilities;
 import com.electro.hycitizens.util.ThreadedScheduler;
+import com.electro.hycitizens.util.VectorConversions;
 import com.hypixel.hytale.component.*;
 import com.hypixel.hytale.component.query.Query;
 import com.hypixel.hytale.math.util.ChunkUtil;
-import com.hypixel.hytale.math.vector.Vector3d;
-import com.hypixel.hytale.math.vector.Vector3f;
+import com.hypixel.hytale.math.vector.Rotation3f;
+import org.joml.Vector3d;
+import org.joml.Vector3f;
 import com.hypixel.hytale.protocol.*;
 import com.hypixel.hytale.protocol.packets.entities.EntityUpdates;
 import com.hypixel.hytale.server.core.HytaleServer;
@@ -32,6 +35,7 @@ import com.hypixel.hytale.server.core.entity.UUIDComponent;
 import com.hypixel.hytale.server.core.entity.entities.ProjectileComponent;
 import com.hypixel.hytale.server.core.entity.nameplate.Nameplate;
 import com.hypixel.hytale.server.core.inventory.ItemStack;
+import com.hypixel.hytale.server.core.inventory.container.ItemContainer;
 import com.hypixel.hytale.server.core.modules.entity.component.*;
 import com.hypixel.hytale.server.core.modules.entity.player.PlayerSkinComponent;
 import com.hypixel.hytale.server.core.modules.entity.tracker.NetworkId;
@@ -863,8 +867,8 @@ public class CitizensManager {
         citizenData.setNametagModelScale(config.getFloat(basePath + ".nametag.model.scale", 1.0f));
         citizenData.setRotateNametagTowardsPlayer(config.getBoolean(basePath + ".nametag.model.rotate-towards-player", true));
 
-        // Backwards compatibility
-        citizenData.setFKeyInteractionEnabled(config.getBoolean(basePath + ".f-key-interaction", true));
+        // Backwards compatibility for configs saved before per-action interaction triggers.
+        boolean legacyFKeyInteractionEnabled = config.getBoolean(basePath + ".f-key-interaction", true);
 
         citizenData.setForceFKeyInteractionText(config.getBoolean(basePath + ".force-f-key-interaction-text", false));
         citizenData.setMapMarkerEnabled(config.getBoolean(basePath + ".map-marker.enabled", false));
@@ -927,7 +931,7 @@ public class CitizensManager {
                 || messages.stream().anyMatch(m -> m.getInteractionTrigger() == null);
 
         if (hasUnmigratedActions) {
-            String migratedTrigger = citizenData.getFKeyInteractionEnabled() ? "BOTH" : "LEFT_CLICK";
+            String migratedTrigger = legacyFKeyInteractionEnabled ? "BOTH" : "LEFT_CLICK";
             for (CommandAction action : actions) {
                 if (action.getInteractionTrigger() == null) {
                     action.setInteractionTrigger(migratedTrigger);
@@ -1717,11 +1721,11 @@ public class CitizensManager {
     }
 
     public void updateCitizenNPCItems(CitizenData citizen) {
-        if (citizen.getSpawnedUUID() == null || citizen.getNpcRef() == null) {
+        Ref<EntityStore> npcRef = citizen.getNpcRef();
+        if (citizen.getSpawnedUUID() == null || npcRef == null) {
             return;
         }
-
-        NPCEntity npcEntity = citizen.getNpcRef().getStore().getComponent(citizen.getNpcRef(), NPCEntity.getComponentType());
+        NPCEntity npcEntity = npcRef.getStore().getComponent(npcRef, NPCEntity.getComponentType());
         if (npcEntity == null) {
             return;
         }
@@ -1742,11 +1746,15 @@ public class CitizensManager {
 
 
         // Item in hand
+        ItemContainer hotbar = InventoryAccess.hotbar(npcRef);
+        if (hotbar == null) {
+            return;
+        }
         if (citizen.getNpcHand() == null) {
-            npcEntity.getInventory().getHotbar().setItemStackForSlot((short) 0, null);
+            hotbar.setItemStackForSlot((short) 0, null);
         }
         else {
-            npcEntity.getInventory().getHotbar().setItemStackForSlot((short) 0, new ItemStack(citizen.getNpcHand()));
+            hotbar.setItemStackForSlot((short) 0, new ItemStack(citizen.getNpcHand()));
         }
 
         // Item in offhand
@@ -1759,35 +1767,39 @@ public class CitizensManager {
 //        }
 
         // Set helmet
+        ItemContainer armor = InventoryAccess.armor(npcRef);
+        if (armor == null) {
+            return;
+        }
         if (citizen.getNpcHelmet() == null) {
-            npcEntity.getInventory().getArmor().setItemStackForSlot((short) 0, null);
+            armor.setItemStackForSlot((short) 0, null);
         }
         else {
-            npcEntity.getInventory().getArmor().setItemStackForSlot((short) 0, new ItemStack(citizen.getNpcHelmet()));
+            armor.setItemStackForSlot((short) 0, new ItemStack(citizen.getNpcHelmet()));
         }
 
         // Set chest
         if (citizen.getNpcChest() == null) {
-            npcEntity.getInventory().getArmor().setItemStackForSlot((short) 1, null);
+            armor.setItemStackForSlot((short) 1, null);
         }
         else {
-            npcEntity.getInventory().getArmor().setItemStackForSlot((short) 1, new ItemStack(citizen.getNpcChest()));
+            armor.setItemStackForSlot((short) 1, new ItemStack(citizen.getNpcChest()));
         }
 
         // Set gloves
         if (citizen.getNpcGloves() == null) {
-            npcEntity.getInventory().getArmor().setItemStackForSlot((short) 2, null);
+            armor.setItemStackForSlot((short) 2, null);
         }
         else {
-            npcEntity.getInventory().getArmor().setItemStackForSlot((short) 2, new ItemStack(citizen.getNpcGloves()));
+            armor.setItemStackForSlot((short) 2, new ItemStack(citizen.getNpcGloves()));
         }
 
         // Set leggings
         if (citizen.getNpcLeggings() == null) {
-            npcEntity.getInventory().getArmor().setItemStackForSlot((short) 3, null);
+            armor.setItemStackForSlot((short) 3, null);
         }
         else {
-            npcEntity.getInventory().getArmor().setItemStackForSlot((short) 3, new ItemStack(citizen.getNpcLeggings()));
+            armor.setItemStackForSlot((short) 3, new ItemStack(citizen.getNpcLeggings()));
         }
 
         EntityStatMap finalStatMap = statMap;
@@ -2370,7 +2382,7 @@ public class CitizensManager {
                 world.getEntityStore().getStore(),
                 NPCPlugin.get().getIndex(roleName),
                 citizen.getPosition(),
-                citizen.getRotation(),
+                VectorConversions.toRotation3f(citizen.getRotation()),
                 spawnModel,
                 (npcComponent, holder, store) -> npcComponent.setInitialModelScale(scale),
                 null
@@ -2482,7 +2494,7 @@ public class CitizensManager {
                 world.getEntityStore().getStore(),
                 NPCPlugin.get().getIndex(roleName),
                 citizen.getPosition(),
-                citizen.getRotation(),
+                VectorConversions.toRotation3f(citizen.getRotation()),
                 playerModel,
                 null,
                 null
@@ -2798,8 +2810,8 @@ public class CitizensManager {
                                                           @Nullable String lineText) {
         Holder<EntityStore> holder = EntityStore.REGISTRY.newHolder();
 
-        holder.putComponent(TransformComponent.getComponentType(), new TransformComponent(linePos, rotation));
-        holder.putComponent(HeadRotation.getComponentType(), new HeadRotation(rotation));
+        holder.putComponent(TransformComponent.getComponentType(), new TransformComponent(linePos, VectorConversions.toRotation3f(rotation)));
+        holder.putComponent(HeadRotation.getComponentType(), new HeadRotation(VectorConversions.toRotation3f(rotation)));
         holder.ensureComponent(UUIDComponent.getComponentType());
 
         holder.addComponent(
@@ -2841,11 +2853,11 @@ public class CitizensManager {
         TransformComponent transform = entity.getStore().getComponent(entity, TransformComponent.getComponentType());
         if (transform != null) {
             transform.setPosition(linePos);
-            transform.setRotation(rotation);
+            transform.setRotation(VectorConversions.toRotation3f(rotation));
         }
         HeadRotation headRotation = entity.getStore().getComponent(entity, HeadRotation.getComponentType());
         if (headRotation != null) {
-            headRotation.setRotation(rotation);
+            headRotation.setRotation(VectorConversions.toRotation3f(rotation));
         }
 
         bindCitizenNametagIdentity(entity, citizen.getId(), lineIndex);
@@ -4001,7 +4013,7 @@ public class CitizensManager {
                     return;
                 }
 
-                Vector3f baseRotation = npcTransformComponent.getRotation();
+                Rotation3f baseRotation = npcTransformComponent.getRotation();
                 Direction baseLookDirection = toPacketDirection(baseRotation, true);
                 Direction baseBodyDirection = toPacketDirection(baseRotation, true);
                 sendRotationUpdate(citizenNetworkId, playerRef, baseLookDirection, baseBodyDirection);
@@ -4125,11 +4137,11 @@ public class CitizensManager {
         return playerEntityRef != null && playerEntityRef.isValid();
     }
 
-    private Direction toPacketDirection(@Nonnull Vector3f rotation, boolean includePitch) {
+    private Direction toPacketDirection(@Nonnull Rotation3f rotation, boolean includePitch) {
         // Transform rotations are stored as Euler XYZ, while packet Direction expects yaw/pitch/roll.
-        float yaw = rotation.y;
-        float pitch = includePitch ? rotation.x : 0.0f;
-        return new Direction(yaw, pitch, rotation.z);
+        float yaw = rotation.y();
+        float pitch = includePitch ? rotation.x() : 0.0f;
+        return new Direction(yaw, pitch, rotation.z());
     }
 
     private void sendRotationUpdate(@Nonnull NetworkId citizenNetworkId, @Nonnull PlayerRef playerRef,
@@ -4272,7 +4284,7 @@ public class CitizensManager {
                     return;
                 }
 
-                Vector3f baseRotation = nametagTransform.getRotation();
+                Rotation3f baseRotation = nametagTransform.getRotation();
                 Direction baseLookDirection = toPacketDirection(baseRotation, true);
                 Direction baseBodyDirection = toPacketDirection(baseRotation, true);
                 sendRotationUpdate(nametagNetworkId, playerRef, baseLookDirection, baseBodyDirection);
@@ -5189,7 +5201,7 @@ public class CitizensManager {
         }
 
         Vector3d targetPosition = new Vector3d(position.x, position.y, position.z);
-        Vector3f targetRotation = rotation == null ? null : new Vector3f(rotation);
+        Rotation3f targetRotation = rotation == null ? null : VectorConversions.toRotation3f(rotation);
         world.execute(() -> {
             Ref<EntityStore> liveRef = citizen.getNpcRef();
             if (liveRef == null || !liveRef.isValid()) {
