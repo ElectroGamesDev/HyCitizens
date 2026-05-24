@@ -5,8 +5,8 @@ import com.electro.hycitizens.models.PatrolPath;
 import com.electro.hycitizens.models.PatrolWaypoint;
 import com.electro.hycitizens.util.ConfigManager;
 import com.hypixel.hytale.component.*;
-import com.hypixel.hytale.math.vector.Vector3d;
-import com.hypixel.hytale.math.vector.Vector3f;
+import com.hypixel.hytale.math.vector.Rotation3f;
+import org.joml.Vector3d;
 import com.hypixel.hytale.server.core.HytaleServer;
 import com.hypixel.hytale.server.core.entity.UUIDComponent;
 import com.hypixel.hytale.server.core.entity.entities.ProjectileComponent;
@@ -346,7 +346,7 @@ public class PatrolManager {
             ProjectileComponent projectile = new ProjectileComponent("Projectile");
             holder.putComponent(ProjectileComponent.getComponentType(), projectile);
 
-            holder.putComponent(TransformComponent.getComponentType(), new TransformComponent(position, new Vector3f(0, 0, 0)));
+            holder.putComponent(TransformComponent.getComponentType(), new TransformComponent(position, new Rotation3f()));
             holder.ensureComponent(UUIDComponent.getComponentType());
             holder.ensureComponent(Intangible.getComponentType());
             holder.addComponent(NetworkId.getComponentType(),

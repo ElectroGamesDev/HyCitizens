@@ -79,7 +79,7 @@ public class PlayerConnectionListener {
                     futureRef[0].cancel(false);
                 }
 
-                if (!player.hasPermission("hycitizens.admin")) {
+                if (!playerRef.hasPermission("hycitizens.admin")) {
                     return;
                 }
 
@@ -96,7 +96,7 @@ public class PlayerConnectionListener {
                             return;
                         }
 
-                        player.sendMessage(
+                        playerRef.sendMessage(
                                 Message.join(
                                         Message.raw("[HyCitizens] ").color(Color.GREEN),
 

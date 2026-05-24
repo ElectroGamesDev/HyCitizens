@@ -3,8 +3,8 @@ package com.electro.hycitizens.map;
 import com.electro.hycitizens.HyCitizensPlugin;
 import com.electro.hycitizens.models.CitizenData;
 import com.hypixel.hytale.math.vector.Transform;
-import com.hypixel.hytale.math.vector.Vector3d;
-import com.hypixel.hytale.math.vector.Vector3f;
+import org.joml.Vector3d;
+import com.hypixel.hytale.math.vector.Rotation3f;
 import com.hypixel.hytale.protocol.FormattedMessage;
 import com.hypixel.hytale.protocol.packets.worldmap.ContextMenuItem;
 import com.hypixel.hytale.protocol.packets.worldmap.MapMarker;
@@ -78,7 +78,7 @@ public final class CitizenMapMarkerProvider implements WorldMapManager.MarkerPro
     @Nonnull
     private static MapMarker createMarker(@Nonnull CitizenData citizen, @Nonnull Vector3d position,
                                           @Nonnull String markerImage) {
-        Transform transform = new Transform(new Vector3d(position), Vector3f.ZERO);
+        Transform transform = new Transform(new Vector3d(position), new Rotation3f());
         String labelText = markerLabelText(citizen);
         return new MapMarker(
                 MARKER_PREFIX + citizen.getId() + "-" + markerIdSegment(markerImage) + "-" + markerIdSegment(labelText),

@@ -3,8 +3,8 @@ package com.electro.hycitizens.util;
 import com.hypixel.hytale.server.core.command.system.AbstractCommand;
 import com.hypixel.hytale.server.core.command.system.CommandManager;
 import com.hypixel.hytale.server.core.console.ConsoleSender;
-import com.hypixel.hytale.server.core.entity.entities.Player;
 import com.hypixel.hytale.server.core.permissions.PermissionsModule;
+import com.hypixel.hytale.server.core.universe.PlayerRef;
 
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
@@ -23,7 +23,7 @@ public final class CommandExecutionUtil {
     }
 
     @Nonnull
-    public static CompletableFuture<Void> execute(@Nullable Player player, @Nonnull String command, boolean runAsServer) {
+    public static CompletableFuture<Void> execute(@Nullable PlayerRef player, @Nonnull String command, boolean runAsServer) {
         String processedCommand = normalizeCommand(command);
         if (processedCommand.isEmpty()) {
             return CompletableFuture.completedFuture(null);
@@ -95,7 +95,7 @@ public final class CommandExecutionUtil {
     }
 
     @Nonnull
-    private static CompletableFuture<Void> grantPermissionTemporarily(@Nonnull Player player, @Nonnull Set<String> permissions, @Nonnull Supplier<CompletableFuture<Void>> callback) {
+    private static CompletableFuture<Void> grantPermissionTemporarily(@Nonnull PlayerRef player, @Nonnull Set<String> permissions, @Nonnull Supplier<CompletableFuture<Void>> callback) {
         PermissionsModule permissionsModule = PermissionsModule.get();
         if (permissionsModule == null) {
             return callback.get();

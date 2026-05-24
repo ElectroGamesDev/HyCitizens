@@ -166,8 +166,8 @@ public class PlayerInteractionHandler implements PacketWatcher {
             return false;
         }
 
-        if (!player.hasPermission("hycitizens.admin")) {
-            player.sendMessage(Message.raw("You need hycitizens.admin to use the Citizen Stick.").color(Color.RED));
+        if (!playerRef.hasPermission("hycitizens.admin")) {
+            playerRef.sendMessage(Message.raw("You need hycitizens.admin to use the Citizen Stick.").color(Color.RED));
             return false;
         }
 

@@ -8,10 +8,11 @@ version = "1.7.2"
 repositories {
     mavenCentral()
     maven("https://maven.hytale.com/release/")
+    maven("https://maven.hytale.com/pre-release/")
 }
 
 dependencies {
-    compileOnly("com.hypixel.hytale:Server:latest.release")
+    compileOnly("com.hypixel.hytale:Server:0.5.0-pre.9.1")
     implementation(files("libs/HyUI-0.8.9-all.jar"))
 
     testImplementation(platform("org.junit:junit-bom:5.10.0"))
