@@ -12,7 +12,7 @@ repositories {
 }
 
 dependencies {
-    compileOnly("com.hypixel.hytale:Server:0.5.0-pre.9.1")
+    compileOnly("com.hypixel.hytale:Server:latest.release")
     implementation(files("libs/HyUI-0.8.9-all.jar"))
 
     testImplementation(platform("org.junit:junit-bom:5.10.0"))
