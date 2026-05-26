@@ -30,7 +30,7 @@ public class DataAssetPackManager {
     private static final Path MIGRATION_CONFLICTS_PATH = DATA_PACK_PATH.resolve("MigrationConflicts");
     private static final String DATA_PACK_MOD_ID = "electro:HyCitizensData";
     private static final String LEGACY_ASSET_PACK_MOD_ID = "electro:HyCitizensRoles";
-    private static final String SERVER_VERSION = "2026.03.26-89796e57b";
+    private static final String SERVER_VERSION = ">=0.5.0-pre.9 <0.6.0";
 
     public static boolean setup() {
         Path manifestPath = DATA_PACK_PATH.resolve("manifest.json");
@@ -52,7 +52,7 @@ public class DataAssetPackManager {
                 needsShutdown = true;
             }
 
-            if (writeManifestIfNeeded(manifestPath)) {
+            if (writeManifestIfNeeded(manifestPath).requiresShutdown()) {
                 needsShutdown = true;
             }
 
@@ -198,17 +198,59 @@ public class DataAssetPackManager {
         return changed;
     }
 
-    private static boolean writeManifestIfNeeded(@Nonnull Path manifestPath) throws IOException {
+    private enum ManifestUpdateResult {
+        UNCHANGED(false),
+        SERVER_VERSION_ONLY(false),
+        RESTART_REQUIRED(true);
+
+        private final boolean requiresShutdown;
+
+        ManifestUpdateResult(boolean requiresShutdown) {
+            this.requiresShutdown = requiresShutdown;
+        }
+
+        private boolean requiresShutdown() {
+            return requiresShutdown;
+        }
+    }
+
+    @Nonnull
+    private static ManifestUpdateResult writeManifestIfNeeded(@Nonnull Path manifestPath) throws IOException {
         String desired = manifestContent();
         if (Files.exists(manifestPath)) {
             String existing = new String(Files.readAllBytes(manifestPath), StandardCharsets.UTF_8);
             if (existing.equals(desired)) {
-                return false;
+                return ManifestUpdateResult.UNCHANGED;
+            }
+            if (onlyServerVersionChanged(existing, desired)) {
+                Files.write(manifestPath, desired.getBytes(StandardCharsets.UTF_8));
+                return ManifestUpdateResult.SERVER_VERSION_ONLY;
             }
         }
 
         Files.write(manifestPath, desired.getBytes(StandardCharsets.UTF_8));
-        return true;
+        return ManifestUpdateResult.RESTART_REQUIRED;
+    }
+
+    private static boolean onlyServerVersionChanged(@Nonnull String existing, @Nonnull String desired) {
+        try {
+            JsonElement existingJson = JsonParser.parseString(existing);
+            JsonElement desiredJson = JsonParser.parseString(desired);
+            if (!existingJson.isJsonObject() || !desiredJson.isJsonObject()) {
+                return false;
+            }
+
+            JsonObject existingObject = existingJson.getAsJsonObject();
+            JsonObject desiredObject = desiredJson.getAsJsonObject();
+            JsonElement existingServerVersion = existingObject.remove("ServerVersion");
+            JsonElement desiredServerVersion = desiredObject.remove("ServerVersion");
+
+            return existingServerVersion != null
+                    && desiredServerVersion != null
+                    && existingObject.equals(desiredObject);
+        } catch (JsonSyntaxException | IllegalStateException e) {
+            return false;
+        }
     }
 
     private static String manifestContent() {
