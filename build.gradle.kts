@@ -3,11 +3,11 @@ plugins {
 }
 
 group = "com.electro"
-version = "1.7.2"
+version = "1.7.3"
 
 repositories {
     mavenCentral()
-    maven("https://maven.hytale.com/release/")
+    //maven("https://maven.hytale.com/release/")
     maven("https://maven.hytale.com/pre-release/")
 }
 
