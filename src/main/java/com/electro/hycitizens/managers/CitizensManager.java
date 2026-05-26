@@ -2364,9 +2364,6 @@ public class CitizensManager {
         String roleName = resolveSpawnRoleName(citizen);
         Model spawnModel = createSpawnModel(citizen, scale);
 
-        // Always provide an explicit spawn model for non-player NPCs so RoleBuilderSystem skips
-        // its model-creation branch (which would override the citizen's scale with the model
-        // asset's random default scale). See createSpawnModel for details.
         Pair<Ref<EntityStore>, NPCEntity> npc = NPCPlugin.get().spawnEntity(
                 world.getEntityStore().getStore(),
                 NPCPlugin.get().getIndex(roleName),
