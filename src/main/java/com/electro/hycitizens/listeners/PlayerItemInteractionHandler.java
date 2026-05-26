@@ -7,7 +7,7 @@ import com.electro.hycitizens.models.PathConfig;
 import com.electro.hycitizens.models.PatrolPath;
 import com.electro.hycitizens.models.PatrolWaypoint;
 import com.hypixel.hytale.codec.Codec;
-import com.hypixel.hytale.math.vector.Vector3d;
+import org.joml.Vector3d;
 import com.hypixel.hytale.protocol.Packet;
 import com.hypixel.hytale.protocol.packets.interaction.SyncInteractionChain;
 import com.hypixel.hytale.protocol.packets.interaction.SyncInteractionChains;
@@ -116,7 +116,7 @@ public class PlayerItemInteractionHandler implements PacketWatcher {
 
             switch (itemId) {
                 case "PatrolStick" -> {
-                    if (!player.hasPermission("hycitizens.admin")) {
+                    if (!playerRef.hasPermission("hycitizens.admin")) {
                         playerRef.sendMessage(Message.raw("You need hycitizens.admin to use the Patrol Stick.").color(Color.RED));
                         return;
                     }
@@ -165,7 +165,7 @@ public class PlayerItemInteractionHandler implements PacketWatcher {
                     }
                 }
                 case "CitizenStick" -> {
-                    if (!player.hasPermission("hycitizens.admin")) {
+                    if (!playerRef.hasPermission("hycitizens.admin")) {
                         playerRef.sendMessage(Message.raw("You need hycitizens.admin to use the Citizen Stick.").color(Color.RED));
                         return;
                     }
