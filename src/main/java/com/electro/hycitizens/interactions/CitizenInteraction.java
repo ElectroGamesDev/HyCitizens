@@ -8,7 +8,7 @@ import com.electro.hycitizens.models.CommandAction;
 import com.electro.hycitizens.models.MessagesConfig;
 import com.electro.hycitizens.util.CommandExecutionUtil;
 import com.hypixel.hytale.component.Ref;
-import com.hypixel.hytale.math.vector.Vector3d;
+import org.joml.Vector3d;
 import com.hypixel.hytale.server.core.HytaleServer;
 import com.hypixel.hytale.server.core.Message;
 import com.hypixel.hytale.server.core.entity.entities.Player;
@@ -292,14 +292,14 @@ public class CitizenInteraction {
 
         // Permission check
         if (!citizen.getRequiredPermission().isEmpty()) {
-            if (!player.hasPermission(citizen.getRequiredPermission())) {
+            if (!playerRef.hasPermission(citizen.getRequiredPermission())) {
                 String permissionMessage = citizen.getNoPermissionMessage();
 
                 if (permissionMessage.isEmpty()) {
                     permissionMessage = "You do not have permissions";
                 }
 
-                player.sendMessage(Message.raw(permissionMessage).color(Color.RED));
+                playerRef.sendMessage(Message.raw(permissionMessage).color(Color.RED));
                 return;
             }
         }
@@ -505,7 +505,7 @@ public class CitizenInteraction {
                     return CompletableFuture.completedFuture(null);
                 }
 
-                return CommandExecutionUtil.execute(player, command, commandAction.isRunAsServer());
+                return CommandExecutionUtil.execute(playerRef, command, commandAction.isRunAsServer());
             });
         }
     }

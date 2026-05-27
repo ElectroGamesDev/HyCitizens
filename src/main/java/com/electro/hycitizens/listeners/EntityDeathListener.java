@@ -10,8 +10,8 @@ import com.hypixel.hytale.builtin.adventure.npcobjectives.resources.KillTrackerR
 import com.hypixel.hytale.builtin.adventure.npcobjectives.transaction.KillTaskTransaction;
 import com.hypixel.hytale.component.*;
 import com.hypixel.hytale.component.query.Query;
-import com.hypixel.hytale.math.vector.Vector3d;
-import com.hypixel.hytale.math.vector.Vector3f;
+import org.joml.Vector3d;
+import com.hypixel.hytale.math.vector.Rotation3f;
 import com.hypixel.hytale.server.core.HytaleServer;
 import com.hypixel.hytale.server.core.Message;
 import com.hypixel.hytale.server.core.entity.UUIDComponent;
@@ -175,7 +175,7 @@ public class EntityDeathListener extends DeathSystems.OnDeathSystem {
                 ItemStack itemStack = new ItemStack(drop.getItemId(), drop.getQuantity());
 
                 Holder<EntityStore>[] entities = ItemComponent.generateItemDrops(
-                        accessor, new ArrayList<>(List.of(itemStack)), new Vector3d(position), Vector3f.ZERO);
+                        accessor, new ArrayList<>(List.of(itemStack)), new Vector3d(position), new Rotation3f());
 
                 accessor.addEntities(entities, AddReason.SPAWN);
             }
@@ -242,7 +242,7 @@ public class EntityDeathListener extends DeathSystems.OnDeathSystem {
                         getLogger().atWarning().log("[HyCitizens] Skipping death command as player: attacker entity is unavailable.");
                         return CompletableFuture.completedFuture(null);
                     }
-                    return CommandExecutionUtil.execute(commandPlayer, command, cmd.isRunAsServer());
+                    return CommandExecutionUtil.execute(attackerPlayerRef, command, cmd.isRunAsServer());
                 }
             });
         }

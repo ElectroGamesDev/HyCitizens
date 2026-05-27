@@ -14,13 +14,14 @@ import com.electro.hycitizens.events.CitizenRemovedListener;
 import com.electro.hycitizens.models.*;
 import com.electro.hycitizens.roles.RoleGenerator;
 import com.electro.hycitizens.util.ConfigManager;
+import com.electro.hycitizens.util.RotationUtil;
 import com.electro.hycitizens.util.SkinUtilities;
 import com.electro.hycitizens.util.ThreadedScheduler;
 import com.hypixel.hytale.component.*;
 import com.hypixel.hytale.component.query.Query;
 import com.hypixel.hytale.math.util.ChunkUtil;
-import com.hypixel.hytale.math.vector.Vector3d;
-import com.hypixel.hytale.math.vector.Vector3f;
+import org.joml.Vector3d;
+import org.joml.Vector3f;
 import com.hypixel.hytale.protocol.*;
 import com.hypixel.hytale.protocol.packets.entities.EntityUpdates;
 import com.hypixel.hytale.server.core.HytaleServer;
@@ -2363,14 +2364,11 @@ public class CitizensManager {
         String roleName = resolveSpawnRoleName(citizen);
         Model spawnModel = createSpawnModel(citizen, scale);
 
-        // Always provide an explicit spawn model for non-player NPCs so RoleBuilderSystem skips
-        // its model-creation branch (which would override the citizen's scale with the model
-        // asset's random default scale). See createSpawnModel for details.
         Pair<Ref<EntityStore>, NPCEntity> npc = NPCPlugin.get().spawnEntity(
                 world.getEntityStore().getStore(),
                 NPCPlugin.get().getIndex(roleName),
                 citizen.getPosition(),
-                citizen.getRotation(),
+                RotationUtil.toRotation(citizen.getRotation()),
                 spawnModel,
                 (npcComponent, holder, store) -> npcComponent.setInitialModelScale(scale),
                 null
@@ -2482,7 +2480,7 @@ public class CitizensManager {
                 world.getEntityStore().getStore(),
                 NPCPlugin.get().getIndex(roleName),
                 citizen.getPosition(),
-                citizen.getRotation(),
+                RotationUtil.toRotation(citizen.getRotation()),
                 playerModel,
                 null,
                 null
@@ -2798,8 +2796,8 @@ public class CitizensManager {
                                                           @Nullable String lineText) {
         Holder<EntityStore> holder = EntityStore.REGISTRY.newHolder();
 
-        holder.putComponent(TransformComponent.getComponentType(), new TransformComponent(linePos, rotation));
-        holder.putComponent(HeadRotation.getComponentType(), new HeadRotation(rotation));
+        holder.putComponent(TransformComponent.getComponentType(), new TransformComponent(linePos, RotationUtil.toRotation(rotation)));
+        holder.putComponent(HeadRotation.getComponentType(), new HeadRotation(RotationUtil.toRotation(rotation)));
         holder.ensureComponent(UUIDComponent.getComponentType());
 
         holder.addComponent(
@@ -2841,11 +2839,11 @@ public class CitizensManager {
         TransformComponent transform = entity.getStore().getComponent(entity, TransformComponent.getComponentType());
         if (transform != null) {
             transform.setPosition(linePos);
-            transform.setRotation(rotation);
+            transform.setRotation(RotationUtil.toRotation(rotation));
         }
         HeadRotation headRotation = entity.getStore().getComponent(entity, HeadRotation.getComponentType());
         if (headRotation != null) {
-            headRotation.setRotation(rotation);
+            headRotation.setRotation(RotationUtil.toRotation(rotation));
         }
 
         bindCitizenNametagIdentity(entity, citizen.getId(), lineIndex);
@@ -4001,7 +3999,7 @@ public class CitizensManager {
                     return;
                 }
 
-                Vector3f baseRotation = npcTransformComponent.getRotation();
+                Vector3f baseRotation = RotationUtil.toVector3f(npcTransformComponent.getRotation());
                 Direction baseLookDirection = toPacketDirection(baseRotation, true);
                 Direction baseBodyDirection = toPacketDirection(baseRotation, true);
                 sendRotationUpdate(citizenNetworkId, playerRef, baseLookDirection, baseBodyDirection);
@@ -4272,7 +4270,7 @@ public class CitizensManager {
                     return;
                 }
 
-                Vector3f baseRotation = nametagTransform.getRotation();
+                Vector3f baseRotation = RotationUtil.toVector3f(nametagTransform.getRotation());
                 Direction baseLookDirection = toPacketDirection(baseRotation, true);
                 Direction baseBodyDirection = toPacketDirection(baseRotation, true);
                 sendRotationUpdate(nametagNetworkId, playerRef, baseLookDirection, baseBodyDirection);
@@ -5200,7 +5198,7 @@ public class CitizensManager {
             if (transformComponent != null) {
                 transformComponent.setPosition(targetPosition);
                 if (targetRotation != null) {
-                    transformComponent.setRotation(targetRotation);
+                    transformComponent.setRotation(RotationUtil.toRotation(targetRotation));
                 }
             }
 
