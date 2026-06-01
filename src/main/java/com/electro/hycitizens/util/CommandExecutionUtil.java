@@ -5,6 +5,8 @@ import com.hypixel.hytale.server.core.command.system.CommandManager;
 import com.hypixel.hytale.server.core.console.ConsoleSender;
 import com.hypixel.hytale.server.core.permissions.PermissionsModule;
 import com.hypixel.hytale.server.core.universe.PlayerRef;
+import com.hypixel.hytale.server.core.universe.Universe;
+import com.hypixel.hytale.server.core.universe.world.World;
 
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
@@ -130,8 +132,14 @@ public final class CommandExecutionUtil {
             return CompletableFuture.completedFuture(null);
         }
 
-        execution.whenComplete((ignored, throwable) ->
-                revokeTemporaryPermissions(permissionsModule, playerUuid, missingPermissions));
+        execution.whenComplete((ignored, throwable) -> {
+            World world = Universe.get() != null ? Universe.get().getWorld(player.getWorldUuid()) : null;
+            if (world != null) {
+                world.execute(() -> revokeTemporaryPermissions(permissionsModule, playerUuid, missingPermissions));
+            } else {
+                revokeTemporaryPermissions(permissionsModule, playerUuid, missingPermissions);
+            }
+        });
 
         return execution;
     }
