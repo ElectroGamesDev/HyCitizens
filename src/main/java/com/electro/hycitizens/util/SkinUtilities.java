@@ -52,32 +52,33 @@ public class SkinUtilities {
 
         Map<String, List<CosmeticOptionEntry>> catalogue = new LinkedHashMap<>();
 
-        catalogue.put("bodyCharacteristic", buildEntries(reg.getBodyCharacteristics(), reg));
-        catalogue.put("underwear",          buildEntries(reg.getUnderwear(),            reg));
-        catalogue.put("skinFeature",        buildEntries(reg.getSkinFeatures(),         reg));
-        catalogue.put("face",               buildEntries(reg.getFaces(),                reg));
-        catalogue.put("eyes",               buildEntries(reg.getEyes(),                 reg));
-        catalogue.put("ears",               buildEntries(reg.getEars(),                 reg));
-        catalogue.put("mouth",              buildEntries(reg.getMouths(),               reg));
-        catalogue.put("eyebrows",           buildEntries(reg.getEyebrows(),             reg));
-        catalogue.put("facialHair",         buildEntries(reg.getFacialHairs(),          reg));
-        catalogue.put("haircut",            buildEntries(reg.getHaircuts(),             reg));
-        catalogue.put("pants",              buildEntries(reg.getPants(),                reg));
-        catalogue.put("overpants",          buildEntries(reg.getOverpants(),            reg));
-        catalogue.put("undertop",           buildEntries(reg.getUndertops(),            reg));
-        catalogue.put("overtop",            buildEntries(reg.getOvertops(),             reg));
-        catalogue.put("shoes",              buildEntries(reg.getShoes(),                reg));
-        catalogue.put("gloves",             buildEntries(reg.getGloves(),               reg));
-        catalogue.put("headAccessory",      buildEntries(reg.getHeadAccessories(),      reg));
-        catalogue.put("faceAccessory",      buildEntries(reg.getFaceAccessories(),      reg));
-        catalogue.put("earAccessory",       buildEntries(reg.getEarAccessories(),       reg));
-        catalogue.put("cape",               buildEntries(reg.getCapes(),                reg));
+        catalogue.put("bodyCharacteristic", buildEntries("bodyCharacteristic", reg.getBodyCharacteristics(), reg));
+        catalogue.put("underwear",          buildEntries("underwear",          reg.getUnderwear(),            reg));
+        catalogue.put("skinFeature",        buildEntries("skinFeature",        reg.getSkinFeatures(),         reg));
+        catalogue.put("face",               buildEntries("face",               reg.getFaces(),                reg));
+        catalogue.put("eyes",               buildEntries("eyes",               reg.getEyes(),                 reg));
+        catalogue.put("ears",               buildEntries("ears",               reg.getEars(),                 reg));
+        catalogue.put("mouth",              buildEntries("mouth",              reg.getMouths(),               reg));
+        catalogue.put("eyebrows",           buildEntries("eyebrows",           reg.getEyebrows(),             reg));
+        catalogue.put("facialHair",         buildEntries("facialHair",         reg.getFacialHairs(),          reg));
+        catalogue.put("haircut",            buildEntries("haircut",            reg.getHaircuts(),             reg));
+        catalogue.put("pants",              buildEntries("pants",              reg.getPants(),                reg));
+        catalogue.put("overpants",          buildEntries("overpants",          reg.getOverpants(),            reg));
+        catalogue.put("undertop",           buildEntries("undertop",           reg.getUndertops(),            reg));
+        catalogue.put("overtop",            buildEntries("overtop",            reg.getOvertops(),             reg));
+        catalogue.put("shoes",              buildEntries("shoes",              reg.getShoes(),                reg));
+        catalogue.put("gloves",             buildEntries("gloves",             reg.getGloves(),               reg));
+        catalogue.put("headAccessory",      buildEntries("headAccessory",      reg.getHeadAccessories(),      reg));
+        catalogue.put("faceAccessory",      buildEntries("faceAccessory",      reg.getFaceAccessories(),      reg));
+        catalogue.put("earAccessory",       buildEntries("earAccessory",       reg.getEarAccessories(),       reg));
+        catalogue.put("cape",               buildEntries("cape",               reg.getCapes(),                reg));
 
         return catalogue;
     }
 
     @Nonnull
     private static List<CosmeticOptionEntry> buildEntries(
+            @Nonnull String slotName,
             @Nonnull Map<String, PlayerSkinPart> map,
             @Nonnull com.hypixel.hytale.server.core.cosmetics.CosmeticRegistry reg) {
 
@@ -86,6 +87,12 @@ public class SkinUtilities {
         for (PlayerSkinPart part : map.values()) {
             String partId = part.getId();
             List<String> colorOptions = new ArrayList<>();
+
+            if (usesBasePartOnly(slotName)) {
+                colorOptions.add(partId);
+                entries.add(new CosmeticOptionEntry(partId, colorOptions));
+                continue;
+            }
 
             // Collect the base colour pool (gradient set OR empty)
             List<String> gradientColors = new ArrayList<>();
@@ -133,6 +140,12 @@ public class SkinUtilities {
         }
 
         return entries;
+    }
+
+    private static boolean usesBasePartOnly(@Nonnull String slotName) {
+        return slotName.equals("face")
+                || slotName.equals("ears")
+                || slotName.equals("mouth");
     }
 
     @Nonnull
@@ -463,13 +476,15 @@ public class SkinUtilities {
     }
 
     public static boolean trySetSkinField(@Nonnull PlayerSkin skin, @Nonnull String slotName, @Nullable String value) {
-        PlayerSkin candidate = copySkin(skin);
+        PlayerSkin candidate = isValidSkin(skin) ? copySkin(skin) : createDefaultSkin();
         setSkinField(candidate, slotName, value);
         if (!isValidSkin(candidate)) {
             return false;
         }
 
-        setSkinField(skin, slotName, value);
+        for (String slot : SLOT_NAMES) {
+            setSkinField(skin, slot, getSkinField(candidate, slot));
+        }
         return true;
     }
 

@@ -4,6 +4,8 @@ import javax.annotation.Nonnull;
 
 public class CombatConfig {
     private String attackType;
+    private boolean attackTypeManuallySet;
+    private boolean combatStyleManuallySet;
     private float attackDistance;
     private float chaseSpeed;
     private float combatBehaviorDistance;
@@ -41,6 +43,8 @@ public class CombatConfig {
 
     public CombatConfig() {
         this.attackType = "Root_NPC_Attack_Melee";
+        this.attackTypeManuallySet = false;
+        this.combatStyleManuallySet = false;
         this.attackDistance = 2.0f;
         this.chaseSpeed = 0.67f;
         this.combatBehaviorDistance = 5.0f;
@@ -78,6 +82,8 @@ public class CombatConfig {
 
     public void copyFrom(@Nonnull CombatConfig other) {
         this.attackType = other.attackType;
+        this.attackTypeManuallySet = other.attackTypeManuallySet;
+        this.combatStyleManuallySet = other.combatStyleManuallySet;
         this.attackDistance = other.attackDistance;
         this.chaseSpeed = other.chaseSpeed;
         this.combatBehaviorDistance = other.combatBehaviorDistance;
@@ -115,7 +121,13 @@ public class CombatConfig {
     // Getters and Setters
 
     public String getAttackType() { return attackType; }
-    public void setAttackType(String attackType) { this.attackType = attackType; }
+    public void setAttackType(String attackType) { this.attackType = attackType != null ? attackType : "Root_NPC_Attack_Melee"; }
+
+    public boolean isAttackTypeManuallySet() { return attackTypeManuallySet; }
+    public void setAttackTypeManuallySet(boolean attackTypeManuallySet) { this.attackTypeManuallySet = attackTypeManuallySet; }
+
+    public boolean isCombatStyleManuallySet() { return combatStyleManuallySet; }
+    public void setCombatStyleManuallySet(boolean combatStyleManuallySet) { this.combatStyleManuallySet = combatStyleManuallySet; }
 
     public float getAttackDistance() { return attackDistance; }
     public void setAttackDistance(float attackDistance) { this.attackDistance = attackDistance; }

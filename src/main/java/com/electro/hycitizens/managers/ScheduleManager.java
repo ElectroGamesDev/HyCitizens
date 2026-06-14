@@ -713,8 +713,12 @@ public class ScheduleManager {
 
         int roleIndex = NPCPlugin.get().getIndex(roleName);
         if (roleIndex == Integer.MIN_VALUE) {
-            getLogger().atWarning().log("Schedule role not registered yet: " + roleName);
-            return;
+            citizensManager.getRoleGenerator().forceRoleGeneration(citizen);
+            roleIndex = NPCPlugin.get().getIndex(roleName);
+            if (roleIndex == Integer.MIN_VALUE) {
+                getLogger().atWarning().log("Schedule role not registered yet: " + roleName);
+                return;
+            }
         }
 
         World world = Universe.get().getWorld(citizen.getWorldUUID());
@@ -722,6 +726,7 @@ public class ScheduleManager {
             return;
         }
 
+        int finalRoleIndex = roleIndex;
         world.execute(() -> {
             NPCEntity npcEntity = npcRef.getStore().getComponent(npcRef, NPCEntity.getComponentType());
             if (npcEntity == null || npcEntity.getRole() == null) {
@@ -735,9 +740,25 @@ public class ScheduleManager {
                         : transformComponent != null
                         ? transformComponent.getPosition()
                         : (citizen.getCurrentPosition() != null ? citizen.getCurrentPosition() : citizen.getPosition());
-                citizensManager.getPatrolManager().ensureMoveTargetNow(citizen, world, markerPosition);
+                citizensManager.getPatrolManager().ensureMoveTargetNow(
+                        citizen,
+                        world,
+                        markerPosition
+                );
             }
-            RoleChangeSystem.requestRoleChange(npcRef, npcEntity.getRole(), roleIndex, true, npcRef.getStore());
+            RoleChangeSystem.requestRoleChange(npcRef, npcEntity.getRole(), finalRoleIndex, true, npcRef.getStore());
+            if (ensureMoveTarget && citizensManager.getPatrolManager() != null) {
+                HytaleServer.SCHEDULED_EXECUTOR.schedule(() -> world.execute(() -> {
+                    Vector3d targetPosition = moveTargetPosition != null
+                            ? moveTargetPosition
+                            : (citizen.getCurrentPosition() != null ? citizen.getCurrentPosition() : citizen.getPosition());
+                    citizensManager.getPatrolManager().ensureMoveTargetNow(
+                            citizen,
+                            world,
+                            targetPosition
+                    );
+                }), 100, TimeUnit.MILLISECONDS);
+            }
             HytaleServer.SCHEDULED_EXECUTOR.schedule(
                     () -> citizensManager.refreshSpawnedCitizenAppearance(citizen),
                     50,

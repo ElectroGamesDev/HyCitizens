@@ -73,6 +73,7 @@ public class SkinCustomizerUI {
         if (state == null || state.citizen != citizen) {
             PlayerSkin current = citizen.getCachedSkin();
             if (current == null) current = SkinUtilities.createDefaultSkin();
+            if (!SkinUtilities.isValidSkin(current)) current = SkinUtilities.createDefaultSkin();
             state = new CustomizerState(citizen, SkinUtilities.copySkin(current), SkinUtilities.copySkin(current));
             sessionStates.put(playerId, state);
         }

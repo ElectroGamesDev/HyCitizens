@@ -8,11 +8,13 @@ import com.hypixel.hytale.component.RemoveReason;
 import com.hypixel.hytale.component.Store;
 import com.hypixel.hytale.component.query.Query;
 import com.hypixel.hytale.component.system.RefSystem;
+import com.hypixel.hytale.server.core.entity.UUIDComponent;
 import com.hypixel.hytale.server.core.universe.world.storage.EntityStore;
 import com.hypixel.hytale.server.npc.entities.NPCEntity;
 import com.hypixel.hytale.server.npc.role.Role;
 
 import java.util.Map;
+import java.util.UUID;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.concurrent.ConcurrentHashMap;
@@ -49,7 +51,12 @@ public class DuplicateNPCPrevention extends RefSystem<EntityStore> {
         }
 
         Ref<EntityStore> existingRef = this.activeCitizenRoles.get(citizenKey);
-        if (existingRef != null && existingRef.isValid() && !existingRef.equals(ref)) {
+        if (existingRef != null && !existingRef.isValid()) {
+            this.activeCitizenRoles.remove(citizenKey, existingRef);
+            existingRef = null;
+        }
+
+        if (existingRef != null && !isSameEntity(existingRef, ref)) {
             commandBuffer.removeEntity(ref, RemoveReason.REMOVE);
             return;
         }
@@ -76,7 +83,7 @@ public class DuplicateNPCPrevention extends RefSystem<EntityStore> {
         }
 
         Ref<EntityStore> existingRef = this.activeCitizenRoles.get(citizenKey);
-        if (existingRef != null && existingRef.equals(ref)) {
+        if (existingRef != null && isSameEntity(existingRef, ref)) {
             this.activeCitizenRoles.remove(citizenKey);
         }
     }
@@ -106,5 +113,24 @@ public class DuplicateNPCPrevention extends RefSystem<EntityStore> {
 
         Matcher matcher = UUID_PATTERN.matcher(roleName);
         return matcher.find() ? matcher.group() : roleName;
+    }
+
+    private boolean isSameEntity(@Nonnull Ref<EntityStore> first, @Nonnull Ref<EntityStore> second) {
+        if (first.equals(second)) {
+            return true;
+        }
+
+        UUID firstUuid = getEntityUuid(first);
+        UUID secondUuid = getEntityUuid(second);
+        return firstUuid != null && firstUuid.equals(secondUuid);
+    }
+
+    private UUID getEntityUuid(@Nonnull Ref<EntityStore> ref) {
+        if (!ref.isValid()) {
+            return null;
+        }
+
+        UUIDComponent uuidComponent = ref.getStore().getComponent(ref, UUIDComponent.getComponentType());
+        return uuidComponent != null ? uuidComponent.getUuid() : null;
     }
 }

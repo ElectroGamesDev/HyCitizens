@@ -2,9 +2,11 @@ package com.electro.hycitizens.roles;
 
 import com.electro.hycitizens.HyCitizensPlugin;
 import com.electro.hycitizens.models.*;
+import com.electro.hycitizens.util.GeneratedAssetReloader;
 import com.google.gson.*;
 
 import javax.annotation.Nonnull;
+import javax.annotation.Nullable;
 import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
@@ -26,20 +28,28 @@ public class RoleGenerator {
     private final File generatedRolesDir;
     private final Gson gson;
     private final Map<String, String> lastGeneratedContent = new ConcurrentHashMap<>();
+    private final FactionAssetGenerator factionAssetGenerator = new FactionAssetGenerator();
+
+    public static final String DEFAULT_ATTACK_INTERACTION = "Root_NPC_Attack_Melee";
 
     public static final String[] ATTACK_INTERACTIONS = {
-            "Root_NPC_Attack_Melee",
+            DEFAULT_ATTACK_INTERACTION,
+            "Deer_Stag_Ram",
+            "Larva_Silk_Bite",
+            "Larva_Void_Bite",
+            "NPC_Rubble_Throw",
             "Root_NPC_Scarak_Fighter_Attack",
             "Root_NPC_Bear_Grizzly_Attack",
             "Root_NPC_Bear_Polar_Attack",
+            "Root_NPC_Crawler_Void_Attack",
             "Root_NPC_Fox_Attack",
+            "Root_NPC_Goblin_Ogre_Attack",
             "Root_NPC_Hyena_Attack",
-            "Root_NPC_Wolf_Attack",
-            "Root_NPC_Yeti_Attack",
             "Root_NPC_Rat_Attack",
             "Root_NPC_Scorpion_Attack",
             "Root_NPC_Snake_Attack",
             "Root_NPC_Spider_Attack",
+            "Root_NPC_Golem_Crystal_Attack",
             "Root_NPC_Golem_Crystal_Earth_Attack",
             "Root_NPC_Golem_Crystal_Flame_Attack",
             "Root_NPC_Golem_Crystal_Frost_Attack",
@@ -63,11 +73,263 @@ public class RoleGenerator {
             "Root_NPC_Skeleton_Sand_Guard_Attack",
             "Root_NPC_Skeleton_Sand_Soldier_Attack",
             "Root_NPC_Skeleton_Soldier_Attack",
-            "Root_NPC_Wraith_Attack",
             "Root_NPC_Skeleton_Burnt_Praetorian_Attack",
-            "Root_NPC_Crawler_Void_Attack",
-            "Root_NPC_Spawn_Void_Attack"
+            "Root_NPC_Wraith_Attack",
+            "Root_NPC_Spawn_Void_Attack",
+            "Root_NPC_Toad_Rhino_Attack",
+            "Root_NPC_Toad_Rhino_Magma_Attack",
+            "Root_NPC_Wolf_Attack",
+            "Root_NPC_Yeti_Attack",
+            "Scarak_Defender_Bite",
+            "Scarak_Louse_Bite",
+            "Scarak_Seeker_Sting",
+            "Shark_Hammerhead_Bite",
+            "Skeleton_Archer_Bow_Shoot",
+            "Skeleton_Archmage_Staff_Corruption_Orb",
+            "Skeleton_Burnt_Alchemist_Bomb_Throw",
+            "Skeleton_Burnt_Archer_Bow_Shoot",
+            "Skeleton_Burnt_Gunner_Gun_Shoot",
+            "Skeleton_Frost_Archer_Bow_Shoot",
+            "Skeleton_Frost_Ranger_Bow_Shoot",
+            "Skeleton_Frost_Scout_Bow_Shoot",
+            "Skeleton_Mage_Wand_Corruption_Orb",
+            "Skeleton_Pirate_Gunner_Gun_Shoot",
+            "Skeleton_Ranger_Crossbow_Shoot",
+            "Skeleton_Sand_Archer_Bow_Shoot",
+            "Skeleton_Sand_Mage_Spellbook_Corruption_Orb",
+            "Skeleton_Sand_Ranger_Crossbow_Shoot",
+            "Skeleton_Sand_Scout_Bow_Shoot",
+            "Skeleton_Scout_Bow_Shoot"
     };
+
+    private static final Map<String, String> ATTACK_BY_MODEL = Map.ofEntries(
+            Map.entry("Antelope", DEFAULT_ATTACK_INTERACTION),
+            Map.entry("Bear_Grizzly", "Root_NPC_Bear_Grizzly_Attack"),
+            Map.entry("Bear_Polar", "Root_NPC_Bear_Polar_Attack"),
+            Map.entry("Bison", DEFAULT_ATTACK_INTERACTION),
+            Map.entry("Boar", DEFAULT_ATTACK_INTERACTION),
+            Map.entry("Camel", DEFAULT_ATTACK_INTERACTION),
+            Map.entry("Camel_Calf", DEFAULT_ATTACK_INTERACTION),
+            Map.entry("Chicken_Undead", DEFAULT_ATTACK_INTERACTION),
+            Map.entry("Cow", DEFAULT_ATTACK_INTERACTION),
+            Map.entry("Cow_Undead", DEFAULT_ATTACK_INTERACTION),
+            Map.entry("Crawler_Void", "Root_NPC_Crawler_Void_Attack"),
+            Map.entry("Crocodile", DEFAULT_ATTACK_INTERACTION),
+            Map.entry("Deer_Stag", "Deer_Stag_Ram"),
+            Map.entry("Dungeon_Scarak_Defender", "Scarak_Defender_Bite"),
+            Map.entry("Dungeon_Scarak_Defender_Patrol", "Scarak_Defender_Bite"),
+            Map.entry("Dungeon_Scarak_Fighter", "Root_NPC_Scarak_Fighter_Attack"),
+            Map.entry("Dungeon_Scarak_Louse", "Scarak_Louse_Bite"),
+            Map.entry("Dungeon_Skeleton_Sand_Archer", "Skeleton_Sand_Archer_Bow_Shoot"),
+            Map.entry("Dungeon_Skeleton_Sand_Mage", "Skeleton_Sand_Mage_Spellbook_Corruption_Orb"),
+            Map.entry("Emberwulf", DEFAULT_ATTACK_INTERACTION),
+            Map.entry("Fen_Stalker", DEFAULT_ATTACK_INTERACTION),
+            Map.entry("Fox", "Root_NPC_Fox_Attack"),
+            Map.entry("Ghoul", DEFAULT_ATTACK_INTERACTION),
+            Map.entry("Goat", DEFAULT_ATTACK_INTERACTION),
+            Map.entry("Golem_Crystal_Earth", "Root_NPC_Golem_Crystal_Attack"),
+            Map.entry("Golem_Crystal_Flame", "Root_NPC_Golem_Crystal_Attack"),
+            Map.entry("Golem_Crystal_Frost", "Root_NPC_Golem_Crystal_Attack"),
+            Map.entry("Golem_Crystal_Sand", "Root_NPC_Golem_Crystal_Attack"),
+            Map.entry("Golem_Crystal_Thunder", "Root_NPC_Golem_Crystal_Attack"),
+            Map.entry("Golem_Firesteel", "Root_NPC_Golem_Firesteel_Attack"),
+            Map.entry("Horse", DEFAULT_ATTACK_INTERACTION),
+            Map.entry("Horse_Skeleton", DEFAULT_ATTACK_INTERACTION),
+            Map.entry("Horse_Skeleton_Armored", DEFAULT_ATTACK_INTERACTION),
+            Map.entry("Hound_Bleached", DEFAULT_ATTACK_INTERACTION),
+            Map.entry("Hyena", "Root_NPC_Hyena_Attack"),
+            Map.entry("Larva_Silk", "Larva_Silk_Bite"),
+            Map.entry("Larva_Void", "Larva_Void_Bite"),
+            Map.entry("Leopard_Snow", DEFAULT_ATTACK_INTERACTION),
+            Map.entry("Model_Deer_Stag", "Deer_Stag_Ram"),
+            Map.entry("Molerat", DEFAULT_ATTACK_INTERACTION),
+            Map.entry("Moose_Bull", DEFAULT_ATTACK_INTERACTION),
+            Map.entry("Moose_Cow", DEFAULT_ATTACK_INTERACTION),
+            Map.entry("Mosshorn", DEFAULT_ATTACK_INTERACTION),
+            Map.entry("Mosshorn_Plain", DEFAULT_ATTACK_INTERACTION),
+            Map.entry("Pig_Undead", DEFAULT_ATTACK_INTERACTION),
+            Map.entry("Ram", DEFAULT_ATTACK_INTERACTION),
+            Map.entry("Raptor_Cave", DEFAULT_ATTACK_INTERACTION),
+            Map.entry("Rat", "Root_NPC_Rat_Attack"),
+            Map.entry("Rex_Cave", DEFAULT_ATTACK_INTERACTION),
+            Map.entry("Risen_Gunner", "Skeleton_Burnt_Gunner_Gun_Shoot"),
+            Map.entry("Risen_Knight", "Root_NPC_Skeleton_Knight_Attack"),
+            Map.entry("Scarak_Broodmother", "NPC_Rubble_Throw"),
+            Map.entry("Scarak_Defender", "Scarak_Defender_Bite"),
+            Map.entry("Scarak_Defender_Patrol", "Scarak_Defender_Bite"),
+            Map.entry("Scarak_Fighter", "Root_NPC_Scarak_Fighter_Attack"),
+            Map.entry("Scarak_Fighter_Royal_Guard", "Root_NPC_Scarak_Fighter_Attack"),
+            Map.entry("Scarak_Louse", "Scarak_Louse_Bite"),
+            Map.entry("Scarak_Seeker", "Scarak_Seeker_Sting"),
+            Map.entry("Scorpion", "Root_NPC_Scorpion_Attack"),
+            Map.entry("Shadow_Knight", DEFAULT_ATTACK_INTERACTION),
+            Map.entry("Shark_Hammerhead", "Shark_Hammerhead_Bite"),
+            Map.entry("Skeleton_Archer", "Skeleton_Archer_Bow_Shoot"),
+            Map.entry("Skeleton_Archmage", "Skeleton_Archmage_Staff_Corruption_Orb"),
+            Map.entry("Skeleton_Burnt_Alchemist", "Skeleton_Burnt_Alchemist_Bomb_Throw"),
+            Map.entry("Skeleton_Burnt_Archer", "Skeleton_Burnt_Archer_Bow_Shoot"),
+            Map.entry("Skeleton_Burnt_Gunner", "Skeleton_Burnt_Gunner_Gun_Shoot"),
+            Map.entry("Skeleton_Burnt_Knight", "Root_NPC_Skeleton_Knight_Attack"),
+            Map.entry("Skeleton_Burnt_Lancer", "Root_NPC_Skeleton_Burnt_Lancer_Attack"),
+            Map.entry("Skeleton_Burnt_Soldier", "Root_NPC_Skeleton_Burnt_Soldier_Attack"),
+            Map.entry("Skeleton_Burnt_Wizard", "Skeleton_Archmage_Staff_Corruption_Orb"),
+            Map.entry("Skeleton_Fighter", "Root_NPC_Skeleton_Fighter_Attack"),
+            Map.entry("Skeleton_Frost_Archer", "Skeleton_Frost_Archer_Bow_Shoot"),
+            Map.entry("Skeleton_Frost_Archmage", "Skeleton_Archmage_Staff_Corruption_Orb"),
+            Map.entry("Skeleton_Frost_Fighter", "Root_NPC_Skeleton_Frost_Fighter_Attack"),
+            Map.entry("Skeleton_Frost_Knight", "Root_NPC_Skeleton_Frost_Knight_Attack"),
+            Map.entry("Skeleton_Frost_Mage", "Skeleton_Sand_Mage_Spellbook_Corruption_Orb"),
+            Map.entry("Skeleton_Frost_Ranger", "Skeleton_Frost_Ranger_Bow_Shoot"),
+            Map.entry("Skeleton_Frost_Scout", "Skeleton_Frost_Scout_Bow_Shoot"),
+            Map.entry("Skeleton_Frost_Soldier", "Root_NPC_Skeleton_Frost_Soldier_Attack"),
+            Map.entry("Skeleton_Incandescent_Fighter", "Root_NPC_Skeleton_Incandescent_Fighter_Attack"),
+            Map.entry("Skeleton_Incandescent_Footman", "Root_NPC_Skeleton_Incandescent_Footman_Attack"),
+            Map.entry("Skeleton_Incandescent_Mage", "Skeleton_Sand_Mage_Spellbook_Corruption_Orb"),
+            Map.entry("Skeleton_Knight", "Root_NPC_Skeleton_Knight_Attack"),
+            Map.entry("Skeleton_Mage", "Skeleton_Mage_Wand_Corruption_Orb"),
+            Map.entry("Skeleton_Pirate_Captain", "Root_NPC_Skeleton_Pirate_Captain_Attack"),
+            Map.entry("Skeleton_Pirate_Gunner", "Skeleton_Pirate_Gunner_Gun_Shoot"),
+            Map.entry("Skeleton_Pirate_Striker", "Root_NPC_Skeleton_Pirate_Captain_Attack"),
+            Map.entry("Skeleton_Ranger", "Skeleton_Ranger_Crossbow_Shoot"),
+            Map.entry("Skeleton_Sand_Archer", "Skeleton_Sand_Archer_Bow_Shoot"),
+            Map.entry("Skeleton_Sand_Archmage", "Skeleton_Archmage_Staff_Corruption_Orb"),
+            Map.entry("Skeleton_Sand_Assassin", "Root_NPC_Skeleton_Sand_Assassin_Attack"),
+            Map.entry("Skeleton_Sand_Guard", "Root_NPC_Skeleton_Sand_Guard_Attack"),
+            Map.entry("Skeleton_Sand_Mage", "Skeleton_Sand_Mage_Spellbook_Corruption_Orb"),
+            Map.entry("Skeleton_Sand_Ranger", "Skeleton_Sand_Ranger_Crossbow_Shoot"),
+            Map.entry("Skeleton_Sand_Scout", "Skeleton_Sand_Scout_Bow_Shoot"),
+            Map.entry("Skeleton_Sand_Soldier", "Root_NPC_Skeleton_Sand_Soldier_Attack"),
+            Map.entry("Skeleton_Scout", "Skeleton_Scout_Bow_Shoot"),
+            Map.entry("Skeleton_Soldier", "Root_NPC_Skeleton_Soldier_Attack"),
+            Map.entry("Slug_Magma", "Larva_Silk_Bite"),
+            Map.entry("Snake_Marsh", "Root_NPC_Snake_Attack"),
+            Map.entry("Snapdragon", DEFAULT_ATTACK_INTERACTION),
+            Map.entry("Spawn_Void", "Root_NPC_Spawn_Void_Attack"),
+            Map.entry("Spider", "Root_NPC_Spider_Attack"),
+            Map.entry("Tamed_Bison", DEFAULT_ATTACK_INTERACTION),
+            Map.entry("Tamed_Boar", DEFAULT_ATTACK_INTERACTION),
+            Map.entry("Tamed_Camel", DEFAULT_ATTACK_INTERACTION),
+            Map.entry("Tamed_Camel_Calf", DEFAULT_ATTACK_INTERACTION),
+            Map.entry("Tamed_Cow", DEFAULT_ATTACK_INTERACTION),
+            Map.entry("Tamed_Goat", DEFAULT_ATTACK_INTERACTION),
+            Map.entry("Tamed_Horse", DEFAULT_ATTACK_INTERACTION),
+            Map.entry("Tamed_Mosshorn", DEFAULT_ATTACK_INTERACTION),
+            Map.entry("Tamed_Mosshorn_Plain", DEFAULT_ATTACK_INTERACTION),
+            Map.entry("Tamed_Ram", DEFAULT_ATTACK_INTERACTION),
+            Map.entry("Tamed_Warthog", DEFAULT_ATTACK_INTERACTION),
+            Map.entry("Template_Goblin_Ogre_Tutorial", "Root_NPC_Goblin_Ogre_Attack"),
+            Map.entry("Template_Intelligent", DEFAULT_ATTACK_INTERACTION),
+            Map.entry("Template_Predator", DEFAULT_ATTACK_INTERACTION),
+            Map.entry("Template_Scarak_Broodmother", "NPC_Rubble_Throw"),
+            Map.entry("Template_Scarak_Defender", "Scarak_Defender_Bite"),
+            Map.entry("Template_Scarak_Louse", DEFAULT_ATTACK_INTERACTION),
+            Map.entry("Template_Scarak_Seeker", "Scarak_Seeker_Sting"),
+            Map.entry("Template_Summoned_Ally", DEFAULT_ATTACK_INTERACTION),
+            Map.entry("Template_Swimming_Aggressive", "Shark_Hammerhead_Bite"),
+            Map.entry("Template_Trork_Companion", "Root_NPC_Wolf_Attack"),
+            Map.entry("Tiger_Sabertooth", DEFAULT_ATTACK_INTERACTION),
+            Map.entry("Toad_Rhino", "Root_NPC_Toad_Rhino_Attack"),
+            Map.entry("Toad_Rhino_Magma", "Root_NPC_Toad_Rhino_Magma_Attack"),
+            Map.entry("Trork_Hunter", DEFAULT_ATTACK_INTERACTION),
+            Map.entry("Warthog", DEFAULT_ATTACK_INTERACTION),
+            Map.entry("Werewolf", DEFAULT_ATTACK_INTERACTION),
+            Map.entry("Wolf_Black", "Root_NPC_Wolf_Attack"),
+            Map.entry("Wolf_Outlander_Priest", "Root_NPC_Wolf_Attack"),
+            Map.entry("Wolf_Outlander_Sorcerer", "Root_NPC_Wolf_Attack"),
+            Map.entry("Wolf_Trork_Hunter", "Root_NPC_Wolf_Attack"),
+            Map.entry("Wolf_Trork_Shaman", "Root_NPC_Wolf_Attack"),
+            Map.entry("Wraith", "Root_NPC_Wraith_Attack"),
+            Map.entry("Wraith_Lantern", DEFAULT_ATTACK_INTERACTION),
+            Map.entry("Yeti", "Root_NPC_Yeti_Attack"),
+            Map.entry("Zombie_Aberrant", DEFAULT_ATTACK_INTERACTION),
+            Map.entry("Zombie_Aberrant_Big", DEFAULT_ATTACK_INTERACTION),
+            Map.entry("Zombie_Aberrant_Small", DEFAULT_ATTACK_INTERACTION)
+    );
+
+    private record CombatStylePreset(
+            float attackDistance,
+            float chaseSpeed,
+            float combatBehaviorDistance,
+            float desiredAttackDistanceMin,
+            float desiredAttackDistanceMax,
+            float attackPauseMin,
+            float attackPauseMax,
+            float combatRelativeTurnSpeed,
+            int combatDirectWeight,
+            int combatStrafeWeight,
+            int combatAlwaysMovingWeight,
+            boolean backOffAfterAttack,
+            float backOffDistance,
+            float backOffDurationMin,
+            float backOffDurationMax,
+            int blockProbability,
+            float combatFleeIfTooCloseDistance,
+            float targetRange,
+            float combatMovingRelativeSpeed,
+            float combatBackwardsRelativeSpeed,
+            float combatAttackPreDelayMin,
+            float combatAttackPreDelayMax,
+            float combatAttackPostDelayMin,
+            float combatAttackPostDelayMax
+    ) {
+        private void applyTo(@Nonnull CombatConfig combat) {
+            combat.setAttackDistance(attackDistance);
+            combat.setChaseSpeed(chaseSpeed);
+            combat.setCombatBehaviorDistance(combatBehaviorDistance);
+            combat.setDesiredAttackDistanceMin(desiredAttackDistanceMin);
+            combat.setDesiredAttackDistanceMax(desiredAttackDistanceMax);
+            combat.setAttackPauseMin(attackPauseMin);
+            combat.setAttackPauseMax(attackPauseMax);
+            combat.setCombatRelativeTurnSpeed(combatRelativeTurnSpeed);
+            combat.setCombatDirectWeight(combatDirectWeight);
+            combat.setCombatStrafeWeight(combatStrafeWeight);
+            combat.setCombatAlwaysMovingWeight(combatAlwaysMovingWeight);
+            combat.setBackOffAfterAttack(backOffAfterAttack);
+            combat.setBackOffDistance(backOffDistance);
+            combat.setBackOffDurationMin(backOffDurationMin);
+            combat.setBackOffDurationMax(backOffDurationMax);
+            combat.setBlockAbility("Shield_Block");
+            combat.setBlockProbability(blockProbability);
+            combat.setCombatFleeIfTooCloseDistance(combatFleeIfTooCloseDistance);
+            combat.setTargetRange(targetRange);
+            combat.setCombatMovingRelativeSpeed(combatMovingRelativeSpeed);
+            combat.setCombatBackwardsRelativeSpeed(combatBackwardsRelativeSpeed);
+            combat.setCombatAttackPreDelayMin(combatAttackPreDelayMin);
+            combat.setCombatAttackPreDelayMax(combatAttackPreDelayMax);
+            combat.setCombatAttackPostDelayMin(combatAttackPostDelayMin);
+            combat.setCombatAttackPostDelayMax(combatAttackPostDelayMax);
+            combat.setUseCombatActionEvaluator(false);
+        }
+    }
+
+    private static final CombatStylePreset HUMAN_MELEE_STYLE = new CombatStylePreset(
+            2.0f, 0.67f, 5.0f, 1.5f, 1.5f, 1.5f, 2.0f, 1.5f,
+            10, 10, 0, true, 4.0f, 2.0f, 3.0f, 50, 0.0f, 4.0f,
+            0.6f, 0.3f, 0.2f, 0.2f, 0.2f, 0.2f);
+    private static final CombatStylePreset BEAR_STYLE = new CombatStylePreset(
+            3.25f, 1.0f, 6.5f, 2.5f, 3.0f, 3.0f, 4.0f, 0.5f,
+            10, 0, 0, true, 4.0f, 3.0f, 4.0f, 0, 2.0f, 3.25f,
+            0.2f, 0.15f, 0.2f, 0.2f, 0.2f, 0.2f);
+    private static final CombatStylePreset AGILE_PREDATOR_STYLE = new CombatStylePreset(
+            2.5f, 1.0f, 6.0f, 1.8f, 2.4f, 1.5f, 2.5f, 1.0f,
+            0, 10, 0, true, 5.0f, 2.0f, 3.0f, 0, 0.0f, 2.5f,
+            0.6f, 0.3f, 0.2f, 0.2f, 0.2f, 0.2f);
+    private static final CombatStylePreset DIRECT_BEAST_STYLE = new CombatStylePreset(
+            3.0f, 0.9f, 6.0f, 2.0f, 2.8f, 1.6f, 2.4f, 1.0f,
+            10, 0, 0, false, 4.0f, 2.0f, 3.0f, 0, 0.0f, 3.0f,
+            0.5f, 0.25f, 0.2f, 0.2f, 0.2f, 0.2f);
+    private static final CombatStylePreset SMALL_BEAST_STYLE = new CombatStylePreset(
+            2.0f, 0.9f, 3.5f, 1.3f, 1.8f, 1.0f, 1.8f, 1.0f,
+            0, 10, 0, false, 3.0f, 1.5f, 2.5f, 0, 0.0f, 2.0f,
+            0.8f, 0.3f, 0.15f, 0.15f, 0.15f, 0.15f);
+    private static final CombatStylePreset RANGED_STYLE = new CombatStylePreset(
+            15.0f, 0.67f, 15.0f, 5.0f, 14.5f, 1.5f, 2.0f, 1.5f,
+            0, 10, 0, false, 4.0f, 2.0f, 3.0f, 0, 4.0f, 15.0f,
+            0.6f, 0.3f, 0.2f, 0.2f, 0.2f, 0.2f);
+    private static final CombatStylePreset GOLEM_STYLE = new CombatStylePreset(
+            2.75f, 0.8f, 5.0f, 2.0f, 2.5f, 1.8f, 2.4f, 0.25f,
+            10, 0, 0, false, 4.0f, 2.0f, 3.0f, 0, 0.0f, 2.75f,
+            0.4f, 0.2f, 0.2f, 0.2f, 1.0f, 1.2f);
 
     public RoleGenerator(@Nonnull Path generatedRolesPath) {
         this.generatedRolesDir = generatedRolesPath.toFile();
@@ -81,21 +343,133 @@ public class RoleGenerator {
     @Nonnull
     public static String resolveAttackInteraction(@Nonnull String modelId) {
         if ("Player".equalsIgnoreCase(modelId)) {
-            return "Root_NPC_Attack_Melee";
+            return DEFAULT_ATTACK_INTERACTION;
+        }
+
+        String normalizedModel = normalizeAttackKey(modelId);
+        String exactMatch = findMappedAttack(normalizedModel, true);
+        if (exactMatch != null) {
+            return exactMatch;
+        }
+
+        String fuzzyMatch = findMappedAttack(normalizedModel, false);
+        if (fuzzyMatch != null) {
+            return fuzzyMatch;
         }
 
         for (String attack : ATTACK_INTERACTIONS) {
-            // Strip "Root_NPC_" prefix and "_Attack"/"_BasicAttacks" suffix to get the entity key
             String key = attack.replace("Root_NPC_", "")
-                    .replace("_BasicAttacks", "")
                     .replace("_Attack", "");
-            if (modelId.equalsIgnoreCase(key) || modelId.replace("_", "").equalsIgnoreCase(key.replace("_", ""))) {
+            String normalizedAttackKey = normalizeAttackKey(key);
+            if (normalizedModel.equals(normalizedAttackKey)
+                    || normalizedModel.startsWith(normalizedAttackKey)
+                    || normalizedModel.endsWith(normalizedAttackKey)) {
                 return attack;
             }
         }
 
-        // Fallback
-        return "Root_NPC_Attack_Melee";
+        return DEFAULT_ATTACK_INTERACTION;
+    }
+
+    @Nonnull
+    public static String[] getAttackInteractions() {
+        return ATTACK_INTERACTIONS.clone();
+    }
+
+    public static void applyAutoCombatStyle(@Nonnull CombatConfig combat, @Nonnull String modelId) {
+        resolveCombatStylePreset(modelId).applyTo(combat);
+    }
+
+    public static boolean isAutoResolvedAttackInteraction(@Nonnull String modelId, @Nonnull String attackInteractionId) {
+        return resolveAttackInteraction(modelId).equals(attackInteractionId);
+    }
+
+    @Nullable
+    private static String findMappedAttack(@Nonnull String normalizedModel, boolean exactOnly) {
+        String bestAttack = null;
+        int bestLength = -1;
+        for (Map.Entry<String, String> entry : ATTACK_BY_MODEL.entrySet()) {
+            String normalizedKey = normalizeAttackKey(entry.getKey());
+            boolean match = exactOnly
+                    ? normalizedModel.equals(normalizedKey)
+                    : normalizedModel.endsWith(normalizedKey) || normalizedKey.endsWith(normalizedModel);
+            if (match && normalizedKey.length() > bestLength) {
+                bestAttack = entry.getValue();
+                bestLength = normalizedKey.length();
+            }
+        }
+        return bestAttack;
+    }
+
+    @Nonnull
+    private static String normalizeAttackKey(@Nonnull String value) {
+        return value.replaceAll("([a-z0-9])([A-Z])", "$1_$2")
+                .replaceAll("[^A-Za-z0-9]", "")
+                .toLowerCase(Locale.ROOT);
+    }
+
+    @Nonnull
+    private static CombatStylePreset resolveCombatStylePreset(@Nonnull String modelId) {
+        if ("Player".equalsIgnoreCase(modelId)) {
+            return HUMAN_MELEE_STYLE;
+        }
+
+        String normalized = normalizeAttackKey(modelId);
+        String attack = resolveAttackInteraction(modelId);
+        String normalizedAttack = normalizeAttackKey(attack);
+
+        if (normalized.contains("bear")) {
+            return BEAR_STYLE;
+        }
+        if (isRangedCombatModel(normalized, normalizedAttack)) {
+            return RANGED_STYLE;
+        }
+        if (normalized.contains("golem")) {
+            return GOLEM_STYLE;
+        }
+        if (normalized.contains("fox")
+                || normalized.contains("wolf")
+                || normalized.contains("hyena")
+                || normalized.contains("leopard")
+                || normalized.contains("tiger")) {
+            return AGILE_PREDATOR_STYLE;
+        }
+        if (normalized.contains("rat")
+                || normalized.contains("larva")
+                || normalized.contains("louse")
+                || normalized.contains("scorpion")
+                || normalized.contains("snake")
+                || normalized.contains("spider")) {
+            return SMALL_BEAST_STYLE;
+        }
+        if (normalized.contains("yeti")
+                || normalized.contains("crawler")
+                || normalized.contains("crocodile")
+                || normalized.contains("rex")
+                || normalized.contains("toadrhino")) {
+            return DIRECT_BEAST_STYLE;
+        }
+
+        return DEFAULT_ATTACK_INTERACTION.equals(attack) ? HUMAN_MELEE_STYLE : DIRECT_BEAST_STYLE;
+    }
+
+    private static boolean isRangedCombatModel(@Nonnull String normalizedModel, @Nonnull String normalizedAttack) {
+        return normalizedModel.contains("archer")
+                || normalizedModel.contains("ranger")
+                || normalizedModel.contains("scout")
+                || normalizedModel.contains("gunner")
+                || normalizedModel.contains("mage")
+                || normalizedModel.contains("wizard")
+                || normalizedModel.contains("alchemist")
+                || normalizedAttack.contains("bow")
+                || normalizedAttack.contains("crossbow")
+                || normalizedAttack.contains("gun")
+                || normalizedAttack.contains("staff")
+                || normalizedAttack.contains("wand")
+                || normalizedAttack.contains("spellbook")
+                || normalizedAttack.contains("orb")
+                || normalizedAttack.contains("bomb")
+                || normalizedAttack.contains("throw");
     }
 
     @Nonnull
@@ -124,7 +498,7 @@ public class RoleGenerator {
     }
 
     @Nonnull
-    private Set<String> getGeneratedRoleNames(@Nonnull CitizenData citizen) {
+    public Set<String> getGeneratedRoleNames(@Nonnull CitizenData citizen) {
         Set<String> roleNames = new LinkedHashSet<>();
         roleNames.add(getRoleName(citizen));
         roleNames.add(getScheduleFallbackTravelRoleName(citizen));
@@ -146,7 +520,7 @@ public class RoleGenerator {
         Set<String> activeRoleNames = getGeneratedRoleNames(citizen);
         boolean changed = forceSingleRoleGeneration(getRoleName(citizen), generateCurrentBaseRole(citizen));
         changed |= forceSingleRoleGeneration(getScheduleFallbackTravelRoleName(citizen),
-                generateSeekRole(citizen, citizen.getMovementBehavior().getWalkSpeed(), 0.05f, 1.0f));
+                generateMoveTargetRole(citizen, citizen.getMovementBehavior().getWalkSpeed(), 0.05f, 1.0f));
         changed |= forceSingleRoleGeneration(getScheduleFallbackIdleRoleName(citizen), generateIdleRole(citizen));
         for (ScheduleEntry entry : citizen.getScheduleConfig().getEntries()) {
             changed |= forceSingleRoleGeneration(getScheduleTravelRoleName(citizen, entry), generateScheduleTravelRole(citizen, entry));
@@ -161,7 +535,7 @@ public class RoleGenerator {
         Set<String> activeRoleNames = getGeneratedRoleNames(citizen);
         boolean changed = writeRoleIfChanged(getRoleName(citizen), generateCurrentBaseRole(citizen));
         changed |= writeRoleIfChanged(getScheduleFallbackTravelRoleName(citizen),
-                generateSeekRole(citizen, citizen.getMovementBehavior().getWalkSpeed(), 0.05f, 1.0f));
+                generateMoveTargetRole(citizen, citizen.getMovementBehavior().getWalkSpeed(), 0.05f, 1.0f));
         changed |= writeRoleIfChanged(getScheduleFallbackIdleRoleName(citizen), generateIdleRole(citizen));
         for (ScheduleEntry entry : citizen.getScheduleConfig().getEntries()) {
             changed |= writeRoleIfChanged(getScheduleTravelRoleName(citizen, entry), generateScheduleTravelRole(citizen, entry));
@@ -263,7 +637,7 @@ public class RoleGenerator {
 
     @Nonnull
     private JsonObject generateScheduleTravelRole(@Nonnull CitizenData citizen, @Nonnull ScheduleEntry entry) {
-        return generateSeekRole(citizen, entry.getTravelSpeed(), 0.05f, Math.max(0.75f, entry.getArrivalRadius() + 0.5f));
+        return generateMoveTargetRole(citizen, entry.getTravelSpeed(), 0.05f, Math.max(0.75f, entry.getArrivalRadius() + 0.5f));
     }
 
     @Nonnull
@@ -303,39 +677,6 @@ public class RoleGenerator {
         modify.addProperty("ChaseRelativeSpeed", Math.min(3.0f, runSpeed / MARKER_ROLE_MAX_SPEED));
         modify.addProperty("CombatMovingRelativeSpeed", Math.min(3.0f, (runSpeed * COMBAT_MOVE_SPEED_RATIO) / MARKER_ROLE_MAX_SPEED));
         modify.addProperty("CombatBackwardsRelativeSpeed", Math.min(3.0f, (runSpeed * COMBAT_BACKWARDS_SPEED_RATIO) / MARKER_ROLE_MAX_SPEED));
-        return role;
-    }
-
-    @Nonnull
-    private JsonObject generateSeekRole(@Nonnull CitizenData citizen, float walkSpeed, float stopDistance, float slowDownDistance) {
-        JsonObject role = new JsonObject();
-        role.addProperty("Type", "Generic");
-        role.addProperty("Appearance", citizen.getModelId());
-
-        JsonArray motionControllers = new JsonArray();
-        JsonObject walkController = new JsonObject();
-        walkController.addProperty("Type", "Walk");
-        motionControllers.add(walkController);
-        role.add("MotionControllerList", motionControllers);
-
-        JsonObject maxHealthCompute = new JsonObject();
-        maxHealthCompute.addProperty("Compute", "MaxHealth");
-        role.add("MaxHealth", maxHealthCompute);
-
-        JsonObject parameters = new JsonObject();
-        JsonObject maxHealthParam = new JsonObject();
-        maxHealthParam.addProperty("Value", 100);
-        maxHealthParam.addProperty("Description", "Max health for the NPC");
-        parameters.add("MaxHealth", maxHealthParam);
-        role.add("Parameters", parameters);
-
-        role.addProperty("KnockbackScale", citizen.getKnockbackScale());
-
-        JsonArray instructions = new JsonArray();
-        instructions.add(buildSeekInstruction(walkSpeed, stopDistance, slowDownDistance));
-        role.add("Instructions", instructions);
-
-        role.addProperty("NameTranslationKey", citizen.getNameTranslationKey());
         return role;
     }
 
@@ -430,7 +771,7 @@ public class RoleGenerator {
 
         modify.addProperty("DropList", citizen.getDropList());
         modify.addProperty("WakingIdleBehaviorComponent", citizen.getWakingIdleBehaviorComponent());
-        modify.addProperty("AttitudeGroup", citizen.getAttitudeGroup());
+        modify.addProperty("AttitudeGroup", factionAssetGenerator.ensureFactionAssets(citizen));
         modify.addProperty("BreathesInWater", citizen.isBreathesInWater());
 
         if (!citizen.getDayFlavorAnimation().isEmpty()) {
@@ -498,36 +839,10 @@ public class RoleGenerator {
 //    }
 
     @Nonnull
-    private JsonObject buildSeekInstruction(float walkSpeed, float stopDistance, float slowDownDistance) {
-        JsonObject instruction = new JsonObject();
-
-        JsonObject sensor = new JsonObject();
-        sensor.addProperty("Type", "Target");
-        instruction.add("Sensor", sensor);
-
-        JsonObject headMotion = new JsonObject();
-        //headMotion.addProperty("Type", "Watch");
-        headMotion.addProperty("Type", "Observe");
-        headMotion.add("AngleRange", JsonParser.parseString("[-5.0, 5.0]"));
-        headMotion.addProperty("PickRandomAngle", true);
-        instruction.add("HeadMotion", headMotion);
-
-        JsonObject bodyMotion = new JsonObject();
-        bodyMotion.addProperty("Type", "Seek");
-        bodyMotion.addProperty("StopDistance", Math.max(0.05f, stopDistance));
-        bodyMotion.addProperty("SlowDownDistance", Math.max(stopDistance + 0.25f, slowDownDistance));
-        bodyMotion.addProperty("AbortDistance", 500.0);
-        bodyMotion.addProperty("RelativeSpeed", Math.max(0.2f, Math.min(3.0f, walkSpeed / 18.0f)));
-        bodyMotion.addProperty("UsePathfinder", true);
-        instruction.add("BodyMotion", bodyMotion);
-
-        return instruction;
-    }
-
-    @Nonnull
     private String mapPlayerAttitude(@Nonnull String citizenAttitude) {
-        return switch (citizenAttitude) {
-            case "AGGRESSIVE" -> "Hostile";
+        String normalized = citizenAttitude.trim().toUpperCase(Locale.ROOT);
+        return switch (normalized) {
+            case "AGGRESSIVE", "HOSTILE" -> "Hostile";
             case "NEUTRAL" -> "Neutral";
             default -> "Ignore"; // PASSIVE
         };
@@ -633,7 +948,9 @@ public class RoleGenerator {
             writer.write(content);
         } catch (IOException e) {
             getLogger().atSevere().log("Failed to write role file: " + roleName + " - " + e.getMessage());
+            return;
         }
+        GeneratedAssetReloader.reloadNpcBuilderFile(roleFile.toPath());
     }
 
     public void deleteRoleFile(@Nonnull String citizenId) {
@@ -648,7 +965,9 @@ public class RoleGenerator {
             String roleName = fileName.substring(0, fileName.length() - ".json".length());
             lastGeneratedContent.remove(roleName);
             if (roleFile.exists()) {
-                roleFile.delete();
+                if (roleFile.delete()) {
+                    GeneratedAssetReloader.removeNpcBuilder(roleName);
+                }
             }
         }
     }
@@ -694,6 +1013,7 @@ public class RoleGenerator {
             }
             lastGeneratedContent.remove(roleName);
             if (roleFile.delete()) {
+                GeneratedAssetReloader.removeNpcBuilder(roleName);
                 changed = true;
             }
         }

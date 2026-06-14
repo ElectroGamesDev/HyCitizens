@@ -76,6 +76,7 @@ public class CitizensManager {
     private static final double WANDER_PROGRESS_DISTANCE_SQUARED = 0.64;
     private static final long NPC_SPAWN_RETRY_INTERVAL_MS = 50L;
     private static final int MAX_PENDING_NPC_SPAWN_RETRIES = 120;
+    private static final int MAX_GENERATED_ROLE_RETRY_ATTEMPTS = 5;
     private static final long DEFERRED_CITIZEN_SAVE_DELAY_MS = 1_000L;
 
     private static final class PendingHologramRemoval {
@@ -113,6 +114,7 @@ public class CitizensManager {
     private final HyCitizensPlugin plugin;
     private final ConfigManager config;
     private final Map<String, CitizenData> citizens;
+    private final Map<String, FactionConfig> factionConfigs = new ConcurrentHashMap<>();
     private final List<CitizenAddedListener> addedListeners = new ArrayList<>();
     private final List<CitizenRemovedListener> removedListeners = new ArrayList<>();
     private final List<CitizenInteractListener> interactListeners = new ArrayList<>();
@@ -138,6 +140,7 @@ public class CitizensManager {
     private final Map<String, FollowSession> standaloneFollowSessions = new ConcurrentHashMap<>();
     private final Map<String, WanderRecoveryState> wanderRecoveryStates = new ConcurrentHashMap<>();
     private final Map<String, ScheduledFuture<?>> pendingNpcSpawnRetryTasks = new ConcurrentHashMap<>();
+    private final Set<String> pendingGeneratedRoleRetries = ConcurrentHashMap.newKeySet();
     private final Map<String, ScheduledFuture<?>> pendingRespawnTasks = new ConcurrentHashMap<>();
     private final Map<String, ScheduledFuture<?>> pendingTemporaryNametagRecoveryTasks = new ConcurrentHashMap<>();
     private final Set<String> pendingDeferredCitizenSaves = ConcurrentHashMap.newKeySet();
@@ -153,6 +156,7 @@ public class CitizensManager {
         this.citizens = new ConcurrentHashMap<>();
         this.roleGenerator = new RoleGenerator(plugin.getGeneratedRolesPath());
 
+        loadFactionConfigs();
         loadAllCitizens();
         startSkinUpdateScheduler();
         startRotateScheduler();
@@ -247,7 +251,8 @@ public class CitizensManager {
 
                             boolean shouldRotateCitizen = withinLookDistance
                                     && citizen.getRotateTowardsPlayer()
-                                    && citizen.getMovementBehavior().getType().equals("IDLE");
+                                    && citizen.getMovementBehavior().getType().equals("IDLE")
+                                    && citizen.getCurrentScheduleRuntimeState() == ScheduleRuntimeState.INACTIVE;
                             if (shouldRotateCitizen) {
                                 cancelPendingLookReset(citizen, playerRef.getUuid());
                                 rotateCitizenToPlayer(citizen, playerRef);
@@ -513,15 +518,17 @@ public class CitizensManager {
 
     @Nullable
     private Ref<EntityStore> findExistingCitizenNpcRef(@Nonnull Store<EntityStore> store, @Nonnull CitizenData citizen) {
+        List<Ref<EntityStore>> refs = findExistingCitizenNpcRefs(store, citizen);
+        return refs.isEmpty() ? null : refs.get(0);
+    }
+
+    @Nonnull
+    private List<Ref<EntityStore>> findExistingCitizenNpcRefs(@Nonnull Store<EntityStore> store, @Nonnull CitizenData citizen) {
         String rolePrefix = "HyCitizens_" + citizen.getId() + "_";
         Query<EntityStore> query = NPCEntity.getComponentType();
-        Ref<EntityStore>[] foundRef = new Ref[] { null };
+        List<Ref<EntityStore>> foundRefs = Collections.synchronizedList(new ArrayList<>());
 
         store.forEachEntityParallel(query, (index, archetypeChunk, cb) -> {
-            if (foundRef[0] != null && foundRef[0].isValid()) {
-                return;
-            }
-
             NPCEntity npc = archetypeChunk.getComponent(index, NPCEntity.getComponentType());
             if (npc == null || npc.getRole() == null) {
                 return;
@@ -537,7 +544,7 @@ public class CitizensManager {
             if (identityComponent != null && citizen.getId().equals(identityComponent.getCitizenId())) {
                 Ref<EntityStore> ref = archetypeChunk.getReferenceTo(index);
                 if (ref != null && ref.isValid()) {
-                    foundRef[0] = ref;
+                    foundRefs.add(ref);
                 }
                 return;
             }
@@ -545,7 +552,7 @@ public class CitizensManager {
                     && citizen.getSpawnedUUID().equals(uuidComponent.getUuid())) {
                 Ref<EntityStore> ref = archetypeChunk.getReferenceTo(index);
                 if (ref != null && ref.isValid()) {
-                    foundRef[0] = ref;
+                    foundRefs.add(ref);
                 }
                 return;
             }
@@ -560,10 +567,59 @@ public class CitizensManager {
                 return;
             }
 
-            foundRef[0] = ref;
+            foundRefs.add(ref);
         });
 
-        return foundRef[0] != null && foundRef[0].isValid() ? foundRef[0] : null;
+        foundRefs.removeIf(ref -> ref == null || !ref.isValid());
+        foundRefs.sort(Comparator.comparingInt(ref -> getCitizenNpcRefPriority(ref, citizen)));
+        return foundRefs;
+    }
+
+    private int getCitizenNpcRefPriority(@Nonnull Ref<EntityStore> ref, @Nonnull CitizenData citizen) {
+        UUIDComponent uuidComponent = ref.getStore().getComponent(ref, UUIDComponent.getComponentType());
+        if (uuidComponent != null && citizen.getSpawnedUUID() != null
+                && citizen.getSpawnedUUID().equals(uuidComponent.getUuid())) {
+            return 0;
+        }
+
+        CitizenNpcIdentityComponent identityComponent =
+                ref.getStore().getComponent(ref, CitizenNpcIdentityComponent.getComponentType());
+        if (identityComponent != null && citizen.getId().equals(identityComponent.getCitizenId())) {
+            return 1;
+        }
+
+        return 2;
+    }
+
+    private void removeDuplicateCitizenNpcRefs(@Nonnull World world,
+                                               @Nonnull CitizenData citizen,
+                                               @Nonnull Ref<EntityStore> keepRef) {
+        List<Ref<EntityStore>> refs = findExistingCitizenNpcRefs(world.getEntityStore().getStore(), citizen);
+        UUIDComponent keepUuidComponent = keepRef.getStore().getComponent(keepRef, UUIDComponent.getComponentType());
+        UUID keepUuid = keepUuidComponent != null ? keepUuidComponent.getUuid() : null;
+        for (Ref<EntityStore> ref : refs) {
+            if (ref == null || !ref.isValid() || ref.equals(keepRef)) {
+                continue;
+            }
+            try {
+                UUIDComponent uuidComponent = ref.getStore().getComponent(ref, UUIDComponent.getComponentType());
+                UUID duplicateUuid = uuidComponent != null ? uuidComponent.getUuid() : null;
+                if (keepUuid != null && keepUuid.equals(duplicateUuid)) {
+                    continue;
+                }
+                if (duplicateUuid != null) {
+                    pendingImmediateNpcDespawns.add(duplicateUuid);
+                }
+                try {
+                    world.getEntityStore().getStore().removeEntity(ref, RemoveReason.REMOVE);
+                } finally {
+                    if (duplicateUuid != null) {
+                        pendingImmediateNpcDespawns.remove(duplicateUuid);
+                    }
+                }
+            } catch (Exception ignored) {
+            }
+        }
     }
 
     // Todo: move position saving to chunk unload event when it becomes available
@@ -701,6 +757,7 @@ public class CitizensManager {
             }
         }
         pendingNpcSpawnRetryTasks.clear();
+        pendingGeneratedRoleRetries.clear();
         for (ScheduledFuture<?> pendingRecovery : pendingTemporaryNametagRecoveryTasks.values()) {
             if (pendingRecovery != null && !pendingRecovery.isCancelled()) {
                 pendingRecovery.cancel(false);
@@ -752,6 +809,136 @@ public class CitizensManager {
         }
 
         cleanupUnusedGroups();
+    }
+
+    private void loadFactionConfigs() {
+        factionConfigs.clear();
+        for (String key : config.getKeys("factions")) {
+            String basePath = "factions." + key;
+            FactionConfig factionConfig = new FactionConfig();
+            factionConfig.setFactionId(config.getString(basePath + ".id", key));
+            List<String> hostileGroups = config.getStringList(basePath + ".hostile-groups");
+            if (hostileGroups != null) {
+                factionConfig.setHostileGroups(hostileGroups);
+            }
+            List<String> neutralGroups = config.getStringList(basePath + ".neutral-groups");
+            if (neutralGroups != null) {
+                factionConfig.setNeutralGroups(neutralGroups);
+            }
+            List<String> passiveGroups = config.getStringList(basePath + ".passive-groups");
+            if (passiveGroups == null) {
+                passiveGroups = config.getStringList(basePath + ".ignore-groups");
+            }
+            if (passiveGroups != null) {
+                factionConfig.setPassiveGroups(passiveGroups);
+            }
+
+            if (!factionConfig.getFactionId().isEmpty()) {
+                factionConfigs.put(factionConfig.getFactionId(), factionConfig);
+            }
+        }
+    }
+
+    private void saveFactionConfig(@Nonnull FactionConfig factionConfig) {
+        if (factionConfig.getFactionId().isEmpty()) {
+            return;
+        }
+
+        config.beginBatch();
+        try {
+            String basePath = "factions." + factionConfig.getFactionId();
+            config.set(basePath + ".id", factionConfig.getFactionId());
+            config.setStringList(basePath + ".hostile-groups", factionConfig.getHostileGroups());
+            config.setStringList(basePath + ".neutral-groups", factionConfig.getNeutralGroups());
+            config.setStringList(basePath + ".passive-groups", factionConfig.getPassiveGroups());
+            config.setStringList(basePath + ".ignore-groups", null);
+        } finally {
+            config.endBatch();
+        }
+    }
+
+    public void saveFactionDefinition(@Nonnull FactionConfig factionConfig) {
+        if (factionConfig.getFactionId().isEmpty()) {
+            return;
+        }
+
+        FactionConfig saved = new FactionConfig();
+        saved.copyFrom(factionConfig);
+        factionConfigs.put(saved.getFactionId(), saved);
+        saveFactionConfig(saved);
+        refreshCitizensUsingFaction(saved.getFactionId());
+    }
+
+    private void refreshCitizensUsingFaction(@Nonnull String factionId) {
+        for (CitizenData citizen : citizens.values()) {
+            if (!factionId.equalsIgnoreCase(citizen.getFactionConfig().getFactionId())) {
+                continue;
+            }
+
+            roleGenerator.forceRoleGeneration(citizen);
+            if (citizen.getNpcRef() == null || !citizen.getNpcRef().isValid()) {
+                continue;
+            }
+
+            HytaleServer.SCHEDULED_EXECUTOR.schedule(() -> {
+                if (!factionId.equalsIgnoreCase(citizen.getFactionConfig().getFactionId())) {
+                    return;
+                }
+                if (isCitizenSpawning(citizen.getId())) {
+                    return;
+                }
+                Ref<EntityStore> npcRef = citizen.getNpcRef();
+                if (npcRef == null || !npcRef.isValid()) {
+                    return;
+                }
+                updateSpawnedCitizen(citizen, false);
+            }, 250, TimeUnit.MILLISECONDS);
+        }
+    }
+
+    @Nonnull
+    public FactionConfig getFactionConfig(@Nullable String factionId) {
+        String sanitized = FactionConfig.sanitizeFactionId(factionId);
+        if (sanitized.isEmpty()) {
+            return new FactionConfig();
+        }
+
+        FactionConfig existing = factionConfigs.get(sanitized);
+        if (existing != null) {
+            FactionConfig copy = new FactionConfig();
+            copy.copyFrom(existing);
+            return copy;
+        }
+
+        FactionConfig created = new FactionConfig();
+        created.setFactionId(sanitized);
+        return created;
+    }
+
+    @Nonnull
+    public List<FactionConfig> getAllFactionConfigs() {
+        return factionConfigs.values().stream()
+                .map(factionConfig -> {
+                    FactionConfig copy = new FactionConfig();
+                    copy.copyFrom(factionConfig);
+                    return copy;
+                })
+                .sorted(Comparator.comparing(FactionConfig::getFactionId, String.CASE_INSENSITIVE_ORDER))
+                .collect(Collectors.toList());
+    }
+
+    private void migrateCitizenFactionRelationships(@Nonnull FactionConfig citizenFactionConfig) {
+        if (citizenFactionConfig.getFactionId().isEmpty() || !citizenFactionConfig.hasRelationships()) {
+            return;
+        }
+
+        FactionConfig existing = factionConfigs.get(citizenFactionConfig.getFactionId());
+        if (existing == null || !existing.hasRelationships()) {
+            FactionConfig migrated = new FactionConfig();
+            migrated.copyFrom(citizenFactionConfig);
+            factionConfigs.put(migrated.getFactionId(), migrated);
+            saveFactionConfig(migrated);
+        }
     }
 
     @Nullable
@@ -1086,7 +1273,12 @@ public class CitizensManager {
 
         // Load combat config
         CombatConfig combatConfig = new CombatConfig();
-        combatConfig.setAttackType(config.getString(basePath + ".combat.attack-type", "Root_NPC_Attack_Melee"));
+        String attackType = config.getString(basePath + ".combat.attack-type", RoleGenerator.DEFAULT_ATTACK_INTERACTION);
+        combatConfig.setAttackType(attackType);
+        Object manualAttackType = config.get(basePath + ".combat.attack-type-manual");
+        combatConfig.setAttackTypeManuallySet(manualAttackType instanceof Boolean
+                ? (Boolean) manualAttackType
+                : !RoleGenerator.DEFAULT_ATTACK_INTERACTION.equals(attackType));
         combatConfig.setAttackDistance(config.getFloat(basePath + ".combat.attack-distance", 2.0f));
         combatConfig.setChaseSpeed(config.getFloat(basePath + ".combat.chase-speed", 0.67f));
         combatConfig.setCombatBehaviorDistance(config.getFloat(basePath + ".combat.combat-behavior-distance", 5.0f));
@@ -1119,6 +1311,13 @@ public class CitizensManager {
         combatConfig.setCombatMovingRelativeSpeed(config.getFloat(basePath + ".combat.combat-moving-speed", 0.6f));
         combatConfig.setCombatBackwardsRelativeSpeed(config.getFloat(basePath + ".combat.combat-backwards-speed", 0.3f));
         combatConfig.setUseCombatActionEvaluator(config.getBoolean(basePath + ".combat.use-combat-action-evaluator", false));
+        Object manualCombatStyle = config.get(basePath + ".combat.style-manual");
+        combatConfig.setCombatStyleManuallySet(manualCombatStyle instanceof Boolean
+                ? (Boolean) manualCombatStyle
+                : hasLegacyCustomCombatStyle(combatConfig));
+        if (!combatConfig.isCombatStyleManuallySet()) {
+            RoleGenerator.applyAutoCombatStyle(combatConfig, modelId);
+        }
         citizenData.setCombatConfig(combatConfig);
 
         // Load detection config
@@ -1157,6 +1356,22 @@ public class CitizensManager {
         citizenData.setDayFlavorAnimationLengthMin(config.getFloat(basePath + ".day-flavor-anim-length-min", 3.0f));
         citizenData.setDayFlavorAnimationLengthMax(config.getFloat(basePath + ".day-flavor-anim-length-max", 5.0f));
         citizenData.setAttitudeGroup(config.getString(basePath + ".attitude-group", "Empty"));
+        FactionConfig factionConfig = new FactionConfig();
+        factionConfig.setFactionId(config.getString(basePath + ".faction.id", ""));
+        List<String> factionHostileGroups = config.getStringList(basePath + ".faction.hostile-groups");
+        if (factionHostileGroups != null) factionConfig.setHostileGroups(factionHostileGroups);
+        List<String> factionNeutralGroups = config.getStringList(basePath + ".faction.neutral-groups");
+        if (factionNeutralGroups != null) factionConfig.setNeutralGroups(factionNeutralGroups);
+        List<String> factionPassiveGroups = config.getStringList(basePath + ".faction.passive-groups");
+        if (factionPassiveGroups == null) {
+            factionPassiveGroups = config.getStringList(basePath + ".faction.ignore-groups");
+        }
+        if (factionPassiveGroups != null) factionConfig.setPassiveGroups(factionPassiveGroups);
+        migrateCitizenFactionRelationships(factionConfig);
+        FactionConfig assignedFaction = new FactionConfig();
+        assignedFaction.setFactionId(factionConfig.getFactionId());
+        factionConfig = assignedFaction;
+        citizenData.setFactionConfig(factionConfig);
         citizenData.setNameTranslationKey(config.getString(basePath + ".name-translation-key", "Citizen"));
         citizenData.setBreathesInWater(config.getBoolean(basePath + ".breathes-in-water", false));
         citizenData.setLeashMinPlayerDistance(config.getFloat(basePath + ".leash-min-player-distance", 4.0f));
@@ -1554,6 +1769,8 @@ public class CitizensManager {
             // Save combat config
             CombatConfig combat = citizen.getCombatConfig();
             config.set(basePath + ".combat.attack-type", combat.getAttackType());
+            config.set(basePath + ".combat.attack-type-manual", combat.isAttackTypeManuallySet());
+            config.set(basePath + ".combat.style-manual", combat.isCombatStyleManuallySet());
             config.set(basePath + ".combat.attack-distance", combat.getAttackDistance());
             config.set(basePath + ".combat.chase-speed", combat.getChaseSpeed());
             config.set(basePath + ".combat.combat-behavior-distance", combat.getCombatBehaviorDistance());
@@ -1621,6 +1838,13 @@ public class CitizensManager {
             config.set(basePath + ".day-flavor-anim-length-min", citizen.getDayFlavorAnimationLengthMin());
             config.set(basePath + ".day-flavor-anim-length-max", citizen.getDayFlavorAnimationLengthMax());
             config.set(basePath + ".attitude-group", citizen.getAttitudeGroup());
+            FactionConfig factionConfig = citizen.getFactionConfig();
+            config.set(basePath + ".faction.id", factionConfig.getFactionId());
+            config.set(basePath + ".faction.enabled", null);
+            config.setStringList(basePath + ".faction.hostile-groups", null);
+            config.setStringList(basePath + ".faction.neutral-groups", null);
+            config.setStringList(basePath + ".faction.passive-groups", null);
+            config.setStringList(basePath + ".faction.ignore-groups", null);
             config.set(basePath + ".name-translation-key", citizen.getNameTranslationKey());
             config.set(basePath + ".breathes-in-water", citizen.isBreathesInWater());
             config.set(basePath + ".leash-min-player-distance", citizen.getLeashMinPlayerDistance());
@@ -1679,6 +1903,7 @@ public class CitizensManager {
 
     public void addCitizen(@Nonnull CitizenData citizen, boolean save) {
         citizen.setCreatedAt(System.currentTimeMillis());
+        autoResolveAttackTypeIfNotManual(citizen);
 
         citizens.put(citizen.getId(), citizen);
         fireCitizenAddedEvent(new CitizenAddedEvent(citizen));
@@ -1977,6 +2202,11 @@ public class CitizensManager {
         UUIDComponent uuidComponent = ref.getStore().getComponent(ref, UUIDComponent.getComponentType());
         if (uuidComponent != null) {
             citizen.setSpawnedUUID(uuidComponent.getUuid());
+        }
+
+        World world = Universe.get().getWorld(citizen.getWorldUUID());
+        if (world != null) {
+            removeDuplicateCitizenNpcRefs(world, citizen, ref);
         }
     }
 
@@ -4525,6 +4755,12 @@ public class CitizensManager {
             return generatedRoleName;
         }
 
+        roleGenerator.forceRoleGeneration(citizen);
+        roleIndex = NPCPlugin.get().getIndex(generatedRoleName);
+        if (roleIndex != Integer.MIN_VALUE) {
+            return generatedRoleName;
+        }
+
         // Fall back to static role if not yet registered
         String fallbackName = roleGenerator.getFallbackRoleName(citizen);
         getLogger().atInfo().log("Generated role '" + generatedRoleName + "' not yet registered, using fallback '" + fallbackName + "'. Will retry applying generated role in 5 seconds.");
@@ -4536,49 +4772,83 @@ public class CitizensManager {
     }
 
     private void scheduleRoleRetry(@Nonnull CitizenData citizen, @Nonnull String generatedRoleName) {
+        String retryKey = citizen.getId() + ":" + generatedRoleName;
+        if (!pendingGeneratedRoleRetries.add(retryKey)) {
+            return;
+        }
+        scheduleRoleRetry(citizen, generatedRoleName, 1, retryKey);
+    }
+
+    private void scheduleRoleRetry(@Nonnull CitizenData citizen,
+                                   @Nonnull String generatedRoleName,
+                                   int attempt,
+                                   @Nonnull String retryKey) {
         UUID expectedNpcUuid = citizen.getSpawnedUUID();
         HytaleServer.SCHEDULED_EXECUTOR.schedule(() -> {
             try {
+                roleGenerator.forceRoleGeneration(citizen);
                 int roleIndex = NPCPlugin.get().getIndex(generatedRoleName);
                 if (roleIndex == Integer.MIN_VALUE) {
-                    getLogger().atWarning().log("Generated role '" + generatedRoleName + "' still not registered after retry. Role may have failed to generate.");
+                    if (attempt < MAX_GENERATED_ROLE_RETRY_ATTEMPTS) {
+                        scheduleRoleRetry(citizen, generatedRoleName, attempt + 1, retryKey);
+                    } else {
+                        getLogger().atWarning().log("Generated role '" + generatedRoleName + "' still not registered after " + attempt + " retries. Role may have failed to generate.");
+                        pendingGeneratedRoleRetries.remove(retryKey);
+                    }
                     return;
                 }
 
-                if (expectedNpcUuid == null || !expectedNpcUuid.equals(citizen.getSpawnedUUID())) {
+                if (expectedNpcUuid != null && !expectedNpcUuid.equals(citizen.getSpawnedUUID())) {
+                    pendingGeneratedRoleRetries.remove(retryKey);
                     return;
                 }
 
                 if (isCitizenSpawning(citizen.getId())) {
+                    if (attempt < MAX_GENERATED_ROLE_RETRY_ATTEMPTS) {
+                        scheduleRoleRetry(citizen, generatedRoleName, attempt + 1, retryKey);
+                    } else {
+                        pendingGeneratedRoleRetries.remove(retryKey);
+                    }
                     return;
                 }
 
                 Ref<EntityStore> npcRef = citizen.getNpcRef();
                 if (npcRef == null || !npcRef.isValid()) {
-                    getLogger().atWarning().log("Cannot apply role '" + generatedRoleName + "': NPC ref is no longer valid.");
+                    if (attempt < MAX_GENERATED_ROLE_RETRY_ATTEMPTS) {
+                        scheduleRoleRetry(citizen, generatedRoleName, attempt + 1, retryKey);
+                    } else {
+                        getLogger().atWarning().log("Cannot apply role '" + generatedRoleName + "': NPC ref is no longer valid.");
+                        pendingGeneratedRoleRetries.remove(retryKey);
+                    }
                     return;
                 }
 
                 World world = Universe.get().getWorld(citizen.getWorldUUID());
                 if (world == null) {
+                    pendingGeneratedRoleRetries.remove(retryKey);
                     return;
                 }
 
                 world.execute(() -> {
-                    if (expectedNpcUuid == null || !expectedNpcUuid.equals(citizen.getSpawnedUUID())) {
-                        return;
-                    }
+                    try {
+                        if (expectedNpcUuid != null && !expectedNpcUuid.equals(citizen.getSpawnedUUID())) {
+                            return;
+                        }
 
-                    Ref<EntityStore> currentRef = citizen.getNpcRef();
-                    if (currentRef == null || !currentRef.isValid()) {
-                        return;
-                    }
+                        Ref<EntityStore> currentRef = citizen.getNpcRef();
+                        if (currentRef == null || !currentRef.isValid()) {
+                            return;
+                        }
 
-                    updateSpawnedCitizenNPC(citizen, false);
-                    getLogger().atInfo().log("Successfully applied generated role '" + generatedRoleName + "' to citizen '" + citizen.getName() + "'.");
+                        updateSpawnedCitizenNPC(citizen, false);
+                        getLogger().atInfo().log("Successfully applied generated role '" + generatedRoleName + "' to citizen '" + citizen.getName() + "'.");
+                    } finally {
+                        pendingGeneratedRoleRetries.remove(retryKey);
+                    }
                 });
             } catch (Exception e) {
                 getLogger().atWarning().log("Error during role retry for '" + generatedRoleName + "': " + e.getMessage());
+                pendingGeneratedRoleRetries.remove(retryKey);
             }
         }, 5, TimeUnit.SECONDS);
     }
@@ -4630,9 +4900,72 @@ public class CitizensManager {
         }
     }
 
-    public void autoResolveAttackType(@Nonnull CitizenData citizen) {
+    private static boolean hasLegacyCustomCombatStyle(@Nonnull CombatConfig combatConfig) {
+        CombatConfig defaults = new CombatConfig();
+        return !sameFloat(combatConfig.getAttackDistance(), defaults.getAttackDistance())
+                || !sameFloat(combatConfig.getChaseSpeed(), defaults.getChaseSpeed())
+                || !sameFloat(combatConfig.getCombatBehaviorDistance(), defaults.getCombatBehaviorDistance())
+                || combatConfig.getCombatStrafeWeight() != defaults.getCombatStrafeWeight()
+                || combatConfig.getCombatDirectWeight() != defaults.getCombatDirectWeight()
+                || combatConfig.isBackOffAfterAttack() != defaults.isBackOffAfterAttack()
+                || !sameFloat(combatConfig.getBackOffDistance(), defaults.getBackOffDistance())
+                || !sameFloat(combatConfig.getDesiredAttackDistanceMin(), defaults.getDesiredAttackDistanceMin())
+                || !sameFloat(combatConfig.getDesiredAttackDistanceMax(), defaults.getDesiredAttackDistanceMax())
+                || !sameFloat(combatConfig.getAttackPauseMin(), defaults.getAttackPauseMin())
+                || !sameFloat(combatConfig.getAttackPauseMax(), defaults.getAttackPauseMax())
+                || !sameFloat(combatConfig.getCombatRelativeTurnSpeed(), defaults.getCombatRelativeTurnSpeed())
+                || combatConfig.getCombatAlwaysMovingWeight() != defaults.getCombatAlwaysMovingWeight()
+                || !sameFloat(combatConfig.getCombatStrafingDurationMin(), defaults.getCombatStrafingDurationMin())
+                || !sameFloat(combatConfig.getCombatStrafingDurationMax(), defaults.getCombatStrafingDurationMax())
+                || !sameFloat(combatConfig.getCombatStrafingFrequencyMin(), defaults.getCombatStrafingFrequencyMin())
+                || !sameFloat(combatConfig.getCombatStrafingFrequencyMax(), defaults.getCombatStrafingFrequencyMax())
+                || !sameFloat(combatConfig.getCombatAttackPreDelayMin(), defaults.getCombatAttackPreDelayMin())
+                || !sameFloat(combatConfig.getCombatAttackPreDelayMax(), defaults.getCombatAttackPreDelayMax())
+                || !sameFloat(combatConfig.getCombatAttackPostDelayMin(), defaults.getCombatAttackPostDelayMin())
+                || !sameFloat(combatConfig.getCombatAttackPostDelayMax(), defaults.getCombatAttackPostDelayMax())
+                || !sameFloat(combatConfig.getBackOffDurationMin(), defaults.getBackOffDurationMin())
+                || !sameFloat(combatConfig.getBackOffDurationMax(), defaults.getBackOffDurationMax())
+                || !Objects.equals(combatConfig.getBlockAbility(), defaults.getBlockAbility())
+                || combatConfig.getBlockProbability() != defaults.getBlockProbability()
+                || !sameFloat(combatConfig.getCombatFleeIfTooCloseDistance(), defaults.getCombatFleeIfTooCloseDistance())
+                || !sameFloat(combatConfig.getTargetSwitchTimerMin(), defaults.getTargetSwitchTimerMin())
+                || !sameFloat(combatConfig.getTargetSwitchTimerMax(), defaults.getTargetSwitchTimerMax())
+                || !sameFloat(combatConfig.getTargetRange(), defaults.getTargetRange())
+                || !sameFloat(combatConfig.getCombatMovingRelativeSpeed(), defaults.getCombatMovingRelativeSpeed())
+                || !sameFloat(combatConfig.getCombatBackwardsRelativeSpeed(), defaults.getCombatBackwardsRelativeSpeed())
+                || combatConfig.isUseCombatActionEvaluator() != defaults.isUseCombatActionEvaluator();
+    }
+
+    private static boolean sameFloat(float first, float second) {
+        return Math.abs(first - second) < 0.0001f;
+    }
+
+    public boolean autoResolveAttackType(@Nonnull CitizenData citizen) {
         String resolved = RoleGenerator.resolveAttackInteraction(citizen.getModelId());
         citizen.getCombatConfig().setAttackType(resolved);
+        citizen.getCombatConfig().setAttackTypeManuallySet(false);
+        RoleGenerator.applyAutoCombatStyle(citizen.getCombatConfig(), citizen.getModelId());
+        citizen.getCombatConfig().setCombatStyleManuallySet(false);
+        return true;
+    }
+
+    public boolean autoResolveAttackTypeIfNotManual(@Nonnull CitizenData citizen) {
+        CombatConfig combatConfig = citizen.getCombatConfig();
+        boolean changed = false;
+        if (!combatConfig.isAttackTypeManuallySet()) {
+            String resolved = RoleGenerator.resolveAttackInteraction(citizen.getModelId());
+            combatConfig.setAttackType(resolved);
+            combatConfig.setAttackTypeManuallySet(false);
+            changed = true;
+        }
+
+        if (!combatConfig.isCombatStyleManuallySet()) {
+            RoleGenerator.applyAutoCombatStyle(combatConfig, citizen.getModelId());
+            combatConfig.setCombatStyleManuallySet(false);
+            changed = true;
+        }
+
+        return changed;
     }
 
     public void forceAttackEntity(@Nonnull CitizenData citizen, @Nonnull String attackInteractionId) {

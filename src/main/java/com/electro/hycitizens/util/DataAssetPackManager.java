@@ -24,6 +24,8 @@ import static com.hypixel.hytale.logger.HytaleLogger.getLogger;
 public class DataAssetPackManager {
     public static final Path DATA_PACK_PATH = Paths.get("mods", "HyCitizensData");
     public static final Path GENERATED_ROLES_PATH = DATA_PACK_PATH.resolve(Paths.get("Server", "NPC", "Roles"));
+    public static final Path GENERATED_ATTITUDE_ROLES_PATH = DATA_PACK_PATH.resolve(Paths.get("Server", "NPC", "Attitude", "Roles"));
+    public static final Path GENERATED_NPC_GROUPS_PATH = DATA_PACK_PATH.resolve(Paths.get("Server", "NPC", "Groups"));
     public static final Path MAP_MARKERS_PATH = DATA_PACK_PATH.resolve(Paths.get("Common", "UI", "WorldMap", "MapMarkers"));
 
     private static final Path LEGACY_ASSET_PACK_PATH = Paths.get("mods", "HyCitizensRoles");
@@ -46,6 +48,8 @@ public class DataAssetPackManager {
             }
 
             Files.createDirectories(GENERATED_ROLES_PATH);
+            Files.createDirectories(GENERATED_ATTITUDE_ROLES_PATH);
+            Files.createDirectories(GENERATED_NPC_GROUPS_PATH);
             Files.createDirectories(MAP_MARKERS_PATH);
 
             if (Files.exists(configPath) && ensureDataPackEnabled(configPath)) {

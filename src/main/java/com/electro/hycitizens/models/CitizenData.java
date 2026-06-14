@@ -166,6 +166,7 @@ public class CitizenData {
     private float dayFlavorAnimationLengthMin = 3.0f;
     private float dayFlavorAnimationLengthMax = 5.0f;
     private String attitudeGroup = "Empty";
+    private FactionConfig factionConfig = new FactionConfig();
     private String nameTranslationKey = "Citizen";
     private boolean breathesInWater = false;
 
@@ -1131,6 +1132,10 @@ public class CitizenData {
     @Nonnull
     public String getAttitudeGroup() { return attitudeGroup; }
     public void setAttitudeGroup(@Nonnull String v) { this.attitudeGroup = v; }
+
+    @Nonnull
+    public FactionConfig getFactionConfig() { return factionConfig; }
+    public void setFactionConfig(@Nonnull FactionConfig factionConfig) { this.factionConfig = factionConfig; }
 
     @Nonnull
     public String getNameTranslationKey() { return nameTranslationKey; }

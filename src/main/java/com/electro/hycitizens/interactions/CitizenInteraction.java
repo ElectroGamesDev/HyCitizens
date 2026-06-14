@@ -451,8 +451,7 @@ public class CitizenInteraction {
         return RANDOM.nextFloat() * 100.0f <= message.getChancePercent();
     }
 
-    private static void sendMessages(@Nonnull PlayerRef playerRef, @Nonnull CitizenData citizen,
-                                     @Nonnull List<CitizenMessage> messages) {
+    private static void sendMessages(@Nonnull PlayerRef playerRef, @Nonnull CitizenData citizen, @Nonnull List<CitizenMessage> messages) {
         CompletableFuture<Void> chain = CompletableFuture.completedFuture(null);
 
         for (CitizenMessage cm : messages) {
@@ -478,8 +477,7 @@ public class CitizenInteraction {
         }
     }
 
-    private static void runCommands(@Nonnull PlayerRef playerRef, @Nonnull CitizenData citizen,
-                                    @Nonnull Player player, @Nonnull List<CommandAction> commands) {
+    private static void runCommands(@Nonnull PlayerRef playerRef, @Nonnull CitizenData citizen, @Nonnull Player player, @Nonnull List<CommandAction> commands) {
         CompletableFuture<Void> chain = CompletableFuture.completedFuture(null);
 
         for (CommandAction commandAction : commands) {
@@ -510,8 +508,7 @@ public class CitizenInteraction {
         }
     }
 
-    private static String replacePlaceholders(@Nonnull String text, @Nonnull PlayerRef playerRef,
-                                              @Nonnull CitizenData citizen) {
+    private static String replacePlaceholders(@Nonnull String text, @Nonnull PlayerRef playerRef, @Nonnull CitizenData citizen) {
         Vector3d npcPos = citizen.getCurrentPosition() != null ? citizen.getCurrentPosition() : citizen.getPosition();
         String npcX = String.format(Locale.ROOT, "%.2f", npcPos.x);
         String npcY = String.format(Locale.ROOT, "%.2f", npcPos.y);

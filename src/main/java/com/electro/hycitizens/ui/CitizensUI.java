@@ -6,6 +6,7 @@ import au.ellie.hyui.html.TemplateProcessor;
 import com.electro.hycitizens.HyCitizensPlugin;
 import com.electro.hycitizens.map.CitizenMapMarkerAsset;
 import com.electro.hycitizens.models.*;
+import com.electro.hycitizens.roles.RoleGenerator;
 import com.hypixel.hytale.codec.Codec;
 import com.hypixel.hytale.common.util.RandomUtil;
 import com.hypixel.hytale.component.Ref;
@@ -30,6 +31,9 @@ import com.hypixel.hytale.server.core.universe.PlayerRef;
 import com.hypixel.hytale.server.core.universe.Universe;
 import com.hypixel.hytale.server.core.universe.world.World;
 import com.hypixel.hytale.server.core.universe.world.storage.EntityStore;
+import com.hypixel.hytale.builtin.tagset.config.NPCGroup;
+import com.hypixel.hytale.server.npc.NPCPlugin;
+import com.hypixel.hytale.server.npc.config.AttitudeGroup;
 
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
@@ -92,6 +96,26 @@ public class CitizensUI {
             }
             sb.append(">").append(entity).append("</option>\n");
         }
+        return sb.toString();
+    }
+
+    private String generateAttackDropdownOptions(String selectedValue) {
+        StringBuilder sb = new StringBuilder();
+        String selected = selectedValue == null || selectedValue.isBlank()
+                ? RoleGenerator.DEFAULT_ATTACK_INTERACTION
+                : selectedValue.trim();
+
+        boolean selectedInList = false;
+        for (String attack : RoleGenerator.getAttackInteractions()) {
+            boolean isSelected = attack.equalsIgnoreCase(selected);
+            selectedInList |= isSelected;
+            appendOption(sb, attack, attack, isSelected);
+        }
+
+        if (!selectedInList && !selected.isEmpty()) {
+            appendOption(sb, selected, selected + " (custom)", true);
+        }
+
         return sb.toString();
     }
 
@@ -334,6 +358,223 @@ public class CitizensUI {
             sb.append(">").append(escapeHtml(citizen.getName())).append("</option>\n");
         }
         return sb.toString();
+    }
+
+    @Nonnull
+    private List<String> getKnownAttitudeGroupIds() {
+        Set<String> groups = new TreeSet<>(String.CASE_INSENSITIVE_ORDER);
+        try {
+            int count = NPCPlugin.get().getAttitudeMap().getAttitudeGroupCount();
+            for (int i = 0; i < count; i++) {
+                AttitudeGroup attitudeGroup = AttitudeGroup.getAssetMap().getAsset(i);
+                if (attitudeGroup != null) {
+                    groups.add(attitudeGroup.getId());
+                }
+            }
+        } catch (Exception ignored) {
+        }
+        try {
+            groups.addAll(AttitudeGroup.getAssetMap().getAssetMap().keySet());
+        } catch (Exception ignored) {
+        }
+
+        for (CitizenData citizen : plugin.getCitizensManager().getAllCitizens()) {
+            addKnownAttitudeGroup(groups, citizen.getAttitudeGroup());
+            addKnownAttitudeGroup(groups, citizen.getFactionConfig().getGeneratedAttitudeGroupId());
+        }
+        for (FactionConfig factionConfig : plugin.getCitizensManager().getAllFactionConfigs()) {
+            addKnownAttitudeGroup(groups, factionConfig.getGeneratedAttitudeGroupId());
+        }
+
+        return new ArrayList<>(groups);
+    }
+
+    @Nonnull
+    private String canonicalizeAttitudeGroupId(@Nullable String value) {
+        if (value == null || value.trim().isEmpty()) {
+            return "Empty";
+        }
+        String trimmed = value.trim();
+        for (String groupId : getKnownAttitudeGroupIds()) {
+            if (groupId.equalsIgnoreCase(trimmed)) {
+                return groupId;
+            }
+        }
+        return trimmed;
+    }
+
+    @Nonnull
+    private List<String> getKnownNpcGroupIds() {
+        Set<String> groups = new TreeSet<>(String.CASE_INSENSITIVE_ORDER);
+        try {
+            groups.addAll(NPCGroup.getAssetMap().getAssetMap().keySet());
+        } catch (Exception ignored) {
+        }
+        for (FactionConfig factionConfig : plugin.getCitizensManager().getAllFactionConfigs()) {
+            addKnownAttitudeGroup(groups, factionConfig.getGeneratedAttitudeGroupId());
+        }
+        return new ArrayList<>(groups);
+    }
+
+    @Nullable
+    private String getCanonicalNpcGroupId(@Nullable String groupId) {
+        if (groupId == null || groupId.trim().isEmpty()) {
+            return null;
+        }
+        String trimmed = groupId.trim();
+        for (String knownGroupId : getKnownNpcGroupIds()) {
+            if (knownGroupId.equalsIgnoreCase(trimmed)) {
+                return knownGroupId;
+            }
+        }
+        return getGeneratedFactionGroupIdAlias(trimmed);
+    }
+
+    @Nullable
+    private String getGeneratedFactionGroupIdAlias(@Nonnull String value) {
+        String prefix = "HyCitizens_Faction_";
+        String candidateFactionId = value.regionMatches(true, 0, prefix, 0, prefix.length())
+                ? value.substring(prefix.length())
+                : value;
+        String sanitizedFactionId = FactionConfig.sanitizeFactionId(candidateFactionId);
+        if (sanitizedFactionId.isEmpty()) {
+            return null;
+        }
+
+        for (FactionConfig factionConfig : plugin.getCitizensManager().getAllFactionConfigs()) {
+            if (factionConfig.getFactionId().equalsIgnoreCase(sanitizedFactionId)) {
+                return factionConfig.getGeneratedAttitudeGroupId();
+            }
+        }
+        return null;
+    }
+
+    private void addKnownAttitudeGroup(@Nonnull Set<String> groups, @Nullable String groupId) {
+        if (groupId != null && !groupId.trim().isEmpty()) {
+            groups.add(groupId.trim());
+        }
+    }
+    @Nonnull
+    private String generateAttitudeGroupOptions(@Nullable String selectedValue, boolean allowEmpty) {
+        String selected = selectedValue == null ? "" : selectedValue.trim();
+        StringBuilder sb = new StringBuilder();
+        if (allowEmpty) {
+            appendOption(sb, "", "None", selected.isEmpty());
+        }
+
+        for (String groupId : getKnownAttitudeGroupIds()) {
+            appendOption(sb, groupId, groupId, groupId.equalsIgnoreCase(selected));
+        }
+        return sb.toString();
+    }
+
+    @Nonnull
+    private String generateNpcGroupOptions(@Nullable String selectedValue, boolean allowEmpty) {
+        String selected = selectedValue == null ? "" : selectedValue.trim();
+        StringBuilder sb = new StringBuilder();
+        if (allowEmpty) {
+            appendOption(sb, "", "Select NPC group", selected.isEmpty());
+        }
+
+        for (String groupId : getKnownNpcGroupIds()) {
+            appendOption(sb, groupId, groupId, groupId.equalsIgnoreCase(selected));
+        }
+        return sb.toString();
+    }
+
+    @Nonnull
+    private String generateFactionIdOptions(@Nullable String selectedValue) {
+        String selected = selectedValue == null ? "" : selectedValue.trim();
+        Set<String> factionIds = new TreeSet<>(String.CASE_INSENSITIVE_ORDER);
+
+        for (FactionConfig factionConfig : plugin.getCitizensManager().getAllFactionConfigs()) {
+            String factionId = factionConfig.getFactionId();
+            if (!factionId.isEmpty()) {
+                factionIds.add(factionId);
+            }
+        }
+
+        for (String groupId : getKnownAttitudeGroupIds()) {
+            String prefix = "HyCitizens_Faction_";
+            if (groupId.startsWith(prefix) && groupId.length() > prefix.length()) {
+                factionIds.add(groupId.substring(prefix.length()));
+            }
+        }
+
+        StringBuilder sb = new StringBuilder();
+        appendOption(sb, "", "No faction", selected.isEmpty());
+        for (String factionId : factionIds) {
+            appendOption(sb, factionId, factionId, factionId.equalsIgnoreCase(selected));
+        }
+        return sb.toString();
+    }
+
+    @Nonnull
+    private String appendCommaSeparatedValue(@Nullable String currentValue, @Nullable String selectedValue) {
+        String selected = selectedValue == null ? "" : selectedValue.trim();
+        if (selected.isEmpty()) {
+            return currentValue == null ? "" : currentValue;
+        }
+
+        List<String> values = parseCommaSeparatedList(currentValue);
+        for (String value : values) {
+            if (value.equalsIgnoreCase(selected)) {
+                return String.join(", ", values);
+            }
+        }
+        values.add(selected);
+        return String.join(", ", values);
+    }
+
+    @Nullable
+    private String canonicalizeFactionTargetGroups(@Nonnull String label,
+                                                   @Nonnull String factionId,
+                                                   @Nonnull List<String> groups) {
+        List<String> canonicalGroups = new ArrayList<>();
+        for (String group : groups) {
+            String normalized = FactionConfig.sanitizeGroupName(group);
+            if (normalized.isEmpty()) {
+                continue;
+            }
+
+            String canonical = getCanonicalNpcGroupId(normalized);
+            if (canonical == null && isCurrentFactionAlias(normalized, factionId)) {
+                canonical = "HyCitizens_Faction_" + factionId;
+            }
+            if (canonical == null) {
+                return label + " contains unknown NPC group or faction '" + normalized + "'. Select a group from the dropdown or fix the spelling.";
+            }
+            if (!containsIgnoreCase(canonicalGroups, canonical)) {
+                canonicalGroups.add(canonical);
+            }
+        }
+
+        groups.clear();
+        groups.addAll(canonicalGroups);
+        return null;
+    }
+
+    private boolean isCurrentFactionAlias(@Nonnull String value, @Nonnull String factionId) {
+        if (factionId.isEmpty()) {
+            return false;
+        }
+        String prefix = "HyCitizens_Faction_";
+        if (value.equalsIgnoreCase(factionId) || value.equalsIgnoreCase(prefix + factionId)) {
+            return true;
+        }
+        if (value.regionMatches(true, 0, prefix, 0, prefix.length())) {
+            return FactionConfig.sanitizeFactionId(value.substring(prefix.length())).equalsIgnoreCase(factionId);
+        }
+        return FactionConfig.sanitizeFactionId(value).equalsIgnoreCase(factionId);
+    }
+
+    private boolean containsIgnoreCase(@Nonnull List<String> values, @Nonnull String candidate) {
+        for (String value : values) {
+            if (value.equalsIgnoreCase(candidate)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private String formatTime24(double time24) {
@@ -2966,6 +3207,9 @@ public class CitizensUI {
         clonedCitizen.setDayFlavorAnimationLengthMin(citizen.getDayFlavorAnimationLengthMin());
         clonedCitizen.setDayFlavorAnimationLengthMax(citizen.getDayFlavorAnimationLengthMax());
         clonedCitizen.setAttitudeGroup(citizen.getAttitudeGroup());
+        FactionConfig clonedFaction = new FactionConfig();
+        clonedFaction.copyFrom(citizen.getFactionConfig());
+        clonedCitizen.setFactionConfig(clonedFaction);
         clonedCitizen.setNameTranslationKey(citizen.getNameTranslationKey());
         clonedCitizen.setBreathesInWater(citizen.isBreathesInWater());
         clonedCitizen.setLeashMinPlayerDistance(citizen.getLeashMinPlayerDistance());
@@ -4314,7 +4558,7 @@ public class CitizensUI {
             citizen.setName(name);
             citizen.setModelId(modelId);
             if (modelChanged) {
-                plugin.getCitizensManager().autoResolveAttackType(citizen);
+                plugin.getCitizensManager().autoResolveAttackTypeIfNotManual(citizen);
             }
             citizen.setScale(currentScale[0]);
             citizen.setRequiredPermission(currentPermission[0].trim());
@@ -5098,6 +5342,8 @@ public class CitizensUI {
                                 <div class="spacer-sm"></div>
                                 <div class="form-row">
                                     <button id="death-config-btn" class="secondary-button" style="anchor-width: 200; anchor-height: 44;">Death Config</button>
+                                    <div class="spacer-h-sm"></div>
+                                    <button id="factions-btn" class="secondary-button" style="anchor-width: 200; anchor-height: 44;">Factions</button>
                                 </div>
                             </div>
 
@@ -5432,6 +5678,10 @@ public class CitizensUI {
             openDeathConfigGUI(playerRef, store, citizen);
         });
 
+        page.addEventListener("factions-btn", CustomUIEventBindingType.Activating, event -> {
+            openFactionsGUI(playerRef, store, citizen);
+        });
+
         // Done - save and respawn NPC
         page.addEventListener("done-btn", CustomUIEventBindingType.Activating, event -> {
             plugin.getCitizensManager().updateCitizen(citizen, true);
@@ -5442,6 +5692,357 @@ public class CitizensUI {
         page.addEventListener("cancel-btn", CustomUIEventBindingType.Activating, event -> {
             openEditCitizenGUI(playerRef, store, citizen);
         });
+    }
+
+    public static class IndexedFaction {
+        private final int index;
+        private final String factionId;
+        private final String hostileSummary;
+        private final String neutralSummary;
+        private final String passiveSummary;
+
+        public IndexedFaction(int index, FactionConfig factionConfig) {
+            this.index = index;
+            this.factionId = escapeHtml(factionConfig.getFactionId());
+            this.hostileSummary = summarizeFactionGroups(factionConfig.getHostileGroups());
+            this.neutralSummary = summarizeFactionGroups(factionConfig.getNeutralGroups());
+            this.passiveSummary = summarizeFactionGroups(factionConfig.getPassiveGroups());
+        }
+
+        private static String summarizeFactionGroups(@Nonnull List<String> groups) {
+            if (groups.isEmpty()) {
+                return "None";
+            }
+            if (groups.size() <= 3) {
+                return escapeHtml(String.join(", ", groups));
+            }
+            return escapeHtml(String.join(", ", groups.subList(0, 3)) + " +" + (groups.size() - 3));
+        }
+
+        public int getIndex() {
+            return index;
+        }
+
+        public String getFactionId() {
+            return factionId;
+        }
+
+        public String getHostileSummary() {
+            return hostileSummary;
+        }
+
+        public String getNeutralSummary() {
+            return neutralSummary;
+        }
+
+        public String getPassiveSummary() {
+            return passiveSummary;
+        }
+    }
+
+    public void openFactionsGUI(@Nonnull PlayerRef playerRef, @Nonnull Store<EntityStore> store,
+                                @Nonnull CitizenData citizen) {
+        String assignedFactionId = citizen.getFactionConfig().getFactionId();
+        List<FactionConfig> factions = plugin.getCitizensManager().getAllFactionConfigs();
+        List<IndexedFaction> indexedFactions = new ArrayList<>();
+        for (int i = 0; i < factions.size(); i++) {
+            indexedFactions.add(new IndexedFaction(i, factions.get(i)));
+        }
+
+        TemplateProcessor template = createBaseTemplate()
+                .setVariable("attitudeGroupOptions", generateAttitudeGroupOptions(citizen.getAttitudeGroup(), true))
+                .setVariable("factionIdOptions", generateFactionIdOptions(assignedFactionId))
+                .setVariable("factions", indexedFactions)
+                .setVariable("hasFactions", !indexedFactions.isEmpty());
+
+        String html = template.process(getSharedStyles() + """
+                <style>
+                    .faction-page .form-label {
+                        text-align: center;
+                    }
+
+                    .faction-page .form-hint {
+                        text-align: center;
+                    }
+                </style>
+                <div class="page-overlay faction-page">
+                    <div class="main-container decorated-container" style="anchor-width: 850; anchor-height: 850;">
+
+                        <div class="header container-title">
+                            <div class="header-content">
+                                <p class="header-title">Factions</p>
+                            </div>
+                        </div>
+
+                        <div class="body" data-hyui-scrollbar-style='"Common.ui" "DefaultScrollbarStyle"' style="layout-mode: TopScrolling;">
+                            <p class="page-description">Assign this citizen to a faction or manage reusable faction definitions</p>
+                            <div class="spacer-sm"></div>
+
+                            <div class="section">
+                                {{@sectionHeader:title=Faction,description=Assign a reusable HyCitizens faction to this citizen}}
+                                <select id="faction-id-select" data-hyui-showlabel="true">
+                                    {{{$factionIdOptions}}}
+                                </select>
+                            </div>
+
+                            <div class="spacer-md"></div>
+
+                            <div class="section">
+                                {{@sectionHeader:title=Fallback Attitude Group,description=Used only when no faction is selected}}
+                                <select id="attitude-group-select" data-hyui-showlabel="true">
+                                    {{{$attitudeGroupOptions}}}
+                                </select>
+                            </div>
+
+                            <div class="spacer-md"></div>
+
+                            <div class="section">
+                                {{@sectionHeader:title=Faction Definitions,description=Create or edit reusable faction relationships}}
+                                <div class="form-row">
+                                    <button id="create-faction-btn" class="secondary-button" style="anchor-width: 220; anchor-height: 44;">Create Faction</button>
+                                </div>
+                                <div class="spacer-sm"></div>
+                                {{#if hasFactions}}
+                                <div class="list-container" data-hyui-scrollbar-style='"Common.ui" "DefaultScrollbarStyle"' style="anchor-height: 280;">
+                                    {{#each factions}}
+                                    <div class="command-item">
+                                        <div class="command-icon command-icon-server">
+                                            <p class="command-icon-text command-icon-text-server" style="font-size: 8;">F</p>
+                                        </div>
+                                        <div class="command-content">
+                                            <p class="command-text">{{$factionId}}</p>
+                                            <p class="command-type">Hostile: {{$hostileSummary}} | Neutral: {{$neutralSummary}} | Passive: {{$passiveSummary}}</p>
+                                        </div>
+                                        <div class="command-actions">
+                                            <button id="edit-faction-{{$index}}" class="secondary-button small-secondary-button">Edit</button>
+                                        </div>
+                                    </div>
+                                    <div class="spacer-sm"></div>
+                                    {{/each}}
+                                </div>
+                                {{else}}
+                                <div class="empty-state">
+                                    <div class="empty-state-content">
+                                        <p class="empty-state-title">No Factions</p>
+                                        <p class="empty-state-description">Create a faction, then assign citizens to it.</p>
+                                    </div>
+                                </div>
+                                {{/if}}
+                            </div>
+                        </div>
+
+                        <div class="footer">
+                            <button id="cancel-btn" class="secondary-button">Back</button>
+                            <div class="spacer-h-md"></div>
+                            <button id="save-factions-btn" class="secondary-button">Save</button>
+                        </div>
+                    </div>
+                </div>
+                """);
+
+        PageBuilder page = PageBuilder.pageForPlayer(playerRef)
+                .withLifetime(CustomPageLifetime.CanDismiss)
+                .fromHtml(html);
+
+        setupFactionsListeners(page, playerRef, store, citizen, factions);
+        page.open(store);
+    }
+
+    private void setupFactionsListeners(@Nonnull PageBuilder page, @Nonnull PlayerRef playerRef,
+                                        @Nonnull Store<EntityStore> store, @Nonnull CitizenData citizen,
+                                        @Nonnull List<FactionConfig> factions) {
+        final String[] attitudeGroup = {citizen.getAttitudeGroup()};
+        final String[] factionId = {citizen.getFactionConfig().getFactionId()};
+
+        page.addEventListener("attitude-group-select", CustomUIEventBindingType.ValueChanged, (event, ctx) ->
+                ctx.getValue("attitude-group-select", String.class).ifPresent(value -> attitudeGroup[0] = value));
+        page.addEventListener("faction-id-select", CustomUIEventBindingType.ValueChanged, (event, ctx) ->
+                ctx.getValue("faction-id-select", String.class).ifPresent(value -> factionId[0] = value));
+
+        page.addEventListener("create-faction-btn", CustomUIEventBindingType.Activating, event ->
+                openFactionEditorGUI(playerRef, store, citizen, new FactionConfig(), true));
+
+        for (int i = 0; i < factions.size(); i++) {
+            int index = i;
+            page.addEventListener("edit-faction-" + index, CustomUIEventBindingType.Activating, event ->
+                    openFactionEditorGUI(playerRef, store, citizen, factions.get(index), false));
+        }
+
+        page.addEventListener("save-factions-btn", CustomUIEventBindingType.Activating, (event, ctx) -> {
+            ctx.getValue("attitude-group-select", String.class).ifPresent(value -> attitudeGroup[0] = value);
+            ctx.getValue("faction-id-select", String.class).ifPresent(value -> factionId[0] = value);
+
+            citizen.setAttitudeGroup(canonicalizeAttitudeGroupId(attitudeGroup[0]));
+            FactionConfig savedFaction = new FactionConfig();
+            savedFaction.setFactionId(factionId[0]);
+            citizen.setFactionConfig(savedFaction);
+
+            plugin.getCitizensManager().saveCitizen(citizen, true);
+            playerRef.sendMessage(Message.raw("Faction assignment saved!").color(Color.GREEN));
+            openBehaviorsGUI(playerRef, store, citizen);
+        });
+
+        page.addEventListener("cancel-btn", CustomUIEventBindingType.Activating, event ->
+                openBehaviorsGUI(playerRef, store, citizen));
+    }
+
+    private void openFactionEditorGUI(@Nonnull PlayerRef playerRef, @Nonnull Store<EntityStore> store,
+                                      @Nonnull CitizenData citizen, @Nonnull FactionConfig faction,
+                                      boolean creating) {
+        TemplateProcessor template = createBaseTemplate()
+                .setVariable("creating", creating)
+                .setVariable("factionId", escapeHtml(faction.getFactionId()))
+                .setVariable("factionHostileGroups", escapeHtml(String.join(", ", faction.getHostileGroups())))
+                .setVariable("factionNeutralGroups", escapeHtml(String.join(", ", faction.getNeutralGroups())))
+                .setVariable("factionPassiveGroups", escapeHtml(String.join(", ", faction.getPassiveGroups())))
+                .setVariable("npcGroupAddOptions", generateNpcGroupOptions("", true));
+
+        String html = template.process(getSharedStyles() + """
+                <style>
+                    .faction-page .form-label {
+                        text-align: center;
+                    }
+
+                    .faction-page .form-hint {
+                        text-align: center;
+                    }
+                </style>
+                <div class="page-overlay faction-page">
+                    <div class="main-container decorated-container" style="anchor-width: 820; anchor-height: 900;">
+                        <div class="header container-title">
+                            <div class="header-content">
+                                <p class="header-title">{{#if creating}}Create Faction{{else}}Edit Faction{{/if}}</p>
+                            </div>
+                        </div>
+
+                        <div class="body" data-hyui-scrollbar-style='"Common.ui" "DefaultScrollbarStyle"' style="layout-mode: TopScrolling;">
+                            <div class="section">
+                                {{@sectionHeader:title=Faction,description=Reusable HyCitizens faction definition}}
+                                {{@formField:id=faction-id,label=Faction ID,value={{$factionId}},placeholder=Guard,hint=Saved as HyCitizens_Faction_FactionID}}
+                            </div>
+
+                            <div class="spacer-md"></div>
+
+                            <div class="section">
+                                {{@sectionHeader:title=Hostile,description=Groups this faction attacks on sight}}
+                                {{@formField:id=faction-hostile-groups,label=Hostile Groups,value={{$factionHostileGroups}},placeholder=Predators, Bandits,hint=Comma-separated NPC group IDs}}
+                                <div class="spacer-xs"></div>
+                                <p class="form-label">Add Known Group</p>
+                                <select id="faction-hostile-add" data-hyui-showlabel="true">
+                                    {{{$npcGroupAddOptions}}}
+                                </select>
+                            </div>
+
+                            <div class="spacer-md"></div>
+
+                            <div class="section">
+                                {{@sectionHeader:title=Neutral,description=Groups this faction treats as neutral}}
+                                {{@formField:id=faction-neutral-groups,label=Neutral Groups,value={{$factionNeutralGroups}},placeholder=Prey,hint=Comma-separated NPC group IDs}}
+                                <div class="spacer-xs"></div>
+                                <p class="form-label">Add Known Group</p>
+                                <select id="faction-neutral-add" data-hyui-showlabel="true">
+                                    {{{$npcGroupAddOptions}}}
+                                </select>
+                            </div>
+
+                            <div class="spacer-md"></div>
+
+                            <div class="section">
+                                {{@sectionHeader:title=Passive,description=Groups this faction ignores}}
+                                {{@formField:id=faction-passive-groups,label=Passive Groups,value={{$factionPassiveGroups}},placeholder=Passive,hint=Comma-separated NPC group IDs}}
+                                <div class="spacer-xs"></div>
+                                <p class="form-label">Add Known Group</p>
+                                <select id="faction-passive-add" data-hyui-showlabel="true">
+                                    {{{$npcGroupAddOptions}}}
+                                </select>
+                            </div>
+                        </div>
+
+                        <div class="footer">
+                            <button id="cancel-btn" class="secondary-button">Back</button>
+                            <div class="spacer-h-md"></div>
+                            <button id="save-faction-btn" class="secondary-button" style="anchor-width: 180;">Save Faction</button>
+                        </div>
+                    </div>
+                </div>
+                """);
+
+        PageBuilder page = PageBuilder.pageForPlayer(playerRef)
+                .withLifetime(CustomPageLifetime.CanDismiss)
+                .fromHtml(html);
+
+        setupFactionEditorListeners(page, playerRef, store, citizen, faction);
+        page.open(store);
+    }
+
+    private void setupFactionEditorListeners(@Nonnull PageBuilder page, @Nonnull PlayerRef playerRef,
+                                             @Nonnull Store<EntityStore> store, @Nonnull CitizenData citizen,
+                                             @Nonnull FactionConfig faction) {
+        final String[] factionId = {faction.getFactionId()};
+        final String[] factionHostileGroups = {String.join(", ", faction.getHostileGroups())};
+        final String[] factionNeutralGroups = {String.join(", ", faction.getNeutralGroups())};
+        final String[] factionPassiveGroups = {String.join(", ", faction.getPassiveGroups())};
+        final String[] hostileAdd = {""};
+        final String[] neutralAdd = {""};
+        final String[] passiveAdd = {""};
+
+        page.addEventListener("faction-id", CustomUIEventBindingType.ValueChanged, (event, ctx) ->
+                factionId[0] = ctx.getValue("faction-id", String.class).orElse(""));
+        page.addEventListener("faction-hostile-groups", CustomUIEventBindingType.ValueChanged, (event, ctx) ->
+                factionHostileGroups[0] = ctx.getValue("faction-hostile-groups", String.class).orElse(""));
+        page.addEventListener("faction-neutral-groups", CustomUIEventBindingType.ValueChanged, (event, ctx) ->
+                factionNeutralGroups[0] = ctx.getValue("faction-neutral-groups", String.class).orElse(""));
+        page.addEventListener("faction-passive-groups", CustomUIEventBindingType.ValueChanged, (event, ctx) ->
+                factionPassiveGroups[0] = ctx.getValue("faction-passive-groups", String.class).orElse(""));
+        page.addEventListener("faction-hostile-add", CustomUIEventBindingType.ValueChanged, (event, ctx) ->
+                hostileAdd[0] = ctx.getValue("faction-hostile-add", String.class).orElse(""));
+        page.addEventListener("faction-neutral-add", CustomUIEventBindingType.ValueChanged, (event, ctx) ->
+                neutralAdd[0] = ctx.getValue("faction-neutral-add", String.class).orElse(""));
+        page.addEventListener("faction-passive-add", CustomUIEventBindingType.ValueChanged, (event, ctx) ->
+                passiveAdd[0] = ctx.getValue("faction-passive-add", String.class).orElse(""));
+
+        page.addEventListener("save-faction-btn", CustomUIEventBindingType.Activating, (event, ctx) -> {
+            ctx.getValue("faction-id", String.class).ifPresent(value -> factionId[0] = value);
+            ctx.getValue("faction-hostile-groups", String.class).ifPresent(value -> factionHostileGroups[0] = value);
+            ctx.getValue("faction-neutral-groups", String.class).ifPresent(value -> factionNeutralGroups[0] = value);
+            ctx.getValue("faction-passive-groups", String.class).ifPresent(value -> factionPassiveGroups[0] = value);
+            ctx.getValue("faction-hostile-add", String.class).ifPresent(value -> hostileAdd[0] = value);
+            ctx.getValue("faction-neutral-add", String.class).ifPresent(value -> neutralAdd[0] = value);
+            ctx.getValue("faction-passive-add", String.class).ifPresent(value -> passiveAdd[0] = value);
+
+            FactionConfig saved = new FactionConfig();
+            saved.setFactionId(factionId[0]);
+            if (saved.getFactionId().isEmpty()) {
+                playerRef.sendMessage(Message.raw("Faction ID is required.").color(Color.RED));
+                return;
+            }
+
+            List<String> hostileGroups = parseCommaSeparatedList(appendCommaSeparatedValue(factionHostileGroups[0], hostileAdd[0]));
+            List<String> neutralGroups = parseCommaSeparatedList(appendCommaSeparatedValue(factionNeutralGroups[0], neutralAdd[0]));
+            List<String> passiveGroups = parseCommaSeparatedList(appendCommaSeparatedValue(factionPassiveGroups[0], passiveAdd[0]));
+
+            String validationError = canonicalizeFactionTargetGroups("Hostile Groups", saved.getFactionId(), hostileGroups);
+            if (validationError == null) {
+                validationError = canonicalizeFactionTargetGroups("Neutral Groups", saved.getFactionId(), neutralGroups);
+            }
+            if (validationError == null) {
+                validationError = canonicalizeFactionTargetGroups("Passive Groups", saved.getFactionId(), passiveGroups);
+            }
+            if (validationError != null) {
+                playerRef.sendMessage(Message.raw(validationError).color(Color.RED));
+                return;
+            }
+
+            saved.setHostileGroups(hostileGroups);
+            saved.setNeutralGroups(neutralGroups);
+            saved.setPassiveGroups(passiveGroups);
+            plugin.getCitizensManager().saveFactionDefinition(saved);
+            playerRef.sendMessage(Message.raw("Faction saved!").color(Color.GREEN));
+            openFactionsGUI(playerRef, store, citizen);
+        });
+
+        page.addEventListener("cancel-btn", CustomUIEventBindingType.Activating, event ->
+                openFactionsGUI(playerRef, store, citizen));
     }
 
     public void openAnimationEditorGUI(@Nonnull PlayerRef playerRef, @Nonnull Store<EntityStore> store,
@@ -6870,6 +7471,9 @@ public class CitizensUI {
 
         TemplateProcessor template = createBaseTemplate()
                 .setVariable("attackType", cc.getAttackType())
+                .setVariable("attackOptions", generateAttackDropdownOptions(cc.getAttackType()))
+                .setVariable("attackTypeManuallySet", cc.isAttackTypeManuallySet())
+                .setVariable("combatStyleManuallySet", cc.isCombatStyleManuallySet())
                 .setVariable("attackDistance", cc.getAttackDistance())
                 .setVariable("chaseSpeed", cc.getChaseSpeed())
                 .setVariable("combatBehaviorDistance", cc.getCombatBehaviorDistance())
@@ -6931,11 +7535,19 @@ public class CitizensUI {
                                 {{@sectionHeader:title=Attack Settings,description=Configure attack type, distance, and timing}}
                                 <div class="form-row">
                                     <div style="flex-weight: 1;">
-                                        {{@formField:id=attack-type,label=Attack Type,value={{$attackType}},placeholder=Root_NPC_Attack_Melee,hint=Attack interaction ID}}
+                                        <div class="form-group">
+                                            <div class="form-label-row">
+                                                <p class="form-label">Attack Type</p>
+                                            </div>
+                                            <select id="attack-type" value="{{$attackType}}" data-hyui-showlabel="true">
+                                                {{$attackOptions}}
+                                            </select>
+                                            <p class="form-hint">Attack: {{#if attackTypeManuallySet}}Manual{{else}}Automatic{{/if}} | Style: {{#if combatStyleManuallySet}}Manual{{else}}Automatic{{/if}}</p>
+                                        </div>
                                     </div>
                                     <div class="spacer-h-sm"></div>
-                                    <div style="flex-weight: 0; anchor-width: 160;">
-                                        <button id="auto-resolve-btn" class="secondary-button" style="anchor-width: 150; anchor-height: 38;">Auto Resolve</button>
+                                    <div style="flex-weight: 0; anchor-width: 190;">
+                                        <button id="auto-resolve-btn" class="secondary-button" style="anchor-width: 180; anchor-height: 38;">Apply Model Preset</button>
                                     </div>
                                 </div>
                                 <div class="form-row">
@@ -7140,8 +7752,12 @@ public class CitizensUI {
     private void setupCombatConfigListeners(PageBuilder page, PlayerRef playerRef, Store<EntityStore> store,
                                             CitizenData citizen) {
         CombatConfig cc = citizen.getCombatConfig();
+        CombatConfig originalCombatConfig = new CombatConfig();
+        originalCombatConfig.copyFrom(cc);
 
-        final String[] attackType = {cc.getAttackType()};
+        final String originalAttackType = cc.getAttackType();
+        final String[] attackType = {originalAttackType};
+        final boolean[] attackTypeChanged = {false};
         final float[] attackDistance = {cc.getAttackDistance()};
         final float[] chaseSpeed = {cc.getChaseSpeed()};
         final float[] combatBehaviorDistance = {cc.getCombatBehaviorDistance()};
@@ -7177,7 +7793,8 @@ public class CitizensUI {
 
         // Text fields
         page.addEventListener("attack-type", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
-            attackType[0] = ctx.getValue("attack-type", String.class).orElse("Root_NPC_Attack_Melee");
+            attackType[0] = ctx.getValue("attack-type", String.class).orElse(RoleGenerator.DEFAULT_ATTACK_INTERACTION);
+            attackTypeChanged[0] = true;
         });
         page.addEventListener("block-ability", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
             blockAbility[0] = ctx.getValue("block-ability", String.class).orElse("Shield_Block");
@@ -7291,8 +7908,12 @@ public class CitizensUI {
             // Ensure latest checkbox states are captured at save time.
             ctx.getValue("back-off-toggle", Boolean.class).ifPresent(v -> backOffAfterAttack[0] = v);
             ctx.getValue("use-combat-evaluator", Boolean.class).ifPresent(v -> useCombatEvaluator[0] = v);
+            ctx.getValue("attack-type", String.class).ifPresent(v -> attackType[0] = v);
 
             cc.setAttackType(attackType[0]);
+            cc.setAttackTypeManuallySet(cc.isAttackTypeManuallySet()
+                    || attackTypeChanged[0]
+                    || !attackType[0].equals(originalAttackType));
             cc.setAttackDistance(attackDistance[0]);
             cc.setChaseSpeed(chaseSpeed[0]);
             cc.setCombatBehaviorDistance(combatBehaviorDistance[0]);
@@ -7325,6 +7946,8 @@ public class CitizensUI {
             cc.setCombatMovingRelativeSpeed(movingSpeed[0]);
             cc.setCombatBackwardsRelativeSpeed(backwardsSpeed[0]);
             cc.setUseCombatActionEvaluator(useCombatEvaluator[0]);
+            cc.setCombatStyleManuallySet(cc.isCombatStyleManuallySet()
+                    || hasCombatStyleChanged(originalCombatConfig, cc));
             plugin.getCitizensManager().saveCitizen(citizen);
             playerRef.sendMessage(Message.raw("Combat config saved!").color(Color.GREEN));
             openBehaviorsGUI(playerRef, store, citizen);
@@ -7333,6 +7956,45 @@ public class CitizensUI {
         page.addEventListener("cancel-btn", CustomUIEventBindingType.Activating, event -> {
             openBehaviorsGUI(playerRef, store, citizen);
         });
+    }
+
+    private boolean hasCombatStyleChanged(@Nonnull CombatConfig before, @Nonnull CombatConfig after) {
+        return !sameFloat(before.getAttackDistance(), after.getAttackDistance())
+                || !sameFloat(before.getChaseSpeed(), after.getChaseSpeed())
+                || !sameFloat(before.getCombatBehaviorDistance(), after.getCombatBehaviorDistance())
+                || before.getCombatStrafeWeight() != after.getCombatStrafeWeight()
+                || before.getCombatDirectWeight() != after.getCombatDirectWeight()
+                || before.isBackOffAfterAttack() != after.isBackOffAfterAttack()
+                || !sameFloat(before.getBackOffDistance(), after.getBackOffDistance())
+                || !sameFloat(before.getDesiredAttackDistanceMin(), after.getDesiredAttackDistanceMin())
+                || !sameFloat(before.getDesiredAttackDistanceMax(), after.getDesiredAttackDistanceMax())
+                || !sameFloat(before.getAttackPauseMin(), after.getAttackPauseMin())
+                || !sameFloat(before.getAttackPauseMax(), after.getAttackPauseMax())
+                || !sameFloat(before.getCombatRelativeTurnSpeed(), after.getCombatRelativeTurnSpeed())
+                || before.getCombatAlwaysMovingWeight() != after.getCombatAlwaysMovingWeight()
+                || !sameFloat(before.getCombatStrafingDurationMin(), after.getCombatStrafingDurationMin())
+                || !sameFloat(before.getCombatStrafingDurationMax(), after.getCombatStrafingDurationMax())
+                || !sameFloat(before.getCombatStrafingFrequencyMin(), after.getCombatStrafingFrequencyMin())
+                || !sameFloat(before.getCombatStrafingFrequencyMax(), after.getCombatStrafingFrequencyMax())
+                || !sameFloat(before.getCombatAttackPreDelayMin(), after.getCombatAttackPreDelayMin())
+                || !sameFloat(before.getCombatAttackPreDelayMax(), after.getCombatAttackPreDelayMax())
+                || !sameFloat(before.getCombatAttackPostDelayMin(), after.getCombatAttackPostDelayMin())
+                || !sameFloat(before.getCombatAttackPostDelayMax(), after.getCombatAttackPostDelayMax())
+                || !sameFloat(before.getBackOffDurationMin(), after.getBackOffDurationMin())
+                || !sameFloat(before.getBackOffDurationMax(), after.getBackOffDurationMax())
+                || !Objects.equals(before.getBlockAbility(), after.getBlockAbility())
+                || before.getBlockProbability() != after.getBlockProbability()
+                || !sameFloat(before.getCombatFleeIfTooCloseDistance(), after.getCombatFleeIfTooCloseDistance())
+                || !sameFloat(before.getTargetSwitchTimerMin(), after.getTargetSwitchTimerMin())
+                || !sameFloat(before.getTargetSwitchTimerMax(), after.getTargetSwitchTimerMax())
+                || !sameFloat(before.getTargetRange(), after.getTargetRange())
+                || !sameFloat(before.getCombatMovingRelativeSpeed(), after.getCombatMovingRelativeSpeed())
+                || !sameFloat(before.getCombatBackwardsRelativeSpeed(), after.getCombatBackwardsRelativeSpeed())
+                || before.isUseCombatActionEvaluator() != after.isUseCombatActionEvaluator();
+    }
+
+    private boolean sameFloat(float first, float second) {
+        return Math.abs(first - second) < 0.0001f;
     }
 
     public void openDetectionConfigGUI(@Nonnull PlayerRef playerRef, @Nonnull Store<EntityStore> store,
@@ -7893,7 +8555,7 @@ public class CitizensUI {
             citizen.setDropList(dropList[0]);
             citizen.setRunThreshold(runThreshold[0]);
             citizen.setNameTranslationKey(nameTransKey[0]);
-            citizen.setAttitudeGroup(attitudeGroup[0]);
+            citizen.setAttitudeGroup(canonicalizeAttitudeGroupId(attitudeGroup[0]));
             citizen.setBreathesInWater(breathesInWater[0]);
             citizen.setDayFlavorAnimation(dayFlavorAnim[0]);
             citizen.setDayFlavorAnimationLengthMin(dayFlavorLenMin[0]);
@@ -8688,7 +9350,7 @@ public class CitizensUI {
 
         String html = template.process(getSharedStyles() + """
                 <div class="page-overlay">
-                    <div class="main-container decorated-container" style="anchor-width: 680; anchor-height: 620;">
+                    <div class="main-container decorated-container" style="anchor-width: 680; anchor-height: 680;">
 
                         <div class="header container-title">
                             <div class="header-content">
@@ -8696,7 +9358,7 @@ public class CitizensUI {
                             </div>
                         </div>
 
-                        <div class="body">
+                        <div class="body" data-hyui-scrollbar-style='"Common.ui" "DefaultScrollbarStyle"' style="layout-mode: TopScrolling;">
 
                             <p class="page-description">Command to execute when the citizen dies</p>
                             <div class="spacer-sm"></div>
