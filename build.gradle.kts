@@ -3,7 +3,7 @@ plugins {
 }
 
 group = "com.electro"
-version = "1.8"
+version = "2.0"
 
 repositories {
     mavenCentral()
