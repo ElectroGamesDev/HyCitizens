@@ -217,13 +217,46 @@ public class ConfigManager {
         }
 
         String finalKey = parts[parts.length - 1];
+        Object existingValue = current.get(finalKey);
+
+        // Check if value actually changed
+        boolean valueChanged;
         if (value == null) {
-            current.remove(finalKey);
+            valueChanged = existingValue != null;
+            if (valueChanged) {
+                current.remove(finalKey);
+            }
         } else {
-            current.put(finalKey, value);
+            valueChanged = !valueEquals(existingValue, value);
+            if (valueChanged) {
+                current.put(finalKey, value);
+            }
         }
 
-        trackDirtyPath(path);
+        // Only track as dirty if value actually changed
+        if (valueChanged) {
+            trackDirtyPath(path);
+        }
+    }
+
+    /**
+     * Compares two values for equality, handling various types appropriately.
+     */
+    private boolean valueEquals(@Nullable Object existing, @Nullable Object newValue) {
+        if (existing == newValue) {
+            return true;
+        }
+        if (existing == null || newValue == null) {
+            return false;
+        }
+
+        // Handle numeric comparisons (Double vs Integer, etc.)
+        if (existing instanceof Number && newValue instanceof Number) {
+            // Compare as doubles for consistency
+            return ((Number) existing).doubleValue() == ((Number) newValue).doubleValue();
+        }
+
+        return existing.equals(newValue);
     }
 
     @SuppressWarnings("unchecked")

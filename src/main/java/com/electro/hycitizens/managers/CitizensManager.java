@@ -165,7 +165,6 @@ public class CitizensManager {
         startAnimationScheduler();
         startHealthRegenScheduler();
         startNametagMoveScheduler();
-        startPositionSaveScheduler();
         this.patrolManager = new PatrolManager(plugin.getConfigManager(), this);
         startFollowCitizenScheduler();
         this.scheduleManager = new ScheduleManager(this);
@@ -622,22 +621,20 @@ public class CitizensManager {
         }
     }
 
-    // Todo: move position saving to chunk unload event when it becomes available
-    private void startPositionSaveScheduler() {
-        positionSaveTask = HytaleServer.SCHEDULED_EXECUTOR.scheduleAtFixedRate(() -> {
-            config.beginBatch();
-            try {
-                for (CitizenData citizen : citizens.values()) {
-                    if (citizen.getSpawnedUUID() == null || citizen.getNpcRef() == null || !citizen.getNpcRef().isValid())
-                        continue;
+    // Position saving is now handled on shutdown and during normal citizen saves
+    private void saveAllCurrentPositions() {
+        config.beginBatch();
+        try {
+            for (CitizenData citizen : citizens.values()) {
+                if (citizen.getSpawnedUUID() == null || citizen.getNpcRef() == null || !citizen.getNpcRef().isValid())
+                    continue;
 
-                    String basePath = "citizens." + citizen.getId();
-                    config.setVector3d(basePath + ".current-position", citizen.getCurrentPosition());
-                }
-            } finally {
-                config.endBatch();
+                String basePath = "citizens." + citizen.getId();
+                config.setVector3d(basePath + ".current-position", citizen.getCurrentPosition());
             }
-        }, 5, 5, TimeUnit.SECONDS);
+        } finally {
+            config.endBatch();
+        }
     }
 
     private void startFollowCitizenScheduler() {
@@ -737,9 +734,6 @@ public class CitizensManager {
         movementUnstickTask.stop();
         npcRefReconcileTask.stop();
 
-        if (positionSaveTask != null && !positionSaveTask.isCancelled()) {
-            positionSaveTask.cancel(false);
-        }
         pendingRespawnTasks.values().forEach(task -> task.cancel(false));
         pendingRespawnTasks.clear();
 
@@ -750,6 +744,11 @@ public class CitizensManager {
         if (scheduleManager != null) {
             scheduleManager.shutdown();
         }
+
+        // Save all current positions before shutdown
+        getLogger().atInfo().log("Saving citizen positions before shutdown...");
+        saveAllCurrentPositions();
+        getLogger().atInfo().log("Citizen positions saved.");
 
         for (ScheduledFuture<?> pendingRetry : pendingNpcSpawnRetryTasks.values()) {
             if (pendingRetry != null && !pendingRetry.isCancelled()) {
