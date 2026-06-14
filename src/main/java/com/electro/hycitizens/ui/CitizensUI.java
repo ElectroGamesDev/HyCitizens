@@ -5252,7 +5252,7 @@ public class CitizensUI {
                                 {{#if hasWanderRadiusControl}}
                                 <div class="spacer-sm"></div>
                                 <div class="form-row">
-                                    {{@numberField:id=wander-radius,label=Wander Radius,value={{$wanderRadius}},placeholder=5,min=1,max=100,step=1,decimals=0}}
+                                    {{@numberField:id=wander-radius,label=Wander Radius,value={{$wanderRadius}},placeholder=5,min=1,max=200,step=1,decimals=0}}
                                 </div>
                                 {{/if}}
 
