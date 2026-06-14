@@ -14,7 +14,9 @@ import com.electro.hycitizens.ui.CitizensUI;
 import com.electro.hycitizens.ui.SkinCustomizerUI;
 import com.electro.hycitizens.util.ConfigManager;
 import com.electro.hycitizens.util.DataAssetPackManager;
+import com.electro.hycitizens.util.GeneratedAssetReloader;
 import com.electro.hycitizens.util.UpdateChecker;
+import com.electro.hycitizens.map.CitizenMapMarkerAsset;
 import com.hypixel.hytale.component.ComponentType;
 import com.hypixel.hytale.event.EventPriority;
 import com.hypixel.hytale.server.core.HytaleServer;
@@ -71,9 +73,10 @@ public class HyCitizensPlugin extends JavaPlugin {
             return;
         }
 
+        // Load map marker assets
         CitizenMapMarkerAsset.ensureBuiltInMarkerFiles();
-        // TEMPORARY WORKAROUND: some persisted NPCs reload with generic roles, so we persist the owning
-        // citizen id directly on the NPC entity to make rebind and nametag recovery deterministic.
+        CitizenMapMarkerAsset.loadUserCustomMarkers();
+
         this.citizenNpcIdentityComponent = this.getEntityStoreRegistry().registerComponent(
                 CitizenNpcIdentityComponent.class,
                 "HCNPCID",
@@ -124,6 +127,16 @@ public class HyCitizensPlugin extends JavaPlugin {
 
     @Override
     protected void shutdown() {
+        if (citizensManager != null) {
+            if (citizensManager.getRoleGenerator() != null) {
+                citizensManager.getRoleGenerator().cleanup();
+            }
+            citizensManager.shutdown();
+        }
+
+        GeneratedAssetReloader.cleanup();
+        CitizenMapMarkerAsset.cleanupGeneratedMarkers();
+
         if (interactionHandler != null) {
             interactionHandler.unregister();
         }
@@ -134,10 +147,6 @@ public class HyCitizensPlugin extends JavaPlugin {
 
         if (chunkPreLoadListener != null) {
             chunkPreLoadListener.shutdown();
-        }
-
-        if (citizensManager != null) {
-            citizensManager.shutdown();
         }
     }
 

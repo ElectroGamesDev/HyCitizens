@@ -18,6 +18,7 @@ import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.Locale;
 
 import static com.hypixel.hytale.logger.HytaleLogger.getLogger;
 
@@ -26,47 +27,34 @@ public class DataAssetPackManager {
     public static final Path GENERATED_ROLES_PATH = DATA_PACK_PATH.resolve(Paths.get("Server", "NPC", "Roles"));
     public static final Path GENERATED_ATTITUDE_ROLES_PATH = DATA_PACK_PATH.resolve(Paths.get("Server", "NPC", "Attitude", "Roles"));
     public static final Path GENERATED_NPC_GROUPS_PATH = DATA_PACK_PATH.resolve(Paths.get("Server", "NPC", "Groups"));
-    public static final Path MAP_MARKERS_PATH = DATA_PACK_PATH.resolve(Paths.get("Common", "UI", "WorldMap", "MapMarkers"));
 
     private static final Path LEGACY_ASSET_PACK_PATH = Paths.get("mods", "HyCitizensRoles");
     private static final Path MIGRATION_CONFLICTS_PATH = DATA_PACK_PATH.resolve("MigrationConflicts");
-    private static final String DATA_PACK_MOD_ID = "electro:HyCitizensData";
-    private static final String LEGACY_ASSET_PACK_MOD_ID = "electro:HyCitizensRoles";
-    private static final String SERVER_VERSION = ">=0.5.0-pre.9 <0.6.0";
 
     public static boolean setup() {
-        Path manifestPath = DATA_PACK_PATH.resolve("manifest.json");
         Path configPath = Paths.get("config.json");
-        boolean needsShutdown = false;
 
         try {
-            Files.createDirectories(DATA_PACK_PATH);
-
+            // Migrate from legacy HyCitizensRoles folder
             if (Files.exists(LEGACY_ASSET_PACK_PATH)) {
+                Files.createDirectories(DATA_PACK_PATH);
                 migrateLegacyAssetPack();
-                needsShutdown = true;
             }
 
-            Files.createDirectories(GENERATED_ROLES_PATH);
-            Files.createDirectories(GENERATED_ATTITUDE_ROLES_PATH);
-            Files.createDirectories(GENERATED_NPC_GROUPS_PATH);
-            Files.createDirectories(MAP_MARKERS_PATH);
-
-            if (Files.exists(configPath) && ensureDataPackEnabled(configPath)) {
-                needsShutdown = true;
+            // Check if old data pack structure exists and migrate/cleanup
+            if (Files.exists(DATA_PACK_PATH) && hasOldDataPackStructure()) {
+                getLogger().atInfo().log("[HyCitizens] Detected old data pack structure - migrating to new system...");
+                migrateFromOldDataPackStructure();
             }
 
-            if (writeManifestIfNeeded(manifestPath).requiresShutdown()) {
-                needsShutdown = true;
+            // Remove data pack from server config if it was enabled
+            if (Files.exists(configPath)) {
+                removeDataPackFromConfig(configPath);
             }
 
-            if (needsShutdown) {
-                logRestartNotice();
-                HytaleServer.get().shutdownServer();
-                return true;
-            }
+            getLogger().atInfo().log("[HyCitizens] Using fully programmatic asset registration - no data pack required");
         } catch (IOException e) {
-            getLogger().atSevere().log("Could not set up HyCitizensData asset pack. " + e.getMessage());
+            getLogger().atSevere().log("Could not complete HyCitizens migration. " + e.getMessage());
         }
         return false;
     }
@@ -75,7 +63,90 @@ public class DataAssetPackManager {
         Files.createDirectories(DATA_PACK_PATH);
         moveChildren(LEGACY_ASSET_PACK_PATH, DATA_PACK_PATH);
         deleteEmptyDirectories(LEGACY_ASSET_PACK_PATH);
-        getLogger().atWarning().log("[HyCitizens] Migrated generated roles and marker assets into HyCitizensData.");
+        getLogger().atWarning().log("[HyCitizens] Migrated from legacy HyCitizensRoles folder.");
+    }
+
+    private static boolean hasOldDataPackStructure() {
+        Path commonPath = DATA_PACK_PATH.resolve("Common");
+        Path serverPath = DATA_PACK_PATH.resolve("Server");
+        Path manifestPath = DATA_PACK_PATH.resolve("manifest.json");
+
+        return Files.exists(commonPath) || Files.exists(serverPath) || Files.exists(manifestPath);
+    }
+
+    private static void migrateFromOldDataPackStructure() throws IOException {
+        Path oldMapMarkersPath = DATA_PACK_PATH.resolve(Paths.get("Common", "UI", "WorldMap", "MapMarkers"));
+        Path newMapMarkersPath = com.electro.hycitizens.map.CitizenMapMarkerAsset.CUSTOM_MARKERS_PATH;
+
+        // Migrate user custom markers
+        if (Files.exists(oldMapMarkersPath) && Files.isDirectory(oldMapMarkersPath)) {
+            Files.createDirectories(newMapMarkersPath);
+            int migratedCount = 0;
+
+            try (DirectoryStream<Path> stream = Files.newDirectoryStream(oldMapMarkersPath, "*.png")) {
+                for (Path oldMarkerFile : stream) {
+                    String fileName = oldMarkerFile.getFileName().toString();
+
+                    // Skip built-in markers
+                    if (fileName.toLowerCase(Locale.ROOT).startsWith("hycitizens-")) {
+                        getLogger().atFine().log("[HyCitizens] Skipping built-in marker: " + fileName);
+                        continue;
+                    }
+
+                    // Move user's custom marker to new location
+                    Path newMarkerFile = newMapMarkersPath.resolve(fileName);
+                    if (!Files.exists(newMarkerFile)) {
+                        Files.copy(oldMarkerFile, newMarkerFile);
+                        migratedCount++;
+                        getLogger().atInfo().log("[HyCitizens] Migrated custom marker: " + fileName);
+                    } else {
+                        getLogger().atWarning().log("[HyCitizens] Custom marker already exists, skipping: " + fileName);
+                    }
+                }
+            }
+
+            if (migratedCount > 0) {
+                getLogger().atInfo().log("[HyCitizens] Migrated " + migratedCount + " custom map marker(s) to new location");
+            }
+        }
+
+        // Delete old data pack structure
+        Path commonPath = DATA_PACK_PATH.resolve("Common");
+        Path serverPath = DATA_PACK_PATH.resolve("Server");
+        Path manifestPath = DATA_PACK_PATH.resolve("manifest.json");
+
+        if (Files.exists(commonPath)) {
+            deleteDirectoryRecursively(commonPath);
+            getLogger().atInfo().log("[HyCitizens] Removed old 'Common' folder");
+        }
+
+        if (Files.exists(serverPath)) {
+            deleteDirectoryRecursively(serverPath);
+            getLogger().atInfo().log("[HyCitizens] Removed old 'Server' folder");
+        }
+
+        if (Files.exists(manifestPath)) {
+            Files.delete(manifestPath);
+            getLogger().atInfo().log("[HyCitizens] Removed old manifest.json");
+        }
+
+        getLogger().atInfo().log("[HyCitizens] Migration complete - now using programmatic asset registration!");
+    }
+
+    private static void deleteDirectoryRecursively(@Nonnull Path directory) throws IOException {
+        if (!Files.exists(directory)) {
+            return;
+        }
+
+        Files.walk(directory)
+            .sorted(java.util.Comparator.reverseOrder())
+            .forEach(path -> {
+                try {
+                    Files.delete(path);
+                } catch (IOException e) {
+                    getLogger().atWarning().log("[HyCitizens] Failed to delete: " + path + " - " + e.getMessage());
+                }
+            });
     }
 
     private static void moveChildren(@Nonnull Path sourceDir, @Nonnull Path targetDir) throws IOException {
@@ -155,42 +226,35 @@ public class DataAssetPackManager {
         Files.delete(dir);
     }
 
-    private static boolean ensureDataPackEnabled(Path configPath) throws IOException {
+    private static boolean removeDataPackFromConfig(Path configPath) throws IOException {
         JsonObject config;
         try {
             config = parseConfigJson(configPath);
         } catch (JsonSyntaxException | IllegalStateException e) {
-            getLogger().atWarning().log("[HyCitizens] Could not parse config.json while registering HyCitizensData. " +
+            getLogger().atWarning().log("[HyCitizens] Could not parse config.json while removing data pack entry. " +
                     "The server config appears to contain malformed JSON, so HyCitizens will skip editing it. " +
                     "Details: " + e.getMessage());
             return false;
         }
-
-        boolean defaultModsEnabled = config.has("DefaultModsEnabled")
-                && config.get("DefaultModsEnabled").isJsonPrimitive()
-                && config.get("DefaultModsEnabled").getAsBoolean();
 
         JsonObject mods = config.has("Mods") && config.get("Mods").isJsonObject()
                 ? config.getAsJsonObject("Mods")
                 : new JsonObject();
 
         boolean changed = false;
-        if (mods.has(LEGACY_ASSET_PACK_MOD_ID)) {
-            mods.remove(LEGACY_ASSET_PACK_MOD_ID);
+
+        // Remove legacy asset pack
+        if (mods.has("electro:HyCitizensRoles")) {
+            mods.remove("electro:HyCitizensRoles");
             changed = true;
+            getLogger().atInfo().log("[HyCitizens] Removed legacy data pack from config.json");
         }
 
-        if (!defaultModsEnabled) {
-            JsonObject modEntry = mods.has(DATA_PACK_MOD_ID) && mods.get(DATA_PACK_MOD_ID).isJsonObject()
-                    ? mods.getAsJsonObject(DATA_PACK_MOD_ID)
-                    : new JsonObject();
-            if (!modEntry.has("Enabled")
-                    || !modEntry.get("Enabled").isJsonPrimitive()
-                    || !modEntry.get("Enabled").getAsBoolean()) {
-                modEntry.addProperty("Enabled", true);
-                mods.add(DATA_PACK_MOD_ID, modEntry);
-                changed = true;
-            }
+        // Remove current data pack
+        if (mods.has("electro:HyCitizensData")) {
+            mods.remove("electro:HyCitizensData");
+            changed = true;
+            getLogger().atInfo().log("[HyCitizens] Removed HyCitizensData pack from config.json");
         }
 
         if (changed) {
@@ -202,100 +266,7 @@ public class DataAssetPackManager {
         return changed;
     }
 
-    private enum ManifestUpdateResult {
-        UNCHANGED(false),
-        SERVER_VERSION_ONLY(false),
-        RESTART_REQUIRED(true);
 
-        private final boolean requiresShutdown;
-
-        ManifestUpdateResult(boolean requiresShutdown) {
-            this.requiresShutdown = requiresShutdown;
-        }
-
-        private boolean requiresShutdown() {
-            return requiresShutdown;
-        }
-    }
-
-    @Nonnull
-    private static ManifestUpdateResult writeManifestIfNeeded(@Nonnull Path manifestPath) throws IOException {
-        String desired = manifestContent();
-        if (Files.exists(manifestPath)) {
-            String existing = new String(Files.readAllBytes(manifestPath), StandardCharsets.UTF_8);
-            if (existing.equals(desired)) {
-                return ManifestUpdateResult.UNCHANGED;
-            }
-            if (onlyServerVersionChanged(existing, desired)) {
-                Files.write(manifestPath, desired.getBytes(StandardCharsets.UTF_8));
-                return ManifestUpdateResult.SERVER_VERSION_ONLY;
-            }
-        }
-
-        Files.write(manifestPath, desired.getBytes(StandardCharsets.UTF_8));
-        return ManifestUpdateResult.RESTART_REQUIRED;
-    }
-
-    private static boolean onlyServerVersionChanged(@Nonnull String existing, @Nonnull String desired) {
-        try {
-            JsonElement existingJson = JsonParser.parseString(existing);
-            JsonElement desiredJson = JsonParser.parseString(desired);
-            if (!existingJson.isJsonObject() || !desiredJson.isJsonObject()) {
-                return false;
-            }
-
-            JsonObject existingObject = existingJson.getAsJsonObject();
-            JsonObject desiredObject = desiredJson.getAsJsonObject();
-            JsonElement existingServerVersion = existingObject.remove("ServerVersion");
-            JsonElement desiredServerVersion = desiredObject.remove("ServerVersion");
-
-            return existingServerVersion != null
-                    && desiredServerVersion != null
-                    && existingObject.equals(desiredObject);
-        } catch (JsonSyntaxException | IllegalStateException e) {
-            return false;
-        }
-    }
-
-    private static String manifestContent() {
-        return "{\n" +
-                "  \"Group\": \"electro\",\n" +
-                "  \"Name\": \"HyCitizensData\",\n" +
-                "  \"Version\": \"1.0.0\",\n" +
-                "  \"ServerVersion\": \"" + SERVER_VERSION + "\",\n" +
-                "  \"Description\": \"Generated data and asset pack for HyCitizens.\",\n" +
-                "  \"Authors\": [\n" +
-                "    {\n" +
-                "      \"Name\": \"Electro\",\n" +
-                "      \"Url\": \"https://github.com/ElectroGamesDev\"\n" +
-                "    }\n" +
-                "  ],\n" +
-                "  \"Website\": \"https://github.com/ElectroGamesDev\",\n" +
-                "  \"Dependencies\": {},\n" +
-                "  \"OptionalDependencies\": {},\n" +
-                "  \"LoadBefore\": {},\n" +
-                "  \"DisabledByDefault\": false,\n" +
-                "  \"IncludesAssetPack\": true,\n" +
-                "  \"SubPlugins\": []\n" +
-                "}";
-    }
-
-    private static void logRestartNotice() {
-        getLogger().atWarning().log("================================================================================");
-        getLogger().atWarning().log("                                                                                ");
-        getLogger().atWarning().log("                      !!!  IMPORTANT NOTICE  !!!                               ");
-        getLogger().atWarning().log("                                                                                ");
-        getLogger().atWarning().log("          HYCITIZENS IS PERFORMING A ONE-TIME DATA MIGRATION                    ");
-        getLogger().atWarning().log("                                                                                ");
-        getLogger().atWarning().log("    Generated roles, marker images, and the asset-pack manifest now live in      ");
-        getLogger().atWarning().log("    mods/HyCitizensData.                                                        ");
-        getLogger().atWarning().log("                                                                                ");
-        getLogger().atWarning().log("    The server will now shut down automatically. This is expected after          ");
-        getLogger().atWarning().log("    updating, and should only happen once. Start the server again after          ");
-        getLogger().atWarning().log("    shutdown completes.                                                         ");
-        getLogger().atWarning().log("                                                                                ");
-        getLogger().atWarning().log("================================================================================");
-    }
 
     private static JsonObject parseConfigJson(Path configPath) throws IOException {
         String configContent = new String(Files.readAllBytes(configPath), StandardCharsets.UTF_8);

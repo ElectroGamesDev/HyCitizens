@@ -239,9 +239,6 @@ public class ConfigManager {
         }
     }
 
-    /**
-     * Compares two values for equality, handling various types appropriately.
-     */
     private boolean valueEquals(@Nullable Object existing, @Nullable Object newValue) {
         if (existing == newValue) {
             return true;
@@ -250,9 +247,7 @@ public class ConfigManager {
             return false;
         }
 
-        // Handle numeric comparisons (Double vs Integer, etc.)
         if (existing instanceof Number && newValue instanceof Number) {
-            // Compare as doubles for consistency
             return ((Number) existing).doubleValue() == ((Number) newValue).doubleValue();
         }
 

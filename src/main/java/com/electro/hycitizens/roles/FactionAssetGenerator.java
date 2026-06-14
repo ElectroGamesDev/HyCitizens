@@ -67,18 +67,16 @@ public class FactionAssetGenerator {
         String groupId = factionConfig.getGeneratedAttitudeGroupId();
         JsonObject json = buildAttitudeGroupJson(factionConfig);
         String content = gson.toJson(json);
-        File file = new File(generatedAttitudeDir, groupId + ".json");
+
         if (!content.equals(lastGeneratedContent.get(groupId))) {
-            try (FileWriter writer = new FileWriter(file)) {
-                writer.write(content);
+            if (GeneratedAssetReloader.registerAttitudeFromJson(groupId, content)) {
                 lastGeneratedContent.put(groupId, content);
-            } catch (Exception e) {
-                getLogger().atWarning().log("[HyCitizens] Could not write faction attitude group '" + groupId + "': " + e.getMessage());
+            } else {
                 return groupId;
             }
         }
 
-        registerAttitudeGroup(groupId, file.toPath(), factionConfig);
+        registerAttitudeGroup(groupId, DataAssetPackManager.GENERATED_ATTITUDE_ROLES_PATH.resolve(groupId + ".json"), factionConfig);
         return groupId;
     }
 
@@ -96,13 +94,12 @@ public class FactionAssetGenerator {
         List<String> includedRoles = getFactionRoleNames(factionConfig.getFactionId());
         JsonObject json = buildNpcGroupJson(includedRoles);
         String content = gson.toJson(json);
-        File file = new File(generatedNpcGroupDir, groupId + ".json");
+
         if (!content.equals(lastGeneratedNpcGroupContent.get(groupId))) {
-            try (FileWriter writer = new FileWriter(file)) {
-                writer.write(content);
+            if (GeneratedAssetReloader.registerNpcGroupFromJson(groupId, content)) {
                 lastGeneratedNpcGroupContent.put(groupId, content);
-            } catch (Exception e) {
-                getLogger().atWarning().log("[HyCitizens] Could not write faction NPC group '" + groupId + "': " + e.getMessage());
+            } else {
+                return;
             }
         }
 
@@ -116,7 +113,7 @@ public class FactionAssetGenerator {
             Map<String, Object> assets = new LinkedHashMap<>();
             assets.put(groupId, group);
             Map<String, Path> paths = new LinkedHashMap<>();
-            paths.put(groupId, file.toPath());
+            paths.put(groupId, DataAssetPackManager.GENERATED_NPC_GROUPS_PATH.resolve(groupId + ".json"));
 
             GeneratedAssetReloader.reloadAssetMapEntry(
                     NPCGroup.getAssetMap(),

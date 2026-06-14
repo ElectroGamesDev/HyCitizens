@@ -28,6 +28,7 @@ public class RoleGenerator {
     private final File generatedRolesDir;
     private final Gson gson;
     private final Map<String, String> lastGeneratedContent = new ConcurrentHashMap<>();
+    private final Map<String, Integer> roleIndices = new ConcurrentHashMap<>();
     private final FactionAssetGenerator factionAssetGenerator = new FactionAssetGenerator();
 
     public static final String DEFAULT_ATTACK_INTERACTION = "Root_NPC_Attack_Melee";
@@ -943,18 +944,40 @@ public class RoleGenerator {
     }
 
     public void writeRoleFile(@Nonnull String roleName, @Nonnull String content) {
+        int oldIndex = roleIndices.getOrDefault(roleName, Integer.MIN_VALUE);
+        boolean allowUpdate = oldIndex != Integer.MIN_VALUE;
+
+        int newIndex = GeneratedAssetReloader.registerNpcBuilderFromJson(roleName, content, allowUpdate);
+
+        if (newIndex != Integer.MIN_VALUE) {
+            roleIndices.put(roleName, newIndex);
+            return;
+        }
+
+        getLogger().atWarning().log("[HyCitizens] Programmatic registration failed for " + roleName + ", falling back to file-based");
+
         File roleFile = new File(generatedRolesDir, roleName + ".json");
         try (FileWriter writer = new FileWriter(roleFile)) {
             writer.write(content);
         } catch (IOException e) {
-            getLogger().atSevere().log("Failed to write role file: " + roleName + " - " + e.getMessage());
+            getLogger().atSevere().log("[HyCitizens] Failed to write role file for " + roleName + ": " + e.getMessage());
             return;
         }
+
         GeneratedAssetReloader.reloadNpcBuilderFile(roleFile.toPath());
     }
 
     public void deleteRoleFile(@Nonnull String citizenId) {
         String prefix = "HyCitizens_" + citizenId + "_";
+
+        roleIndices.keySet().stream()
+                .filter(name -> name.startsWith(prefix))
+                .forEach(name -> {
+                    GeneratedAssetReloader.removeNpcBuilder(name);
+                    roleIndices.remove(name);
+                    lastGeneratedContent.remove(name);
+                });
+
         File[] files = generatedRolesDir.listFiles((dir, name) -> name.startsWith(prefix) && name.endsWith(".json"));
         if (files == null) {
             return;
@@ -1027,5 +1050,10 @@ public class RoleGenerator {
         for (CitizenData citizen : citizens) {
             forceRoleGeneration(citizen);
         }
+    }
+
+    public void cleanup() {
+        roleIndices.clear();
+        lastGeneratedContent.clear();
     }
 }
