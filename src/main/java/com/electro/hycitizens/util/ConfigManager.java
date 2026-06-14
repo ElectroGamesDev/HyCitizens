@@ -20,26 +20,28 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 import static com.hypixel.hytale.logger.HytaleLogger.getLogger;
 
 public class ConfigManager {
     private final Path configFile;
+    private final Path citizensDir;
     private final Gson gson;
     private Map<String, Object> config;
     private int batchDepth = 0;
-    private boolean dirty = false;
+    private final Set<String> dirtyCitizens = new HashSet<>();
+    private final Set<String> deletedCitizens = new HashSet<>();
+    private boolean mainConfigDirty = false;
 
     public ConfigManager(@Nonnull Path pluginDataFolder) {
         this.configFile = pluginDataFolder.resolve("data.json");
+        this.citizensDir = pluginDataFolder.resolve("citizens");
         this.gson = new GsonBuilder().setPrettyPrinting().create();
         this.config = new LinkedHashMap<>();
         loadConfig();
     }
 
     public synchronized void beginBatch() {
-        if (this.batchDepth == 0) {
-            this.dirty = false;
-        }
         this.batchDepth++;
     }
 
@@ -49,34 +51,113 @@ public class ConfigManager {
         }
 
         this.batchDepth--;
-        if (this.batchDepth == 0 && this.dirty) {
+        if (this.batchDepth == 0) {
             saveConfig();
-            this.dirty = false;
         }
     }
 
     public synchronized void loadConfig() {
-        if (!Files.exists(configFile)) {
+        config = new LinkedHashMap<>();
+        boolean hasDataJson = Files.exists(configFile);
+
+        if (hasDataJson) {
+            try {
+                JsonObject jsonObject = parseLenientJsonObject(configFile);
+                Map<String, Object> loaded = gson.fromJson(jsonObject, LinkedHashMap.class);
+                if (loaded != null) {
+                    config.putAll(loaded);
+                }
+
+                // Migrate old flat-key format to nested format
+                if (needsMigration()) {
+                    migrateToNested();
+                }
+            } catch (IOException | JsonSyntaxException | IllegalStateException e) {
+                getLogger().atInfo().log("Failed to load config: " + e.getMessage());
+            }
+        } else {
             setDefaults();
-            saveConfig();
-            return;
         }
 
-        try {
-            JsonObject jsonObject = parseLenientJsonObject(configFile);
-            config = gson.fromJson(jsonObject, LinkedHashMap.class);
-            if (config == null) {
-                config = new LinkedHashMap<>();
-            }
+        // Perform migration of citizens from data.json if found
+        if (config.containsKey("citizens")) {
+            Object citizensObj = config.get("citizens");
+            if (citizensObj instanceof Map) {
+                Map<String, Object> oldCitizens = (Map<String, Object>) citizensObj;
 
-            // Migrate old flat-key format to nested format
-            if (needsMigration()) {
-                migrateToNested();
-                saveConfig();
+                // Check if migration already happened
+                boolean alreadyMigrated = false;
+                if (Files.exists(citizensDir) && !oldCitizens.isEmpty()) {
+                    alreadyMigrated = oldCitizens.keySet().stream()
+                        .allMatch(id -> Files.exists(citizensDir.resolve(id + ".json")));
+                }
+
+                if (!alreadyMigrated) {
+                    getLogger().atInfo().log("Migrating " + oldCitizens.size() + " citizens from data.json to individual files...");
+                    try {
+                        Files.createDirectories(citizensDir);
+                        for (Map.Entry<String, Object> entry : oldCitizens.entrySet()) {
+                            String citizenId = entry.getKey();
+                            Object citizenProps = entry.getValue();
+                            if (citizenProps instanceof Map) {
+                                saveCitizenFile(citizenId, (Map<String, Object>) citizenProps);
+                            }
+                        }
+                        getLogger().atInfo().log("Migration completed successfully.");
+                    } catch (IOException e) {
+                        getLogger().atWarning().log("Failed to create citizens directory during migration: " + e.getMessage());
+                    }
+                } else {
+                    getLogger().atInfo().log("Citizens already migrated, removing key from data.json");
+                }
+
+                config.remove("citizens");
+                saveMainConfig();
             }
-        } catch (IOException | JsonSyntaxException | IllegalStateException e) {
-            getLogger().atInfo().log("Failed to load config: " + e.getMessage());
-            setDefaults();
+        }
+
+        // Load all citizens
+        Map<String, Object> citizensMap = new ConcurrentHashMap<>();
+        if (Files.exists(citizensDir)) {
+            try (var stream = Files.newDirectoryStream(citizensDir, "*.json")) {
+                List<Path> citizenPaths = new ArrayList<>();
+                stream.forEach(citizenPaths::add);
+
+                if (!citizenPaths.isEmpty()) {
+                    getLogger().atInfo().log("Loading " + citizenPaths.size() + " citizen files...");
+                    long startTime = System.currentTimeMillis();
+
+                    // Parallel loading
+                    citizenPaths.parallelStream().forEach(path -> {
+                        String fileName = path.getFileName().toString();
+                        String citizenId = fileName.substring(0, fileName.lastIndexOf('.'));
+                        try {
+                            JsonObject jsonObject = parseLenientJsonObject(path);
+                            Map<String, Object> citizenProps = gson.fromJson(jsonObject, LinkedHashMap.class);
+                            if (citizenProps != null) {
+                                citizensMap.put(citizenId, citizenProps);
+                            }
+                        } catch (Exception e) {
+                            getLogger().atWarning().log("Failed to load citizen file " + fileName + ": " + e.getMessage());
+                        }
+                    });
+
+                    long elapsed = System.currentTimeMillis() - startTime;
+                    getLogger().atInfo().log("Loaded " + citizensMap.size() + " citizens in " + elapsed + "ms");
+                }
+            } catch (IOException e) {
+                getLogger().atWarning().log("Failed to scan citizens directory: " + e.getMessage());
+            }
+        }
+        config.put("citizens", new LinkedHashMap<>(citizensMap));
+
+        mainConfigDirty = false;
+        dirtyCitizens.clear();
+        deletedCitizens.clear();
+
+        // If data.json didn't exist initially, save defaults
+        if (!hasDataJson) {
+            saveConfig();
         }
     }
 
@@ -86,7 +167,7 @@ public class ConfigManager {
              JsonReader jsonReader = new JsonReader(fileReader)) {
             jsonReader.setStrictness(Strictness.LENIENT);
             JsonElement parsed = JsonParser.parseReader(jsonReader);
-            if (!parsed.isJsonObject()) {
+            if (parsed == null || !parsed.isJsonObject()) {
                 throw new JsonSyntaxException("Expected root JSON object in " + path.getFileName());
             }
             return parsed.getAsJsonObject();
@@ -141,6 +222,8 @@ public class ConfigManager {
         } else {
             current.put(finalKey, value);
         }
+
+        trackDirtyPath(path);
     }
 
     @SuppressWarnings("unchecked")
@@ -165,6 +248,7 @@ public class ConfigManager {
         String[] parts = path.split("\\.");
         if (parts.length == 1) {
             config.remove(parts[0]);
+            trackRemovedPath(path);
             return;
         }
 
@@ -186,7 +270,7 @@ public class ConfigManager {
         // Remove the target key
         current.remove(parts[parts.length - 1]);
 
-        // Clean up empty parent maps (walk backwards)
+        // Clean up empty parent maps
         for (int i = parts.length - 2; i >= 0; i--) {
             Map<String, Object> parent = parents.get(i);
             Map<String, Object> child = parents.get(i + 1);
@@ -196,32 +280,181 @@ public class ConfigManager {
                 break;
             }
         }
+
+        trackRemovedPath(path);
     }
 
     public synchronized void saveConfig() {
+        long startTime = System.currentTimeMillis();
+        boolean forceMainSave = !Files.exists(configFile);
+        int savedCount = 0;
+        int deletedCount = 0;
+
+        if (mainConfigDirty || forceMainSave) {
+            saveMainConfig();
+            mainConfigDirty = false;
+        }
+
+        if (!dirtyCitizens.isEmpty()) {
+            Map<String, Object> citizensMap = (Map<String, Object>) config.get("citizens");
+            if (citizensMap != null) {
+                for (String citizenId : new ArrayList<>(dirtyCitizens)) {
+                    Object citizenProperties = citizensMap.get(citizenId);
+                    if (citizenProperties instanceof Map) {
+                        boolean success = saveCitizenFile(citizenId, (Map<String, Object>) citizenProperties);
+                        if (success) {
+                            savedCount++;
+                        }
+                    }
+                }
+            }
+            dirtyCitizens.clear();
+        }
+
+        if (!deletedCitizens.isEmpty()) {
+            deletedCount = deletedCitizens.size();
+            for (String citizenId : new ArrayList<>(deletedCitizens)) {
+                deleteCitizenFile(citizenId);
+            }
+            deletedCitizens.clear();
+        }
+
+        long elapsed = System.currentTimeMillis() - startTime;
+        if (savedCount > 10 || deletedCount > 0 || elapsed > 100) {
+            getLogger().atInfo().log(String.format(
+                "Config save: %d citizens saved, %d deleted in %dms",
+                savedCount, deletedCount, elapsed
+            ));
+        }
+    }
+
+    private synchronized void saveMainConfig() {
         try {
             Files.createDirectories(configFile.getParent());
 
+            Map<String, Object> mainConfig = new LinkedHashMap<>(config);
+            mainConfig.remove("citizens");
+
             Path tempFile = configFile.getParent().resolve("data.json.tmp");
-            try (Writer writer = Files.newBufferedWriter(tempFile)) {
-                gson.toJson(config, writer);
+            try (Writer writer = Files.newBufferedWriter(tempFile, StandardCharsets.UTF_8)) {
+                gson.toJson(mainConfig, writer);
             }
 
-            Files.move(
-                    tempFile,
-                    configFile,
-                    StandardCopyOption.REPLACE_EXISTING,
-                    StandardCopyOption.ATOMIC_MOVE
-            );
-
+            try {
+                Files.move(tempFile, configFile, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+            } catch (IOException e) {
+                Files.move(tempFile, configFile, StandardCopyOption.REPLACE_EXISTING);
+            }
         } catch (IOException e) {
-            System.err.println("Failed to save config: " + e.getMessage());
+            getLogger().atWarning().log("Failed to save data.json: " + e.getMessage());
+        }
+    }
+
+    private synchronized boolean saveCitizenFile(String citizenId, Map<String, Object> citizenProperties) {
+        if (!isValidCitizenId(citizenId)) {
+            getLogger().atSevere().log("Invalid citizen ID for filesystem: " + citizenId);
+            return false;
+        }
+
+        try {
+            Files.createDirectories(citizensDir);
+
+            Path citizenFile = citizensDir.resolve(citizenId + ".json");
+            Path tempFile = citizensDir.resolve(citizenId + ".json.tmp");
+
+            try (Writer writer = Files.newBufferedWriter(tempFile, StandardCharsets.UTF_8)) {
+                gson.toJson(citizenProperties, writer);
+            }
+
+            try {
+                Files.move(tempFile, citizenFile, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+            } catch (IOException e) {
+                Files.move(tempFile, citizenFile, StandardCopyOption.REPLACE_EXISTING);
+            }
+            return true;
+        } catch (IOException e) {
+            getLogger().atWarning().log("Failed to save citizen file for ID " + citizenId + ": " + e.getMessage());
+            return false;
+        }
+    }
+
+    private synchronized void deleteCitizenFile(String citizenId) {
+        if (!isValidCitizenId(citizenId)) {
+            getLogger().atSevere().log("Invalid citizen ID for filesystem: " + citizenId);
+            return;
+        }
+
+        try {
+            Path citizenFile = citizensDir.resolve(citizenId + ".json");
+            Files.deleteIfExists(citizenFile);
+        } catch (IOException e) {
+            getLogger().atWarning().log("Failed to delete citizen file for ID " + citizenId + ": " + e.getMessage());
+        }
+    }
+
+    private boolean isValidCitizenId(String citizenId) {
+        if (citizenId == null || citizenId.isEmpty()) {
+            return false;
+        }
+
+        if (citizenId.contains("..") || citizenId.contains("/") || citizenId.contains("\\")) {
+            return false;
+        }
+
+        if (citizenId.matches(".*[<>:\"|?*].*")) {
+            return false;
+        }
+
+        if (citizenId.matches(".*[\\x00-\\x1F].*")) {
+            return false;
+        }
+
+        String upperName = citizenId.toUpperCase();
+        if (upperName.matches("^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(\\..*)?$")) {
+            return false;
+        }
+
+        return true;
+    }
+
+    private synchronized void trackDirtyPath(String path) {
+        String[] parts = path.split("\\.");
+        if (parts.length > 0 && parts[0].equals("citizens")) {
+            if (parts.length > 1) {
+                String citizenId = parts[1];
+                dirtyCitizens.add(citizenId);
+                deletedCitizens.remove(citizenId);
+            } else {
+                Map<String, Object> citizensMap = (Map<String, Object>) config.get("citizens");
+                if (citizensMap != null) {
+                    dirtyCitizens.addAll(citizensMap.keySet());
+                    deletedCitizens.removeAll(citizensMap.keySet());
+                }
+            }
+        } else {
+            mainConfigDirty = true;
+        }
+    }
+
+    private synchronized void trackRemovedPath(String path) {
+        String[] parts = path.split("\\.");
+        if (parts.length > 0 && parts[0].equals("citizens")) {
+            if (parts.length == 2) {
+                String citizenId = parts[1];
+                deletedCitizens.add(citizenId);
+                dirtyCitizens.remove(citizenId);
+            } else if (parts.length > 2) {
+                String citizenId = parts[1];
+                dirtyCitizens.add(citizenId);
+            }
+        } else {
+            mainConfigDirty = true;
         }
     }
 
     private synchronized void conditionalSave() {
         if (batchDepth > 0) {
-            dirty = true;
+            // Will save when batch ends
         } else {
             saveConfig();
         }
