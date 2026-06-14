@@ -869,6 +869,122 @@ public class CitizensManager {
         refreshCitizensUsingFaction(saved.getFactionId());
     }
 
+    public void deleteFactionDefinition(@Nonnull String factionId) {
+        String sanitized = FactionConfig.sanitizeFactionId(factionId);
+        if (sanitized.isEmpty()) {
+            return;
+        }
+
+        FactionConfig existing = factionConfigs.remove(sanitized);
+        if (existing == null) {
+            return;
+        }
+
+        config.beginBatch();
+        try {
+            config.set("factions." + sanitized, null);
+        } finally {
+            config.endBatch();
+        }
+
+        String generatedGroupId = existing.getGeneratedAttitudeGroupId();
+        for (FactionConfig faction : factionConfigs.values()) {
+            boolean updated = false;
+            if (removeGroupIgnoreCase(faction.getHostileGroups(), generatedGroupId)) updated = true;
+            if (removeGroupIgnoreCase(faction.getNeutralGroups(), generatedGroupId)) updated = true;
+            if (removeGroupIgnoreCase(faction.getPassiveGroups(), generatedGroupId)) updated = true;
+            if (updated) saveFactionConfig(faction);
+        }
+
+        for (CitizenData citizen : citizens.values()) {
+            boolean updated = false;
+            if (sanitized.equalsIgnoreCase(citizen.getFactionConfig().getFactionId())) {
+                citizen.setFactionConfig(new FactionConfig());
+                updated = true;
+            }
+            if (generatedGroupId.equalsIgnoreCase(citizen.getAttitudeGroup())) {
+                citizen.setAttitudeGroup(null);
+                updated = true;
+            }
+            if (updated) saveCitizen(citizen, true);
+        }
+    }
+
+    private boolean removeGroupIgnoreCase(@Nonnull List<String> list, @Nonnull String group) {
+        boolean removed = false;
+        Iterator<String> it = list.iterator();
+        while (it.hasNext()) {
+            if (it.next().equalsIgnoreCase(group)) {
+                it.remove();
+                removed = true;
+            }
+        }
+        return removed;
+    }
+
+    public void renameFactionDefinition(@Nonnull String oldFactionId, @Nonnull FactionConfig newConfig) {
+        String oldSanitized = FactionConfig.sanitizeFactionId(oldFactionId);
+        String newSanitized = newConfig.getFactionId();
+
+        if (oldSanitized.isEmpty() || oldSanitized.equalsIgnoreCase(newSanitized)) {
+            saveFactionDefinition(newConfig);
+            return;
+        }
+
+        FactionConfig oldConfig = factionConfigs.get(oldSanitized);
+        if (oldConfig == null) {
+            saveFactionDefinition(newConfig);
+            return;
+        }
+
+        String oldGeneratedGroupId = oldConfig.getGeneratedAttitudeGroupId();
+        
+        saveFactionDefinition(newConfig);
+
+        String newGeneratedGroupId = newConfig.getGeneratedAttitudeGroupId();
+
+        for (FactionConfig faction : factionConfigs.values()) {
+            if (faction.getFactionId().equalsIgnoreCase(newSanitized)) continue;
+            boolean updated = false;
+            if (renameGroupIgnoreCase(faction.getHostileGroups(), oldGeneratedGroupId, newGeneratedGroupId)) updated = true;
+            if (renameGroupIgnoreCase(faction.getNeutralGroups(), oldGeneratedGroupId, newGeneratedGroupId)) updated = true;
+            if (renameGroupIgnoreCase(faction.getPassiveGroups(), oldGeneratedGroupId, newGeneratedGroupId)) updated = true;
+            if (updated) saveFactionConfig(faction);
+        }
+
+        for (CitizenData citizen : citizens.values()) {
+            boolean updated = false;
+            if (oldSanitized.equalsIgnoreCase(citizen.getFactionConfig().getFactionId())) {
+                citizen.setFactionConfig(newConfig);
+                updated = true;
+            }
+            if (oldGeneratedGroupId.equalsIgnoreCase(citizen.getAttitudeGroup())) {
+                citizen.setAttitudeGroup(newGeneratedGroupId);
+                updated = true;
+            }
+            if (updated) saveCitizen(citizen, true);
+        }
+
+        factionConfigs.remove(oldSanitized);
+        config.beginBatch();
+        try {
+            config.set("factions." + oldSanitized, null);
+        } finally {
+            config.endBatch();
+        }
+    }
+
+    private boolean renameGroupIgnoreCase(@Nonnull List<String> list, @Nonnull String oldGroup, @Nonnull String newGroup) {
+        boolean renamed = false;
+        for (int i = 0; i < list.size(); i++) {
+            if (list.get(i).equalsIgnoreCase(oldGroup)) {
+                list.set(i, newGroup);
+                renamed = true;
+            }
+        }
+        return renamed;
+    }
+
     private void refreshCitizensUsingFaction(@Nonnull String factionId) {
         for (CitizenData citizen : citizens.values()) {
             if (!factionId.equalsIgnoreCase(citizen.getFactionConfig().getFactionId())) {

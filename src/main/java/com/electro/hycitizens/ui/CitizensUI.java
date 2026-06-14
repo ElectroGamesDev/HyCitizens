@@ -5967,7 +5967,13 @@ public class CitizensUI {
                         <div class="footer">
                             <button id="cancel-btn" class="secondary-button">Back</button>
                             <div class="spacer-h-md"></div>
-                            <button id="save-faction-btn" class="secondary-button" style="anchor-width: 180;">Save Faction</button>
+                            {{#if creating}}
+                                <button id="save-faction-btn" class="secondary-button" style="anchor-width: 180;">Save Faction</button>
+                            {{else}}
+                                <button id="delete-faction-btn" class="secondary-button" style="anchor-width: 180;">Delete Faction</button>
+                                <div class="spacer-h-md"></div>
+                                <button id="save-faction-btn" class="secondary-button" style="anchor-width: 180;">Save Faction</button>
+                            {{/if}}
                         </div>
                     </div>
                 </div>
@@ -5977,13 +5983,14 @@ public class CitizensUI {
                 .withLifetime(CustomPageLifetime.CanDismiss)
                 .fromHtml(html);
 
-        setupFactionEditorListeners(page, playerRef, store, citizen, faction);
+        setupFactionEditorListeners(page, playerRef, store, citizen, faction, creating);
         page.open(store);
     }
 
     private void setupFactionEditorListeners(@Nonnull PageBuilder page, @Nonnull PlayerRef playerRef,
                                              @Nonnull Store<EntityStore> store, @Nonnull CitizenData citizen,
-                                             @Nonnull FactionConfig faction) {
+                                             @Nonnull FactionConfig faction, boolean creating) {
+        final String initialFactionId = faction.getFactionId();
         final String[] factionId = {faction.getFactionId()};
         final String[] factionHostileGroups = {String.join(", ", faction.getHostileGroups())};
         final String[] factionNeutralGroups = {String.join(", ", faction.getNeutralGroups())};
@@ -6042,8 +6049,23 @@ public class CitizensUI {
             saved.setHostileGroups(hostileGroups);
             saved.setNeutralGroups(neutralGroups);
             saved.setPassiveGroups(passiveGroups);
-            plugin.getCitizensManager().saveFactionDefinition(saved);
-            playerRef.sendMessage(Message.raw("Faction saved!").color(Color.GREEN));
+            
+            if (!creating && !initialFactionId.isEmpty() && !initialFactionId.equalsIgnoreCase(saved.getFactionId())) {
+                plugin.getCitizensManager().renameFactionDefinition(initialFactionId, saved);
+                playerRef.sendMessage(Message.raw("Faction renamed and saved!").color(Color.GREEN));
+            } else {
+                plugin.getCitizensManager().saveFactionDefinition(saved);
+                playerRef.sendMessage(Message.raw("Faction saved!").color(Color.GREEN));
+            }
+            
+            openFactionsGUI(playerRef, store, citizen);
+        });
+
+        page.addEventListener("delete-faction-btn", CustomUIEventBindingType.Activating, event -> {
+            if (!initialFactionId.isEmpty()) {
+                plugin.getCitizensManager().deleteFactionDefinition(initialFactionId);
+                playerRef.sendMessage(Message.raw("Faction deleted!").color(Color.GREEN));
+            }
             openFactionsGUI(playerRef, store, citizen);
         });
 
