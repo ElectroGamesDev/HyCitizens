@@ -12,6 +12,7 @@ import com.electro.hycitizens.events.CitizenInteractListener;
 import com.electro.hycitizens.events.CitizenRemovedEvent;
 import com.electro.hycitizens.events.CitizenRemovedListener;
 import com.electro.hycitizens.models.*;
+import com.electro.hycitizens.nametag.CustomNametagAssetManager;
 import com.electro.hycitizens.roles.RoleGenerator;
 import com.electro.hycitizens.util.ConfigManager;
 import com.electro.hycitizens.util.RotationUtil;
@@ -2895,7 +2896,7 @@ public class CitizensManager {
     @Nonnull
     private Vector3d getBaseHologramPosition(@Nonnull CitizenData citizen) {
         double scale = Math.max(0.01, citizen.getScale() + citizen.getNametagOffset());
-        double baseOffset = 1.65;
+        double baseOffset = 2.05;
         double extraPerScale = 0.40;
         double yOffset = baseOffset * scale + (scale - 1.0) * extraPerScale;
         Vector3d anchorPosition = getNametagAnchorPosition(citizen);
@@ -2946,20 +2947,63 @@ public class CitizensManager {
 
     @Nullable
     private ModelAsset getNametagModelAsset(@Nonnull CitizenData citizen) {
-        if (!citizen.isModelNametagEnabled()) {
-            return null;
+        String customAssetId = citizen.getCachedCustomNametagAssetId();
+        if (customAssetId == null && shouldUseCustomFormattedNametag(citizen)) {
+            List<String> lines = getNonEmptyNametagLines(citizen);
+            customAssetId = CustomNametagAssetManager.getOrGenerateAssetIdForLines(lines);
+            citizen.setCachedCustomNametagAssetId(customAssetId);
         }
 
-        String modelId = citizen.getNametagModelId().trim();
-        if (modelId.isEmpty()) {
-            return null;
+        if (customAssetId != null) {
+            ModelAsset customAsset = ModelAsset.getAssetMap().getAsset(customAssetId);
+            if (customAsset == null) {
+                getLogger().atFine().log("[HyCitizens] Custom nametag ModelAsset not yet loaded: " + customAssetId);
+                CustomNametagAssetManager.registerReloadCallback(customAssetId, () -> {
+                    refreshCitizenNametags(citizen.getId());
+                });
+            }
+            return customAsset;
         }
 
-        return ModelAsset.getAssetMap().getAsset(modelId);
+        if (citizen.isModelNametagEnabled()) {
+            String modelId = citizen.getNametagModelId().trim();
+            if (!modelId.isEmpty()) {
+                return ModelAsset.getAssetMap().getAsset(modelId);
+            }
+        }
+        return null;
+    }
+
+    private void refreshCitizenNametags(@Nonnull String citizenId) {
+        CitizenData citizen = getCitizen(citizenId);
+        if (citizen == null) {
+            return;
+        }
+
+        getLogger().atInfo().log("[HyCitizens] Refreshing nametags after hot-reload for citizen: " + citizen.getName());
+        scheduleTemporaryNametagRecovery(citizen, false);
     }
 
     private boolean shouldUseModelNametag(@Nonnull CitizenData citizen) {
-        return !citizen.isHideNametag() && getNametagModelAsset(citizen) != null;
+        if (citizen.isHideNametag()) {
+            return false;
+        }
+
+        ModelAsset asset = getNametagModelAsset(citizen);
+        return asset != null;
+    }
+
+    private boolean shouldUseCustomFormattedNametag(@Nonnull CitizenData citizen) {
+        if (citizen.isHideNametag()) {
+            return false;
+        }
+        List<String> lines = getNonEmptyNametagLines(citizen);
+        for (String line : lines) {
+            if (CustomNametagAssetManager.hasFormatCodes(line)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private int getDesiredNametagEntityCount(@Nonnull CitizenData citizen) {
@@ -2967,7 +3011,7 @@ public class CitizensManager {
             return 0;
         }
 
-        if (shouldUseModelNametag(citizen)) {
+        if (shouldUseModelNametag(citizen) || shouldUseCustomFormattedNametag(citizen)) {
             return 1;
         }
 
@@ -3020,6 +3064,61 @@ public class CitizensManager {
     }
 
     @Nullable
+    private ModelAsset getCustomLineNametagModelAsset(@Nonnull String lineText) {
+        if (!CustomNametagAssetManager.hasFormatCodes(lineText)) {
+            return null;
+        }
+
+        String assetId = CustomNametagAssetManager.getOrGenerateAssetId(lineText);
+        if (assetId == null) {
+            return null;
+        }
+
+        return ModelAsset.getAssetMap().getAsset(assetId);
+    }
+
+    private boolean shouldUseCustomLineNametag(@Nullable String lineText) {
+        if (lineText == null || lineText.isEmpty()) {
+            return false;
+        }
+        return getCustomLineNametagModelAsset(lineText) != null;
+    }
+
+    @Nullable
+    private Holder<EntityStore> createNametagEntityHolderWithLines(@Nonnull World world, @Nonnull CitizenData citizen, int lineIndex,
+                                                                   @Nonnull Vector3d linePos, @Nonnull Vector3f rotation,
+                                                                   @Nonnull List<String> lines) {
+        Holder<EntityStore> holder = EntityStore.REGISTRY.newHolder();
+
+        holder.putComponent(TransformComponent.getComponentType(), new TransformComponent(linePos, RotationUtil.toRotation(rotation)));
+        holder.putComponent(HeadRotation.getComponentType(), new HeadRotation(RotationUtil.toRotation(rotation)));
+        holder.ensureComponent(UUIDComponent.getComponentType());
+
+        holder.addComponent(
+                NetworkId.getComponentType(),
+                new NetworkId(world.getEntityStore().getStore().getExternalData().takeNextNetworkId())
+        );
+        holder.addComponent(CitizenNametagComponent.getComponentType(),
+                new CitizenNametagComponent(citizen.getId(), lineIndex));
+
+        ModelAsset nametagModelAsset = getNametagModelAsset(citizen);
+        if (nametagModelAsset == null) {
+            return null;
+        }
+
+        float scale = Math.max(0.01f, citizen.getNametagModelScale() * 0.125f);
+        Model model = withSafeAnimationSetMap(Model.createStaticScaledModel(nametagModelAsset, scale));
+        if (model == null) {
+            return null;
+        }
+
+        holder.addComponent(PropComponent.getComponentType(), PropComponent.get());
+        holder.addComponent(ModelComponent.getComponentType(), new ModelComponent(model));
+        holder.addComponent(PersistentModel.getComponentType(), new PersistentModel(new Model.ModelReference(nametagModelAsset.getId(), scale, null, true)));
+
+        return holder;
+    }
+
     private Holder<EntityStore> createNametagEntityHolder(@Nonnull World world, @Nonnull CitizenData citizen, int lineIndex,
                                                           @Nonnull Vector3d linePos, @Nonnull Vector3f rotation,
                                                           @Nullable String lineText) {
@@ -3036,9 +3135,29 @@ public class CitizensManager {
         holder.addComponent(CitizenNametagComponent.getComponentType(),
                 new CitizenNametagComponent(citizen.getId(), lineIndex));
 
-        if (shouldUseModelNametag(citizen)) {
+        boolean useModelForThisLine = shouldUseModelNametag(citizen);
+        boolean useCustomFormattedNametag = shouldUseCustomLineNametag(lineText);
+
+        if (useCustomFormattedNametag) {
+            ModelAsset nametagModelAsset = getCustomLineNametagModelAsset(lineText);
+            if (nametagModelAsset == null) {
+                return null;
+            }
+
+            float scale = Math.max(0.01f, citizen.getNametagModelScale() * 0.125f);
+            Model model = withSafeAnimationSetMap(Model.createStaticScaledModel(nametagModelAsset, scale));
+            if (model == null) {
+                return null;
+            }
+
+            holder.addComponent(PropComponent.getComponentType(), PropComponent.get());
+            holder.addComponent(ModelComponent.getComponentType(), new ModelComponent(model));
+            holder.addComponent(PersistentModel.getComponentType(),
+                    new PersistentModel(new Model.ModelReference(nametagModelAsset.getId(), scale, null, true)));
+        } else if (useModelForThisLine) {
             Model model = createNametagModel(citizen);
             Model.ModelReference modelReference = createNametagModelReference(citizen);
+
             if (model == null) {
                 return null;
             }
@@ -3057,7 +3176,11 @@ public class CitizensManager {
                     return null;
                 }
             }
-            holder.addComponent(Nameplate.getComponentType(), new Nameplate(lineText == null ? "" : lineText));
+            String displayText = lineText == null ? "" : lineText;
+            if (CustomNametagAssetManager.hasFormatCodes(displayText)) {
+                displayText = CustomNametagAssetManager.stripFormatCodes(displayText);
+            }
+            holder.addComponent(Nameplate.getComponentType(), new Nameplate(displayText));
         }
 
         return holder;
@@ -3079,8 +3202,36 @@ public class CitizensManager {
 
         if (shouldUseModelNametag(citizen)) {
             applyModelNametagDisplay(entity.getStore(), entity, citizen);
+        } else if (shouldUseCustomLineNametag(lineText)) {
+            ModelAsset nametagModelAsset = getCustomLineNametagModelAsset(lineText);
+            if (nametagModelAsset != null) {
+                float scale = Math.max(0.01f, citizen.getNametagModelScale());
+                Model model = withSafeAnimationSetMap(Model.createStaticScaledModel(nametagModelAsset, scale));
+                if (model != null) {
+                    entity.getStore().removeComponentIfExists(entity, Nameplate.getComponentType());
+                    entity.getStore().putComponent(entity, ModelComponent.getComponentType(), new ModelComponent(model));
+                    entity.getStore().putComponent(entity, PersistentModel.getComponentType(),
+                            new PersistentModel(new Model.ModelReference(nametagModelAsset.getId(), scale, null, true)));
+                } else {
+                    String displayText = lineText == null ? "" : lineText;
+                    if (CustomNametagAssetManager.hasFormatCodes(displayText)) {
+                        displayText = CustomNametagAssetManager.stripFormatCodes(displayText);
+                    }
+                    applyTextNametagDisplay(entity.getStore(), entity, displayText);
+                }
+            } else {
+                String displayText = lineText == null ? "" : lineText;
+                if (CustomNametagAssetManager.hasFormatCodes(displayText)) {
+                    displayText = CustomNametagAssetManager.stripFormatCodes(displayText);
+                }
+                applyTextNametagDisplay(entity.getStore(), entity, displayText);
+            }
         } else {
-            applyTextNametagDisplay(entity.getStore(), entity, lineText == null ? "" : lineText);
+            String displayText = lineText == null ? "" : lineText;
+            if (CustomNametagAssetManager.hasFormatCodes(displayText)) {
+                displayText = CustomNametagAssetManager.stripFormatCodes(displayText);
+            }
+            applyTextNametagDisplay(entity.getStore(), entity, displayText);
         }
     }
 
@@ -3434,10 +3585,11 @@ public class CitizensManager {
                     List<Holder<EntityStore>> holders = new ArrayList<>(desiredEntityCount);
                     List<UUID> spawnedUuids = new ArrayList<>(desiredEntityCount);
 
-                    for (int i = 0; i < desiredEntityCount; ++i) {
-                        String lineText = i < nametagLines.size() ? nametagLines.get(i) : null;
-                        Vector3d linePos = getHologramLinePosition(baseHologramPos, desiredEntityCount, i);
-                        Holder<EntityStore> holder = createNametagEntityHolder(world, citizen, i, linePos, hologramRot, lineText);
+                    boolean useCustomFormatted = shouldUseCustomFormattedNametag(citizen);
+
+                    if (useCustomFormatted && desiredEntityCount == 1) {
+                        Vector3d linePos = getHologramLinePosition(baseHologramPos, 1, 0);
+                        Holder<EntityStore> holder = createNametagEntityHolderWithLines(world, citizen, 0, linePos, hologramRot, nametagLines);
                         if (holder == null) {
                             queued[0] = false;
                             return;
@@ -3448,6 +3600,22 @@ public class CitizensManager {
                             spawnedUuids.add(hologramUUIDComponent.getUuid());
                         }
                         holders.add(holder);
+                    } else {
+                        for (int i = 0; i < desiredEntityCount; ++i) {
+                            String lineText = i < nametagLines.size() ? nametagLines.get(i) : null;
+                            Vector3d linePos = getHologramLinePosition(baseHologramPos, desiredEntityCount, i);
+                            Holder<EntityStore> holder = createNametagEntityHolder(world, citizen, i, linePos, hologramRot, lineText);
+                            if (holder == null) {
+                                queued[0] = false;
+                                return;
+                            }
+
+                            UUIDComponent hologramUUIDComponent = holder.getComponent(UUIDComponent.getComponentType());
+                            if (hologramUUIDComponent != null) {
+                                spawnedUuids.add(hologramUUIDComponent.getUuid());
+                            }
+                            holders.add(holder);
+                        }
                     }
 
                     if (holders.size() != desiredEntityCount || spawnedUuids.size() != desiredEntityCount) {
@@ -3861,13 +4029,19 @@ public class CitizensManager {
                 Ref<EntityStore> firstEntity = world.getEntityRef(existingUuids.get(0));
                 if (firstEntity != null && firstEntity.isValid()) {
                     boolean entityIsModelHost = firstEntity.getStore().getComponent(firstEntity, PropComponent.getComponentType()) != null;
-                    boolean shouldUseModelHost = shouldUseModelNametag(citizen);
+                    boolean shouldUseModelHost = shouldUseModelNametag(citizen) || shouldUseCustomFormattedNametag(citizen);
                     if (entityIsModelHost != shouldUseModelHost) {
                         despawnCitizenHologram(citizen);
                         spawnCitizenHologram(citizen, save, deferSave);
                         return;
                     }
                 }
+            }
+
+            if (shouldUseCustomFormattedNametag(citizen)) {
+                despawnCitizenHologram(citizen);
+                spawnCitizenHologram(citizen, save, deferSave);
+                return;
             }
 
             // Update existing lines
@@ -4316,7 +4490,10 @@ public class CitizensManager {
             return false;
         }
 
-        if (!shouldUseModelNametag(citizen) || !citizen.isRotateNametagTowardsPlayer()) {
+        boolean hasModelNametag = shouldUseModelNametag(citizen) ||
+                                  shouldUseCustomFormattedNametag(citizen) ||
+                                  citizen.getCachedCustomNametagAssetId() != null;
+        if (!hasModelNametag || !citizen.isRotateNametagTowardsPlayer()) {
             return false;
         }
 
@@ -4404,24 +4581,26 @@ public class CitizensManager {
         Vector3d entityPos = nametagTransform.getPosition();
         Vector3d playerPos = new Vector3d(playerRef.getTransform().getPosition());
 
+        // Add offset for player head
+        playerPos.y += 1.8;
+
         double dx = playerPos.x - entityPos.x;
         double dz = playerPos.z - entityPos.z;
         float yaw = (float) (Math.atan2(dx, dz) + Math.PI);
 
-//        double dy = playerPos.y - entityPos.y;
-//        double horizontalDistance = Math.sqrt(dx * dx + dz * dz);
-//        float pitch = (float) Math.atan2(dy, horizontalDistance);
+        double dy = playerPos.y - entityPos.y;
+        double horizontalDistance = Math.sqrt(dx * dx + dz * dz);
+        float pitch = (float) Math.atan2(dy, horizontalDistance);
 
-        Direction lookDirection = new Direction(yaw, 0f, 0f);
-        Direction bodyDirection = new Direction(yaw, 0f, 0f);
+        Direction lookDirection = new Direction(yaw, pitch, 0f);
+        Direction bodyDirection = new Direction(yaw, pitch, 0f);
 
         UUID playerUuid = playerRef.getUuid();
         Direction lastLook = citizen.lastNametagLookDirections.get(playerUuid);
         if (lastLook != null) {
             float yawDiff = Math.abs(lookDirection.yaw - lastLook.yaw);
-//            float pitchDiff = Math.abs(lookDirection.pitch - lastLook.pitch);
-//            if (yawDiff < 0.02f && pitchDiff < 0.02f) {
-            if (yawDiff < 0.02f) {
+            float pitchDiff = Math.abs(lookDirection.pitch - lastLook.pitch);
+            if (yawDiff < 0.02f && pitchDiff < 0.02f) {
                 return;
             }
         }

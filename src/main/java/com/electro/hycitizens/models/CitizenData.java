@@ -68,6 +68,7 @@ public class CitizenData {
     private String nametagModelId = "";
     private float nametagModelScale = 1.0f;
     private boolean rotateNametagTowardsPlayer = true;
+    private transient String cachedCustomNametagAssetId = null;
     private boolean fKeyInteractionEnabled;
     private boolean forceFKeyInteractionText;
     private boolean mapMarkerEnabled = false;
@@ -252,6 +253,20 @@ public class CitizenData {
 
     public void setName(@Nonnull String name) {
         this.name = name;
+        clearCustomNametagCache();
+    }
+
+    @Nullable
+    public String getCachedCustomNametagAssetId() {
+        return cachedCustomNametagAssetId;
+    }
+
+    public void setCachedCustomNametagAssetId(@Nullable String assetId) {
+        this.cachedCustomNametagAssetId = assetId;
+    }
+
+    public void clearCustomNametagCache() {
+        this.cachedCustomNametagAssetId = null;
     }
 
     @Nonnull

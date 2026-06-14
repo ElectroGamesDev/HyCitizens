@@ -47,12 +47,18 @@ public class DataAssetPackManager {
                 migrateFromOldDataPackStructure();
             }
 
-            // Remove data pack from server config if it was enabled
-            if (Files.exists(configPath)) {
-                removeDataPackFromConfig(configPath);
-            }
+            // Create manifest.json for HyCitizensData
+            createManifest();
 
-            getLogger().atInfo().log("[HyCitizens] Using fully programmatic asset registration - no data pack required");
+            // Try to register the pack
+            if (!registerPackAtRuntime()) {
+                if (Files.exists(configPath)) {
+                    ensureDataPackInConfig(configPath);
+                }
+                getLogger().atWarning().log("[HyCitizens] HyCitizensData pack will be loaded on next server restart");
+            } else {
+                getLogger().atInfo().log("[HyCitizens] Successfully registered HyCitizensData pack at runtime");
+            }
         } catch (IOException e) {
             getLogger().atSevere().log("Could not complete HyCitizens migration. " + e.getMessage());
         }
@@ -224,6 +230,147 @@ public class DataAssetPackManager {
             }
         }
         Files.delete(dir);
+    }
+
+    private static boolean registerPackAtRuntime() {
+        try {
+            com.hypixel.hytale.server.core.asset.AssetModule assetModule =
+                com.hypixel.hytale.server.core.asset.AssetModule.get();
+
+            if (assetModule == null) {
+                getLogger().atWarning().log("[HyCitizens] AssetModule not available yet");
+                return false;
+            }
+
+            // Check if already registered
+            if (assetModule.getAssetPack("electro:HyCitizensData") != null) {
+                getLogger().atInfo().log("[HyCitizens] HyCitizensData pack already registered");
+                return true;
+            }
+
+            // Read the manifest
+            Path manifestPath = DATA_PACK_PATH.resolve("manifest.json");
+            if (!Files.exists(manifestPath)) {
+                getLogger().atWarning().log("[HyCitizens] manifest.json does not exist yet");
+                return false;
+            }
+
+            String manifestJson = new String(Files.readAllBytes(manifestPath), java.nio.charset.StandardCharsets.UTF_8);
+            char[] jsonChars = manifestJson.toCharArray();
+            com.hypixel.hytale.codec.util.RawJsonReader reader =
+                new com.hypixel.hytale.codec.util.RawJsonReader(jsonChars);
+
+            com.hypixel.hytale.codec.ExtraInfo extraInfo = new com.hypixel.hytale.codec.ExtraInfo();
+            com.hypixel.hytale.common.plugin.PluginManifest manifest =
+                com.hypixel.hytale.common.plugin.PluginManifest.CODEC.decodeJson(reader, extraInfo);
+
+            if (manifest == null) {
+                getLogger().atWarning().log("[HyCitizens] Failed to decode manifest");
+                return false;
+            }
+
+            try {
+                java.lang.reflect.Method[] methods = assetModule.getClass().getMethods();
+                for (java.lang.reflect.Method method : methods) {
+                    if (!"registerPack".equals(method.getName())) {
+                        continue;
+                    }
+                    Class<?>[] paramTypes = method.getParameterTypes();
+                    if (paramTypes.length == 4 &&
+                        paramTypes[0] == String.class &&
+                        paramTypes[1] == Path.class &&
+                        paramTypes[2] == com.hypixel.hytale.common.plugin.PluginManifest.class) {
+
+                        Object fourthParam;
+                        if (paramTypes[3] == boolean.class || paramTypes[3] == Boolean.class) {
+                            fourthParam = true;
+                        } else {
+                            try {
+                                Object[] enumConstants = paramTypes[3].getEnumConstants();
+                                fourthParam = (enumConstants != null && enumConstants.length > 0) ? enumConstants[0] : null;
+                            } catch (Exception e) {
+                                fourthParam = null;
+                            }
+                        }
+
+                        if (fourthParam != null) {
+                            method.invoke(assetModule, "electro:HyCitizensData", DATA_PACK_PATH, manifest, fourthParam);
+                            getLogger().atInfo().log("[HyCitizens] Registered HyCitizensData pack at runtime");
+                            return true;
+                        }
+                    }
+                }
+                getLogger().atWarning().log("[HyCitizens] Could not find compatible registerPack method");
+                return false;
+            } catch (IllegalStateException ise) {
+                if (ise.getMessage() != null && ise.getMessage().contains("already exists")) {
+                    getLogger().atInfo().log("[HyCitizens] HyCitizensData pack already registered (caught IllegalStateException)");
+                    return true;
+                }
+                throw ise;
+            }
+
+        } catch (Exception e) {
+            getLogger().atWarning().log("[HyCitizens] Failed to register pack at runtime: " + e.getClass().getName() + ": " + e.getMessage());
+            e.printStackTrace();
+            return false;
+        }
+    }
+
+    private static void createManifest() throws IOException {
+        Path manifestPath = DATA_PACK_PATH.resolve("manifest.json");
+        if (Files.exists(manifestPath)) {
+            return;
+        }
+
+        JsonObject manifest = new JsonObject();
+        manifest.addProperty("Group", "electro");
+        manifest.addProperty("Name", "HyCitizensData");
+        manifest.addProperty("Description", "Dynamically generated assets for HyCitizens plugin");
+        manifest.addProperty("Version", "1.0.0");
+        manifest.addProperty("ServerVersion", ">=0.5.0-pre.9 <0.6.0");
+
+        Gson gson = new GsonBuilder().setPrettyPrinting().create();
+        Files.write(manifestPath, gson.toJson(manifest).getBytes(StandardCharsets.UTF_8));
+        getLogger().atInfo().log("[HyCitizens] Created manifest.json for HyCitizensData");
+    }
+
+    private static boolean ensureDataPackInConfig(Path configPath) throws IOException {
+        JsonObject config;
+        try {
+            config = parseConfigJson(configPath);
+        } catch (JsonSyntaxException | IllegalStateException e) {
+            getLogger().atWarning().log("[HyCitizens] Could not parse config.json. " +
+                    "Details: " + e.getMessage());
+            return false;
+        }
+
+        JsonObject mods = config.has("Mods") && config.get("Mods").isJsonObject()
+                ? config.getAsJsonObject("Mods")
+                : new JsonObject();
+
+        boolean changed = false;
+
+        // Remove legacy pack if exists
+        if (mods.has("electro:HyCitizensRoles")) {
+            mods.remove("electro:HyCitizensRoles");
+            changed = true;
+        }
+
+        // Ensure HyCitizensData is registered
+        if (!mods.has("electro:HyCitizensData")) {
+            mods.add("electro:HyCitizensData", new JsonObject());
+            changed = true;
+            getLogger().atInfo().log("[HyCitizens] Registered HyCitizensData mod pack in config.json");
+        }
+
+        if (changed) {
+            config.add("Mods", mods);
+            Gson gson = new GsonBuilder().setPrettyPrinting().create();
+            Files.write(configPath, gson.toJson(config).getBytes(StandardCharsets.UTF_8));
+        }
+
+        return changed;
     }
 
     private static boolean removeDataPackFromConfig(Path configPath) throws IOException {

@@ -10,6 +10,7 @@ import com.electro.hycitizens.map.CitizenMapMarkerAsset;
 import com.electro.hycitizens.map.CitizenMapMarkerProvider;
 import com.electro.hycitizens.managers.CitizensManager;
 import com.electro.hycitizens.models.CitizenData;
+import com.electro.hycitizens.nametag.CustomNametagAssetManager;
 import com.electro.hycitizens.ui.CitizensUI;
 import com.electro.hycitizens.ui.SkinCustomizerUI;
 import com.electro.hycitizens.util.ConfigManager;
@@ -76,6 +77,9 @@ public class HyCitizensPlugin extends JavaPlugin {
         // Load map marker assets
         CitizenMapMarkerAsset.ensureBuiltInMarkerFiles();
         CitizenMapMarkerAsset.loadUserCustomMarkers();
+
+        // Initialize custom nametag system
+        CustomNametagAssetManager.initialize();
 
         this.citizenNpcIdentityComponent = this.getEntityStoreRegistry().registerComponent(
                 CitizenNpcIdentityComponent.class,
