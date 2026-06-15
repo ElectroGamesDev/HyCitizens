@@ -54,7 +54,10 @@ public class CitizenData {
     private List<CommandAction> commandActions;
     private UUID spawnedUUID;
     private List<UUID> hologramLineUuids = new ArrayList<>();
-    private Ref<EntityStore> npcRef;
+    private transient boolean wasInCombat = false;
+
+    // Entity References
+    private transient Ref<EntityStore> npcRef;
     public final Map<UUID, Direction> lastLookDirections = new ConcurrentHashMap<>();
     private transient Map<UUID, ScheduledFuture<?>> pendingLookResetTasks = new ConcurrentHashMap<>();
     public final Map<UUID, Direction> lastNametagLookDirections = new ConcurrentHashMap<>();
@@ -113,6 +116,10 @@ public class CitizenData {
     private String firstInteractionCommandSelectionMode = "ALL";
     private String postFirstInteractionBehavior = "NORMAL";
     private boolean runNormalOnFirstInteraction = false;
+
+    // Scripting-related fields
+    private List<com.electro.hycitizens.api.scripting.ScriptBlock> scripts = new ArrayList<>();
+    private Map<String, Object> scriptVariables = new ConcurrentHashMap<>();
     private Set<UUID> playersWhoCompletedFirstInteraction = ConcurrentHashMap.newKeySet();
     private transient Map<UUID, Integer> sequentialFirstInteractionMessageIndex = new ConcurrentHashMap<>();
     private transient Map<UUID, Integer> sequentialFirstInteractionCommandIndex = new ConcurrentHashMap<>();
@@ -421,6 +428,9 @@ public class CitizenData {
         }
     }
 
+    public boolean wasInCombat() { return wasInCombat; }
+    public void setWasInCombat(boolean wasInCombat) { this.wasInCombat = wasInCombat; }
+
     public Ref<EntityStore> getNpcRef() {
         return npcRef;
     }
@@ -698,6 +708,30 @@ public class CitizenData {
 
     public void setAnimationBehaviors(@Nonnull List<AnimationBehavior> animationBehaviors) {
         this.animationBehaviors = new ArrayList<>(animationBehaviors);
+    }
+
+    @Nonnull
+    public List<com.electro.hycitizens.api.scripting.ScriptBlock> getScripts() {
+        if (scripts == null) {
+            scripts = new ArrayList<>();
+        }
+        return scripts;
+    }
+
+    public void setScripts(@Nonnull List<com.electro.hycitizens.api.scripting.ScriptBlock> scripts) {
+        this.scripts = new ArrayList<>(scripts);
+    }
+
+    @Nonnull
+    public Map<String, Object> getScriptVariables() {
+        if (scriptVariables == null) {
+            scriptVariables = new ConcurrentHashMap<>();
+        }
+        return scriptVariables;
+    }
+
+    public void setScriptVariables(@Nonnull Map<String, Object> scriptVariables) {
+        this.scriptVariables = new ConcurrentHashMap<>(scriptVariables);
     }
 
     @Nonnull

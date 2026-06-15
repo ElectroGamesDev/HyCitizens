@@ -1,6 +1,7 @@
 package com.electro.hycitizens.managers;
 
 import com.electro.hycitizens.HyCitizensPlugin;
+import com.electro.hycitizens.api.scripting.ScriptManager;
 import com.electro.hycitizens.components.CitizenNpcIdentityComponent;
 import com.electro.hycitizens.components.CitizenNametagComponent;
 import com.electro.hycitizens.events.CitizenAddedEvent;
@@ -643,8 +644,9 @@ public class CitizensManager {
             for (CitizenData citizen : citizens.values()) {
                 try {
                     tickStandaloneFollowCitizen(citizen);
+                    tickCitizenState(citizen);
                 } catch (Exception e) {
-                    getLogger().atWarning().log("Standalone follow tick error for citizen " + citizen.getId() + ": " + e.getMessage());
+                    getLogger().atWarning().log("Tick error for citizen " + citizen.getId() + ": " + e.getMessage());
                 }
             }
         }, FOLLOW_TICK_INTERVAL_MS, FOLLOW_TICK_INTERVAL_MS, TimeUnit.MILLISECONDS);
@@ -719,6 +721,11 @@ public class CitizensManager {
                     float nextHealth = Math.min(maxHealth, currentHealth + citizen.getHealthRegenAmount());
                     setHealthValueClamped(statMap, nextHealth);
                     citizen.setLastHealthRegenAt(System.currentTimeMillis());
+
+                    // Fire ON_HEALTH_THRESHOLD trigger
+                    Store<EntityStore> store = world.getEntityStore().getStore();
+                    if (store != null)
+                        ScriptManager.get().fireTrigger(citizen, "ON_HEALTH_THRESHOLD", null, null, store);
                 });
             }
         }, 1, 1, TimeUnit.SECONDS);
@@ -1515,6 +1522,32 @@ public class CitizensManager {
         List<String> disableDmgGroups = config.getStringList(basePath + ".disable-damage-groups");
         if (disableDmgGroups != null) citizenData.setDisableDamageGroups(disableDmgGroups);
 
+        // Load scripts and scriptVariables
+        String scriptsJson = config.getString(basePath + ".scripts");
+        if (scriptsJson != null && !scriptsJson.isEmpty()) {
+            try {
+                java.lang.reflect.Type listType = new com.google.gson.reflect.TypeToken<List<com.electro.hycitizens.api.scripting.ScriptBlock>>(){}.getType();
+                List<com.electro.hycitizens.api.scripting.ScriptBlock> scripts = new com.google.gson.Gson().fromJson(scriptsJson, listType);
+                if (scripts != null) {
+                    citizenData.setScripts(scripts);
+                }
+            } catch (Exception e) {
+                getLogger().atWarning().log("Failed to load scripts for citizen " + name + ": " + e.getMessage());
+            }
+        }
+        String varsJson = config.getString(basePath + ".scriptVariables");
+        if (varsJson != null && !varsJson.isEmpty()) {
+            try {
+                java.lang.reflect.Type mapType = new com.google.gson.reflect.TypeToken<Map<String, Object>>(){}.getType();
+                Map<String, Object> vars = new com.google.gson.Gson().fromJson(varsJson, mapType);
+                if (vars != null) {
+                    citizenData.setScriptVariables(vars);
+                }
+            } catch (Exception e) {
+                getLogger().atWarning().log("Failed to load scriptVariables for citizen " + name + ": " + e.getMessage());
+            }
+        }
+
         return citizenData;
     }
 
@@ -1983,6 +2016,10 @@ public class CitizensManager {
             config.setStringList(basePath + ".flock-array", citizen.getFlockArray());
             config.setStringList(basePath + ".disable-damage-groups", citizen.getDisableDamageGroups());
 
+            // Save scripts and scriptVariables
+            config.set(basePath + ".scripts", new com.google.gson.Gson().toJson(citizen.getScripts()));
+            config.set(basePath + ".scriptVariables", new com.google.gson.Gson().toJson(citizen.getScriptVariables()));
+
             boolean npcSpawned = citizen.getNpcRef() != null && citizen.getNpcRef().isValid();
 
             // Only write role file if role-relevant data actually changed
@@ -2162,6 +2199,7 @@ public class CitizensManager {
             scheduleManager.clearCitizen(citizenId);
         }
         roleGenerator.deleteRoleFile(citizenId);
+        com.electro.hycitizens.api.scripting.ScriptManager.get().cleanupCitizen(citizenId);
 
         if (citizen == null) {
             return;
@@ -2356,7 +2394,16 @@ public class CitizensManager {
                 return;
             }
 
-            world.execute(() -> spawnCitizen(citizen, true));
+
+
+            world.execute(() -> {
+                spawnCitizen(citizen, true);
+
+                // Fire ON_RESPAWN trigger
+                Store<EntityStore> store = world.getEntityStore().getStore();
+                if (store != null)
+                    ScriptManager.get().fireTrigger(citizen, "ON_RESPAWN", null, null, store);
+            });
         }, clampedDelayMs, TimeUnit.MILLISECONDS);
 
         pendingRespawnTasks.put(citizen.getId(), task);
@@ -2418,7 +2465,15 @@ public class CitizensManager {
                 continue;
             }
 
-            world.execute(() -> updateSpawnedCitizen(citizen, save));
+            world.execute(() -> {
+                updateSpawnedCitizen(citizen, save);
+
+                // Fire ON_RESPAWN trigger
+                Store<EntityStore> store = world.getEntityStore().getStore();
+                if (store != null)
+                    ScriptManager.get().fireTrigger(citizen, "ON_RESPAWN", null, null, store);
+            });
+
             queuedRespawns++;
         }
 
@@ -2768,6 +2823,7 @@ public class CitizensManager {
         if (scheduleManager != null) {
             scheduleManager.refreshCitizen(citizen);
         }
+        com.electro.hycitizens.api.scripting.ScriptManager.get().fireTrigger(citizen, "ON_SPAWN", new java.util.HashMap<>(), null, store);
         citizensCurrentlySpawning.remove(citizen.getId());
     }
 
@@ -2882,6 +2938,7 @@ public class CitizensManager {
         if (scheduleManager != null) {
             scheduleManager.refreshCitizen(citizen);
         }
+        com.electro.hycitizens.api.scripting.ScriptManager.get().fireTrigger(citizen, "ON_SPAWN", new java.util.HashMap<>(), null, store);
         citizensCurrentlySpawning.remove(citizen.getId());
     }
 
@@ -2969,6 +3026,25 @@ public class CitizensManager {
                 }
             }
         }
+
+        if (citizen.getScripts() != null) {
+            for (com.electro.hycitizens.api.scripting.ScriptBlock script : citizen.getScripts()) {
+                if (script.isEnabled() && (script.matchesTrigger("ON_INTERACT") || script.matchesTrigger("ON_FIRST_INTERACT"))) {
+                    Map<String, Object> params = script.getTriggerParameters();
+                    if (params != null && params.containsKey("source")) {
+                        Object src = params.get("source");
+                        if (src != null) {
+                            String srcStr = src.toString();
+                            if (!srcStr.isEmpty() && !srcStr.equalsIgnoreCase("F_KEY") && !srcStr.equalsIgnoreCase("BOTH")) {
+                                continue;
+                            }
+                        }
+                    }
+                    return true;
+                }
+            }
+        }
+
         return false;
     }
 
@@ -3775,6 +3851,8 @@ public class CitizensManager {
         if (world == null) {
             return;
         }
+
+        com.electro.hycitizens.api.scripting.ScriptManager.get().fireTrigger(citizen, "ON_DESPAWN", new java.util.HashMap<>(), null, world.getEntityStore().getStore());
 
         boolean despawned = false;
         Ref<EntityStore> npcRef = citizen.getNpcRef();
@@ -5365,16 +5443,30 @@ public class CitizensManager {
     public void fireCitizenDeathEvent(CitizenDeathEvent event) {
         for (CitizenDeathListener listener : deathListeners) {
             listener.onCitizenDeath(event);
+
             if (event.isCancelled()) {
                 break;
+            }
+            else {
+                // Handled in EntityDeathListener
+//                // Trigger "ON_DEATH" for scripts
+//                World world = Universe.get().getWorld(event.getCitizen().getWorldUUID());
+//                if (world != null) {
+//                    world.execute(() -> {
+//                        Store<EntityStore> store = world.getEntityStore().getStore();
+//                        if (store != null)
+//                            ScriptManager.get().fireTrigger(event.getCitizen(), "ON_DEATH", null, event.getKiller(), store);
+//                    });
+//                }
             }
         }
     }
 
-//    public void reload() {
-//        config.reload();
-//        loadAllCitizens();
-//    }
+    public void reload() {
+        config.reload();
+        loadAllCitizens();
+        loadFactionConfigs();
+    }
 
     private void saveGroups() {
         List<String> groupList = new ArrayList<>(groups);
@@ -5569,6 +5661,18 @@ public class CitizensManager {
         return citizens.values().stream()
                 .filter(c -> targetGroup.equals(normalizeGroupName(c.getGroup())))
                 .collect(Collectors.toList());
+    }
+
+    private void tickCitizenState(@Nonnull CitizenData citizen) {
+        boolean isNowInCombat = isCitizenInCombat(citizen);
+        if (isNowInCombat != citizen.wasInCombat()) {
+            citizen.setWasInCombat(isNowInCombat);
+            if (isNowInCombat) {
+                com.electro.hycitizens.api.scripting.ScriptManager.get().fireTrigger(citizen, "ON_COMBAT_START", new java.util.HashMap<>(), null, null);
+            } else {
+                com.electro.hycitizens.api.scripting.ScriptManager.get().fireTrigger(citizen, "ON_COMBAT_END", new java.util.HashMap<>(), null, null);
+            }
+        }
     }
 
     private void tickStandaloneFollowCitizen(@Nonnull CitizenData citizen) {

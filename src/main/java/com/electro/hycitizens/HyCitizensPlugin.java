@@ -13,6 +13,7 @@ import com.electro.hycitizens.models.CitizenData;
 import com.electro.hycitizens.nametag.CustomNametagAssetManager;
 import com.electro.hycitizens.ui.CitizensUI;
 import com.electro.hycitizens.ui.SkinCustomizerUI;
+import com.electro.hycitizens.ui.ScriptingUI;
 import com.electro.hycitizens.util.ConfigManager;
 import com.electro.hycitizens.util.DataAssetPackManager;
 import com.electro.hycitizens.util.GeneratedAssetReloader;
@@ -46,6 +47,7 @@ public class HyCitizensPlugin extends JavaPlugin {
     private CitizensManager citizensManager;
     private CitizensUI citizensUI;
     private SkinCustomizerUI skinCustomizerUI;
+    private ScriptingUI scriptingUI;
     private Path generatedRolesPath;
     private ComponentType<EntityStore, CitizenNpcIdentityComponent> citizenNpcIdentityComponent;
     private ComponentType<EntityStore, CitizenNametagComponent> citizenNametagComponent;
@@ -92,12 +94,6 @@ public class HyCitizensPlugin extends JavaPlugin {
                 CitizenNametagComponent.CODEC
         );
 
-        this.citizensManager = new CitizensManager(this);
-        CitizenMapMarkerAsset.ensureMarkerFilesForCitizens(citizensManager.getAllCitizens());
-        this.citizenMapMarkerProvider = new CitizenMapMarkerProvider(this);
-        this.citizensUI = new CitizensUI(this);
-        this.skinCustomizerUI = new SkinCustomizerUI(this);
-
         // Register commands
         getCommandRegistry().registerCommand(new CitizensCommand(this));
 
@@ -107,6 +103,17 @@ public class HyCitizensPlugin extends JavaPlugin {
 
         // Register event listeners
         registerEventListeners();
+
+        this.citizensManager = new CitizensManager(this);
+        CitizenMapMarkerAsset.ensureMarkerFilesForCitizens(citizensManager.getAllCitizens());
+        this.citizenMapMarkerProvider = new CitizenMapMarkerProvider(this);
+        this.citizensUI = new CitizensUI(this);
+        this.skinCustomizerUI = new SkinCustomizerUI(this);
+        this.scriptingUI = new ScriptingUI(this);
+
+        // Initialize scripting engine
+        com.electro.hycitizens.api.scripting.ScriptManager.get().init();
+        com.electro.hycitizens.api.scripting.VariableManager.get().init();
 
         this.interactionHandler = new PlayerInteractionHandler();
         this.interactionHandler.register();
@@ -131,6 +138,10 @@ public class HyCitizensPlugin extends JavaPlugin {
 
     @Override
     protected void shutdown() {
+        // Shutdown scripting engine
+        com.electro.hycitizens.api.scripting.VariableManager.get().shutdown();
+        com.electro.hycitizens.api.scripting.ScriptManager.get().shutdown();
+
         if (citizensManager != null) {
             if (citizensManager.getRoleGenerator() != null) {
                 citizensManager.getRoleGenerator().cleanup();
@@ -215,6 +226,10 @@ public class HyCitizensPlugin extends JavaPlugin {
 
     public CitizensUI getCitizensUI() {
         return citizensUI;
+    }
+
+    public ScriptingUI getScriptingUI() {
+        return scriptingUI;
     }
 
     public SkinCustomizerUI getSkinCustomizerUI() {

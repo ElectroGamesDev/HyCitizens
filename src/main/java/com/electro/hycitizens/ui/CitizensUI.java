@@ -956,7 +956,7 @@ public class CitizensUI {
         public boolean isMapMarkerEnabled() { return citizen.isMapMarkerEnabled(); }
     }
 
-    private String getSharedStyles() {
+    public String getSharedStyles() {
         return """
                 <style>
                     .page-overlay {
@@ -1542,7 +1542,7 @@ public class CitizensUI {
                 """;
     }
 
-    private TemplateProcessor createBaseTemplate() {
+    public TemplateProcessor createBaseTemplate() {
         return new TemplateProcessor()
                 .registerComponent("statCard", """
                         <div class="stat-card">
@@ -2575,8 +2575,9 @@ public class CitizensUI {
                                 </div>
                                 <div class="spacer-sm"></div>
                                 <div class="form-row">
-                                    <div class="spacer-h-sm"></div>
                                     <button id="first-interaction-btn" class="secondary-button" style="anchor-width: 240; anchor-height: 44;">First Interaction</button>
+                                    <div class="spacer-h-sm"></div>
+                                    <button id="scripts-config-btn" class="secondary-button" style="anchor-width: 200; anchor-height: 44;">Scripts</button>
                                 </div>
                             </div>
 
@@ -4522,6 +4523,10 @@ public class CitizensUI {
 
         page.addEventListener("first-interaction-btn", CustomUIEventBindingType.Activating, event -> {
             openFirstInteractionConfigGUI(playerRef, store, citizen);
+        });
+
+        page.addEventListener("scripts-config-btn", CustomUIEventBindingType.Activating, event -> {
+            openScriptsGUI(playerRef, store, citizen);
         });
 
         page.addEventListener("save-btn", CustomUIEventBindingType.Activating, (event, ctx) -> {
@@ -10930,5 +10935,9 @@ public class CitizensUI {
         page.addEventListener("back-btn", CustomUIEventBindingType.Activating, event -> {
             openPatrolPathsGUI(playerRef, store, citizen);
         });
+    }
+
+    public void openScriptsGUI(@Nonnull PlayerRef playerRef, @Nonnull Store<EntityStore> store, @Nonnull CitizenData citizen) {
+        plugin.getScriptingUI().openScriptsGUI(playerRef, store, citizen);
     }
 }

@@ -113,6 +113,16 @@ public class EntityDeathListener extends DeathSystems.OnDeathSystem {
             handleDeathDrops(foundCitizen, dc, npcTransformComponent.getPosition());
         }
 
+        // Fire ON_DEATH scripting trigger
+        Map<String, Object> triggerArgs = new java.util.HashMap<>();
+        if (deathInfo != null) {
+            triggerArgs.put("damage_cause", deathInfo.getCause() != null ? deathInfo.getCause().getId() : "UNKNOWN");
+        }
+        if (attackerPlayerRef != null) {
+            triggerArgs.put("attacker_name", attackerPlayerRef.getUsername());
+        }
+        com.electro.hycitizens.api.scripting.ScriptManager.get().fireTrigger(foundCitizen, "ON_DEATH", triggerArgs, attackerPlayerRef, store);
+
         foundCitizen.setLastDeathTime(now);
 
         if (plugin.getCitizensManager().getPatrolManager() != null) {

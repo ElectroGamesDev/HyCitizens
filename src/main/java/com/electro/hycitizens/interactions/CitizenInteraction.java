@@ -260,9 +260,31 @@ public class CitizenInteraction {
             return true;
         }
 
-        return citizen.isFirstInteractionEnabled()
+        if (citizen.isFirstInteractionEnabled()
                 && (hasMatchingCommand(citizen.getFirstInteractionCommandActions(), interactionSource)
-                || hasMatchingMessage(citizen.getFirstInteractionMessagesConfig(), interactionSource));
+                || hasMatchingMessage(citizen.getFirstInteractionMessagesConfig(), interactionSource))) {
+            return true;
+        }
+
+        if (citizen.getScripts() != null) {
+            for (com.electro.hycitizens.api.scripting.ScriptBlock script : citizen.getScripts()) {
+                if (script.isEnabled() && (script.matchesTrigger("ON_INTERACT") || script.matchesTrigger("ON_FIRST_INTERACT"))) {
+                    Map<String, Object> params = script.getTriggerParameters();
+                    if (params != null && params.containsKey("source")) {
+                        Object src = params.get("source");
+                        if (src != null) {
+                            String srcStr = src.toString();
+                            if (!srcStr.isEmpty() && !srcStr.equalsIgnoreCase(interactionSource) && !srcStr.equalsIgnoreCase("BOTH")) {
+                                continue;
+                            }
+                        }
+                    }
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 
     static public void handleInteraction(@Nonnull CitizenData citizen, @Nonnull PlayerRef playerRef, @Nonnull String interactionSource) {
@@ -307,6 +329,7 @@ public class CitizenInteraction {
         // Trigger ON_INTERACT animations
         HyCitizensPlugin.get().getCitizensManager().triggerAnimations(citizen, "ON_INTERACT");
         UUID playerUUID = playerRef.getUuid();
+        boolean isFirst = citizen.isFirstInteractionEnabled() && !citizen.getPlayersWhoCompletedFirstInteraction().contains(playerUUID);
         boolean runNormalBehavior = true;
 
         if (citizen.isFirstInteractionEnabled()) {
@@ -351,6 +374,14 @@ public class CitizenInteraction {
                     citizen.getSequentialCommandIndex()
             );
         }
+
+        // Fire scripting triggers
+        Map<String, Object> triggerArgs = new java.util.HashMap<>();
+        triggerArgs.put("interaction_source", interactionSource);
+        if (isFirst) {
+            com.electro.hycitizens.api.scripting.ScriptManager.get().fireTrigger(citizen, "ON_FIRST_INTERACT", triggerArgs, playerRef, playerRef.getReference().getStore());
+        }
+        com.electro.hycitizens.api.scripting.ScriptManager.get().fireTrigger(citizen, "ON_INTERACT", triggerArgs, playerRef, playerRef.getReference().getStore());
     }
 
     private static boolean hasMatchingCommand(@Nonnull List<CommandAction> commands, @Nonnull String interactionSource) {

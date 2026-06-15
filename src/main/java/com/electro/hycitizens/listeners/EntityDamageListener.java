@@ -1,6 +1,7 @@
 package com.electro.hycitizens.listeners;
 
 import com.electro.hycitizens.HyCitizensPlugin;
+import com.electro.hycitizens.api.scripting.ScriptManager;
 import com.electro.hycitizens.events.CitizenDeathEvent;
 import com.electro.hycitizens.interactions.CitizenInteraction;
 import com.electro.hycitizens.models.*;
@@ -111,6 +112,18 @@ public class EntityDamageListener extends DamageEventSystem {
             }
 
             targetCitizen.setLastDamageTakenAt(System.currentTimeMillis());
+
+            // Fire ON_DAMAGE trigger
+            Map<String, Object> triggerArgs = new java.util.HashMap<>();
+            triggerArgs.put("damage_amount", event.getAmount());
+            triggerArgs.put("damage_cause", event.getCause() != null ? event.getCause().getId() : "UNKNOWN");
+            if (attackerPlayerRef != null) {
+                triggerArgs.put("attacker_name", attackerPlayerRef.getUsername());
+            }
+            ScriptManager.get().fireTrigger(targetCitizen, "ON_DAMAGE", triggerArgs, attackerPlayerRef, store);
+
+            // Fire ON_HEALTH_THRESHOLD trigger
+            ScriptManager.get().fireTrigger(targetCitizen, "ON_HEALTH_THRESHOLD", null, null, store);
 
             if (!targetCitizen.isAwaitingRespawn() && isLethalDamage(store, targetRef, event)) {
                 CitizenDeathEvent deathEvent = new CitizenDeathEvent(targetCitizen, attackerPlayerRef);

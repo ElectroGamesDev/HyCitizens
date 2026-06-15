@@ -1,10 +1,12 @@
 package com.electro.hycitizens.managers;
 
+import com.electro.hycitizens.api.scripting.ScriptManager;
 import com.electro.hycitizens.models.*;
 import com.electro.hycitizens.roles.RoleGenerator;
 import com.electro.hycitizens.util.RotationUtil;
 import com.electro.hycitizens.util.ThreadedScheduler;
 import com.hypixel.hytale.component.Ref;
+import com.hypixel.hytale.component.Store;
 import org.joml.Vector3d;
 import org.joml.Vector3f;
 import com.hypixel.hytale.server.core.HytaleServer;
@@ -183,6 +185,11 @@ public class ScheduleManager {
         boolean arrived = isCitizenWithinRadius(citizen, targetLocation.getPosition(), activeEntry.getArrivalRadius());
 
         if (!activeEntry.getId().equals(session.activeEntryId) || !targetLocation.getId().equals(session.currentLocationId)) {
+            // Fire ON_SCHEDULE_CHANGE trigger
+            Store<EntityStore> store = world.getEntityStore().getStore();
+            if (store != null)
+                ScriptManager.get().fireTrigger(citizen, "ON_SCHEDULE_CHANGE", Map.of("entry_id", activeEntry.getId()), null, store);
+
             session.arrivalAnimationPlayed = false;
             if (!arrived) {
                 startTravel(citizen, activeEntry, targetLocation, session);
