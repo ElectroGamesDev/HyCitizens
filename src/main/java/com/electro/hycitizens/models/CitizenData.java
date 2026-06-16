@@ -1,5 +1,6 @@
 package com.electro.hycitizens.models;
 
+import com.electro.hycitizens.api.scripting.ScriptBlock;
 import com.electro.hycitizens.roles.RoleGenerator;
 import com.hypixel.hytale.component.Ref;
 import org.joml.Vector3d;
@@ -118,7 +119,7 @@ public class CitizenData {
     private boolean runNormalOnFirstInteraction = false;
 
     // Scripting-related fields
-    private List<com.electro.hycitizens.api.scripting.ScriptBlock> scripts = new ArrayList<>();
+    private List<ScriptBlock> scripts = new ArrayList<>();
     private Map<String, Object> scriptVariables = new ConcurrentHashMap<>();
     private Set<UUID> playersWhoCompletedFirstInteraction = ConcurrentHashMap.newKeySet();
     private transient Map<UUID, Integer> sequentialFirstInteractionMessageIndex = new ConcurrentHashMap<>();
