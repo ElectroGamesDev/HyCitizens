@@ -9,6 +9,7 @@ import java.awt.font.TextAttribute;
 import java.awt.font.TextLayout;
 import java.awt.geom.Rectangle2D;
 import java.awt.image.BufferedImage;
+import java.awt.LinearGradientPaint;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -139,8 +140,23 @@ public class NametagTextureGenerator {
                     if (color == null) {
                         color = Color.WHITE;
                     }
-                    g.setColor(color);
+
+                    if (segment.isGradient() && segmentWidth > 0) {
+                        Color endColor = segment.getGradientEndColor();
+                        LinearGradientPaint gradientPaint = new LinearGradientPaint(
+                                (float) x, 0f, (float) (x + segmentWidth), 0f,
+                                new float[]{0f, 1f},
+                                new Color[]{color, endColor}
+                        );
+                        g.setPaint(gradientPaint);
+                    } else {
+                        g.setColor(color);
+                    }
+
                     g.drawString(segmentText, x, currentY);
+
+                    // Decorations use solid start color
+                    g.setColor(color);
 
                     if (segment.isUnderline()) {
                         int underlineY = currentY + 2;

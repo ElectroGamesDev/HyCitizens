@@ -1968,7 +1968,7 @@ public class CitizensUI {
                                              <input type="text" id="citizen-name" class="form-input" value="{{$name}}"\s
                                                     placeholder="Enter a display name" />
                                              <div class="spacer-xs"></div>
-                                             <p class="form-hint" style="text-align: center;">Supports {bold}, {italic}, {underline}, {strikethrough}, {red}, {blue}, {#FFFFFF}, etc.</p>
+                                             <p class="form-hint" style="text-align: center;">Supports {bold}, {italic}, {underline}, {strikethrough}, {red}, {#FFFFF}, {red-}gradient{-blue}</p>
                                              <div class="spacer-xs"></div>
                                              <button id="nametag-settings-btn" class="secondary-button small-secondary-button" style="anchor-width: 210;">Nametag Settings</button>
                                              <div class="spacer-xs"></div>
@@ -2297,7 +2297,7 @@ public class CitizensUI {
                                             <input type="text" id="citizen-name" class="form-input" value="{{$citizen.name}}"\s
                                                    placeholder="Enter a display name" maxlength="32" />
                                             <div class="spacer-xs"></div>
-                                            <p class="form-hint" style="text-align: center;">Supports {bold}, {italic}, {underline}, {strikethrough}, {red}, {blue}, {#FFFFFF}, etc.</p>
+                                            <p class="form-hint" style="text-align: center;">Supports {bold}, {italic}, {underline}, {strikethrough}, {red}, {#FFFFF}, {red-}gradient{-blue}</p>
                                             <div class="spacer-xs"></div>
                                             <button id="nametag-settings-btn" class="secondary-button small-secondary-button" style="anchor-width: 210;">Nametag Settings</button>
                                             <div class="spacer-xs"></div>
@@ -3515,7 +3515,7 @@ public class CitizensUI {
                         <div class="body" data-hyui-scrollbar-style='"Common.ui" "DefaultScrollbarStyle"' style="layout-mode: TopScrolling;">
                             <p class="page-description">Build multi-line nametags with dedicated line entries ({{$lineCount}} lines)</p>
                             <div class="spacer-xs"></div>
-                            <p class="form-hint" style="text-align: center;">Supports {bold}, {italic}, {underline}, {strikethrough}, {red}, {blue}, {#FFFFFF}, etc.</p>
+                            <p class="form-hint" style="text-align: center;">Supports {bold}, {italic}, {underline}, {strikethrough}, {red}, {#FFF}, {red-blue} gradient, {red-}text{-blue}</p>
                             <div class="spacer-sm"></div>
                             <div class="section">
                                 {{@sectionHeader:title=Lines,description=Each non-empty line will be shown above the citizen}}
