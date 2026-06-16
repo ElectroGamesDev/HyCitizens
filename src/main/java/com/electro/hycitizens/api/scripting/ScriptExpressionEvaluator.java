@@ -54,13 +54,13 @@ public class ScriptExpressionEvaluator {
             return text;
         }
 
-        // 1. Replace Scope Variables & Built-in Placeholders
+        // Replace Scope Variables & Built-in Placeholders
         String result = replacePlaceholders(text, context);
 
-        // 2. Process Ternary IF blocks
+        // Process Ternary IF blocks
         result = processTernaries(result);
 
-        // 3. Process Arithmetic EVAL blocks
+        // Process Arithmetic EVAL blocks
         result = processEvals(result, context);
 
         return result;
@@ -73,7 +73,7 @@ public class ScriptExpressionEvaluator {
         while (matcher.find()) {
             String scope = matcher.group(1).toLowerCase();
             String varName = matcher.group(2);
-            String extraArg = matcher.group(3); // e.g. for signal:arg:<key>
+            String extraArg = matcher.group(3);
 
             String resolvedValue = "";
 
@@ -315,7 +315,7 @@ public class ScriptExpressionEvaluator {
         return sb.toString();
     }
 
-    private static double evaluateMathExpression(String expr) {
+    public static double evaluateMathExpression(String expr) {
         try {
             return new Object() {
                 int pos = -1, ch;

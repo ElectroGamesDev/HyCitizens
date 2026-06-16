@@ -145,6 +145,15 @@ public class CitizenData {
     private long respawnReadyAtMillis = 0L;
     private transient long lastDeathTime = 0;
 
+    // Advanced respawn fields
+    private boolean customRespawnSettingsEnabled = false;
+    private float customRespawnDelaySeconds = 300.0f;
+    private boolean requireNoPlayersInRadiusForRespawn = true;
+    private float respawnPlayerCheckRadius = 10.0f;
+
+    // Damage tracking for FOREACH_DAMAGE_DEALER
+    private transient Map<UUID, Double> recentDamageDealers = new ConcurrentHashMap<>();
+
     // Group field
     private String group = "";
     private transient ScheduleRuntimeState currentScheduleRuntimeState = ScheduleRuntimeState.INACTIVE;
@@ -1006,6 +1015,25 @@ public class CitizenData {
 
     public void setLastDeathTime(long lastDeathTime) {
         this.lastDeathTime = lastDeathTime;
+    }
+
+    // Advanced respawn fields
+    public boolean isCustomRespawnSettingsEnabled() { return customRespawnSettingsEnabled; }
+    public void setCustomRespawnSettingsEnabled(boolean customRespawnSettingsEnabled) { this.customRespawnSettingsEnabled = customRespawnSettingsEnabled; }
+    public float getCustomRespawnDelaySeconds() { return customRespawnDelaySeconds; }
+    public void setCustomRespawnDelaySeconds(float customRespawnDelaySeconds) { this.customRespawnDelaySeconds = customRespawnDelaySeconds; }
+    public boolean isRequireNoPlayersInRadiusForRespawn() { return requireNoPlayersInRadiusForRespawn; }
+    public void setRequireNoPlayersInRadiusForRespawn(boolean requireNoPlayersInRadiusForRespawn) { this.requireNoPlayersInRadiusForRespawn = requireNoPlayersInRadiusForRespawn; }
+    public float getRespawnPlayerCheckRadius() { return respawnPlayerCheckRadius; }
+    public void setRespawnPlayerCheckRadius(float respawnPlayerCheckRadius) { this.respawnPlayerCheckRadius = respawnPlayerCheckRadius; }
+
+    // Damage tracking
+    public Map<UUID, Double> getRecentDamageDealers() { return recentDamageDealers; }
+    public void addDamageDealer(UUID playerUuid, double amount) {
+        recentDamageDealers.merge(playerUuid, amount, Double::sum);
+    }
+    public void clearRecentDamageDealers() {
+        recentDamageDealers.clear();
     }
 
     @Nonnull

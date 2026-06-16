@@ -122,6 +122,7 @@ public class EntityDeathListener extends DeathSystems.OnDeathSystem {
             triggerArgs.put("attacker_name", attackerPlayerRef.getUsername());
         }
         com.electro.hycitizens.api.scripting.ScriptManager.get().fireTrigger(foundCitizen, "ON_DEATH", triggerArgs, attackerPlayerRef, store);
+        foundCitizen.clearRecentDamageDealers();
 
         foundCitizen.setLastDeathTime(now);
 

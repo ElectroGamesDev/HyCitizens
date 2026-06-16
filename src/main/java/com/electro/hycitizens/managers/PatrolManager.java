@@ -428,6 +428,9 @@ public class PatrolManager {
         if ("PATROL".equals(citizen.getMovementBehavior().getType())) {
             return true;
         }
+        if ("FOLLOW_PLAYER".equals(citizen.getMovementBehavior().getType())) {
+            return true;
+        }
         if ("FOLLOW_CITIZEN".equals(citizen.getMovementBehavior().getType())
                 && !citizen.getFollowCitizenId().trim().isEmpty()) {
             return true;

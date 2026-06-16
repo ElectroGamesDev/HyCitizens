@@ -1,17 +1,18 @@
 package com.electro.hycitizens.api.scripting;
 
 import com.electro.hycitizens.HyCitizensPlugin;
+import com.hypixel.hytale.server.core.universe.world.SetBlockSettings;
+import com.hypixel.hytale.server.npc.NPCPlugin;
+import it.unimi.dsi.fastutil.Pair;
+import com.hypixel.hytale.server.core.universe.world.npc.INonPlayerCharacter;
 import com.electro.hycitizens.models.CitizenData;
 import com.electro.hycitizens.models.FactionConfig;
 import com.electro.hycitizens.models.MovementBehavior;
 import com.electro.hycitizens.api.scripting.ScriptAction.Branch;
-import com.electro.hycitizens.managers.CitizensManager;
 import com.electro.hycitizens.interactions.CitizenInteraction;
 import com.electro.hycitizens.util.CommandExecutionUtil;
 
 import com.google.gson.Gson;
-import com.google.gson.reflect.TypeToken;
-import com.hypixel.hytale.builtin.weather.commands.WeatherSetCommand;
 import com.hypixel.hytale.builtin.weather.resources.WeatherResource;
 import com.hypixel.hytale.component.Archetype;
 import com.hypixel.hytale.component.Component;
@@ -42,11 +43,9 @@ import com.hypixel.hytale.server.core.universe.world.SoundUtil;
 import com.hypixel.hytale.server.core.universe.world.WorldConfig;
 import com.hypixel.hytale.server.core.universe.world.storage.EntityStore;
 import com.hypixel.hytale.server.core.util.EventTitleUtil;
-import com.hypixel.hytale.server.npc.entities.NPCEntity;
 import com.hypixel.hytale.server.npc.util.InventoryHelper;
 import com.hypixel.hytale.server.core.inventory.ItemStack;
 import com.hypixel.hytale.server.core.modules.entity.component.TransformComponent;
-import com.hypixel.hytale.server.core.modules.entity.component.Interactable;
 import com.hypixel.hytale.server.core.modules.entity.damage.Damage;
 import com.hypixel.hytale.server.core.modules.entity.damage.DamageSystems;
 import com.hypixel.hytale.server.core.modules.entity.damage.DamageCause;
@@ -64,6 +63,8 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.net.URI;
+import java.util.regex.Pattern;
+import java.util.regex.Matcher;
 
 import org.joml.Vector3d;
 import org.joml.Vector3f;
@@ -96,15 +97,34 @@ public class ScriptManager {
         final double speed;
         final double minDistance;
         final double maxDistance;
+        final boolean hardStopOnMaxDistance;
 
-        FollowPlayerState(UUID playerUuid, double speed, double minDistance, double maxDistance) {
+        FollowPlayerState(UUID playerUuid, double speed, double minDistance, double maxDistance, boolean hardStopOnMaxDistance) {
             this.playerUuid = playerUuid;
             this.speed = speed;
             this.minDistance = minDistance;
             this.maxDistance = maxDistance;
+            this.hardStopOnMaxDistance = hardStopOnMaxDistance;
         }
     }
     private final Map<String, FollowPlayerState> followingPlayers = new ConcurrentHashMap<>();
+
+    private void stopFollowingPlayer(CitizenData citizen, String reason, PlayerRef player, Store<EntityStore> store) {
+        if (followingPlayers.remove(citizen.getId()) != null) {
+            Map<String, Object> args = new HashMap<>();
+            args.put("reason", reason);
+            
+            Store<EntityStore> entityStore = store;
+            if (entityStore == null) {
+                World world = Universe.get().getWorld(citizen.getWorldUUID());
+                if (world != null) {
+                    entityStore = world.getEntityStore().getStore();
+                }
+            }
+            
+            fireTrigger(citizen, "ON_STOP_FOLLOWING", args, player, entityStore);
+        }
+    }
 
     private ScheduledExecutorService proximityScheduler;
     private ScheduledExecutorService tickScheduler;
@@ -124,7 +144,7 @@ public class ScriptManager {
     }
 
     public void init() {
-        // Start proximity throttling scheduler (runs every 500ms)
+        // Start proximity throttling scheduler
         proximityScheduler = new ScheduledThreadPoolExecutor(1, r -> {
             Thread thread = new Thread(r, "hycitizens-proximity-tracker");
             thread.setDaemon(true);
@@ -132,13 +152,13 @@ public class ScriptManager {
         });
         proximityScheduler.scheduleAtFixedRate(this::checkProximities, 500, 500, TimeUnit.MILLISECONDS);
 
-        // Start tick scheduler (runs every 1 second)
+        // Start tick scheduler
         tickScheduler = new ScheduledThreadPoolExecutor(1, r -> {
             Thread thread = new Thread(r, "hycitizens-tick-tracker");
             thread.setDaemon(true);
             return thread;
         });
-        tickScheduler.scheduleAtFixedRate(this::checkTicks, 1, 1, TimeUnit.SECONDS);
+        tickScheduler.scheduleAtFixedRate(this::checkTicks, 500, 500, TimeUnit.MILLISECONDS);
     }
 
     public void shutdown() {
@@ -157,6 +177,11 @@ public class ScriptManager {
         activeTimers.clear();
     }
 
+    public float getFollowPlayerMinDistance(String citizenId) {
+        FollowPlayerState state = followingPlayers.get(citizenId);
+        return state != null ? (float) state.minDistance : 2.0f;
+    }
+
     public void registerCondition(ScriptConditionHandler handler) {
         conditions.put(handler.getType().toUpperCase(), handler);
     }
@@ -165,7 +190,7 @@ public class ScriptManager {
         actions.put(handler.getType().toUpperCase(), handler);
     }
 
-    // --- Template Compilation ---
+    // Template Compilation
     public ScriptBlock compileScript(ScriptBlock rawBlock) {
         if (rawBlock.getTemplateId() == null || rawBlock.getTemplateId().isEmpty()) {
             return rawBlock;
@@ -229,7 +254,7 @@ public class ScriptManager {
         return null;
     }
 
-    // --- Core Execution ---
+    // Core Execution
     public void fireTrigger(CitizenData citizen, String triggerType, Map<String, Object> triggerArgs, PlayerRef player, Store<EntityStore> store) {
         if (citizen == null) return;
 
@@ -304,6 +329,9 @@ public class ScriptManager {
                 return getAsDouble(amount, 0.0) >= getAsDouble(minAmount, 0.0);
             }
         }
+        if ("ON_COMMAND".equalsIgnoreCase(triggerType)) {
+            return matchesOptionalString(params.get("command"), triggerArgs != null ? triggerArgs.get("command") : null);
+        }
         if ("ON_DEATH".equalsIgnoreCase(triggerType)) {
             return true;
         }
@@ -350,7 +378,40 @@ public class ScriptManager {
             return true;
         }
 
+        if ("ON_STOP_FOLLOWING".equalsIgnoreCase(triggerType)) {
+            Object reasonObj = triggerArgs != null ? triggerArgs.get("reason") : null;
+            if (reasonObj == null) {
+                return false;
+            }
+            String reason = reasonObj.toString();
+            
+            if ("COMMAND".equals(reason)) {
+                return getBooleanParam(params.get("trigger_on_command"), true);
+            }
+            if ("PLAYER_DISCONNECT".equals(reason)) {
+                return getBooleanParam(params.get("trigger_on_disconnect"), true);
+            }
+            if ("MAX_DISTANCE".equals(reason)) {
+                return getBooleanParam(params.get("trigger_on_max_distance"), true);
+            }
+            if ("WANDER".equals(reason)) {
+                return getBooleanParam(params.get("trigger_on_wander"), true);
+            }
+            if ("PATROL".equals(reason)) {
+                return getBooleanParam(params.get("trigger_on_patrol"), true);
+            }
+            return true;
+        }
+
         return true;
+    }
+
+    private static boolean getBooleanParam(Object val, boolean defaultValue) {
+        if (val == null) return defaultValue;
+        if (val instanceof Boolean) return (Boolean) val;
+        if (val instanceof String) return "true".equalsIgnoreCase((String) val);
+        if (val instanceof Number) return ((Number) val).intValue() != 0;
+        return defaultValue;
     }
 
     private boolean matchesInteractionSource(Object expectedSource, Object actualSource) {
@@ -423,7 +484,8 @@ public class ScriptManager {
         // Resolve parameters
         Map<String, Object> resolvedParams = new LinkedHashMap<>();
         for (Map.Entry<String, Object> entry : cond.getParameters().entrySet()) {
-            resolvedParams.put(entry.getKey(), ScriptExpressionEvaluator.evaluateParameter(entry.getValue(), context));
+            Object resolvedVal = ScriptExpressionEvaluator.evaluateParameter(entry.getValue(), context);
+            resolvedParams.put(entry.getKey(), coerceNumericParam(entry.getKey(), resolvedVal));
         }
 
         return handler.evaluate(context, resolvedParams);
@@ -444,7 +506,8 @@ public class ScriptManager {
         // Resolve parameters
         Map<String, Object> resolvedParams = new LinkedHashMap<>();
         for (Map.Entry<String, Object> entry : action.getParameters().entrySet()) {
-            resolvedParams.put(entry.getKey(), ScriptExpressionEvaluator.evaluateParameter(entry.getValue(), context));
+            Object resolvedVal = ScriptExpressionEvaluator.evaluateParameter(entry.getValue(), context);
+            resolvedParams.put(entry.getKey(), coerceNumericParam(entry.getKey(), resolvedVal));
         }
 
         // Support loop control actions directly in engine
@@ -465,8 +528,6 @@ public class ScriptManager {
             targetContext = createTargetedContext(context, resolvedTarget, resolvedRadius);
         }
 
-        // Handle control flow actions that have lists of actions inside their parameters schema
-        // Let's pass the raw sub-actions along with parameters
         if (action.getActions() != null && !action.getActions().isEmpty()) {
             resolvedParams.put("_sub_actions", action.getActions());
         }
@@ -526,7 +587,7 @@ public class ScriptManager {
         return nearest;
     }
 
-    // --- Proximity & Ticks Throttled Processing ---
+    //  Proximity and Ticks Throttled Processing
     private void checkProximities() {
         // Update following players pathfinding targets
         for (Map.Entry<String, FollowPlayerState> entry : followingPlayers.entrySet()) {
@@ -545,9 +606,16 @@ public class ScriptManager {
             if (world == null) continue;
 
             world.execute(() -> {
+                if (HyCitizensPlugin.get().getCitizensManager().isCitizenInAiBusyState(citizen)) {
+                    return;
+                }
                 PlayerRef player = Universe.get().getPlayer(followState.playerUuid);
                 if (player == null || !player.isValid() || player.getWorldUuid() == null || !player.getWorldUuid().equals(citizen.getWorldUUID())) {
-                    followingPlayers.remove(citizenId);
+                    stopFollowingPlayer(citizen, "PLAYER_DISCONNECT", null, world.getEntityStore().getStore());
+                    MovementBehavior mb = new MovementBehavior("IDLE", 2.0f, 0.0f, 0.0f, 0.0f);
+                    citizen.setMovementBehavior(mb);
+                    HyCitizensPlugin.get().getCitizensManager().stopCitizenMovement(citizenId);
+                    HyCitizensPlugin.get().getCitizensManager().updateCitizenRoleImmediately(citizen);
                     return;
                 }
                 Vector3d pPos = player.getTransform().getPosition();
@@ -555,16 +623,20 @@ public class ScriptManager {
                 double dist = cPos.distance(pPos);
 
                 if (dist > followState.maxDistance) {
-                    // Too far, stop following
-                    followingPlayers.remove(citizenId);
-                    MovementBehavior mb = new MovementBehavior("IDLE", 2.0f, 0.0f, 0.0f, 0.0f);
-                    citizen.setMovementBehavior(mb);
-                    HyCitizensPlugin.get().getCitizensManager().stopCitizenMovement(citizenId);
+                    if (followState.hardStopOnMaxDistance) {
+                        stopFollowingPlayer(citizen, "MAX_DISTANCE", player, world.getEntityStore().getStore());
+                        MovementBehavior mb = new MovementBehavior("IDLE", 2.0f, 0.0f, 0.0f, 0.0f);
+                        citizen.setMovementBehavior(mb);
+                        HyCitizensPlugin.get().getCitizensManager().stopCitizenMovement(citizenId);
+                        HyCitizensPlugin.get().getCitizensManager().updateCitizenRoleImmediately(citizen);
+                    } else {
+                        HyCitizensPlugin.get().getCitizensManager().stopCitizenMovement(citizenId);
+                    }
                 } else if (dist > followState.minDistance) {
                     // Update movement target
                     HyCitizensPlugin.get().getCitizensManager().updateCitizenMoveTarget(citizenId, pPos);
                 } else {
-                    // Within min distance, stop moving (reach destination)
+                    // Destination reached
                     HyCitizensPlugin.get().getCitizensManager().stopCitizenMovement(citizenId);
                 }
             });
@@ -635,6 +707,7 @@ public class ScriptManager {
     }
 
     private void checkTicks() {
+        // Todo: Optimize this better
         for (CitizenData citizen : HyCitizensPlugin.get().getCitizensManager().getAllCitizens()) {
             List<ScriptBlock> rawScripts = getCitizenScripts(citizen);
             if (rawScripts == null || rawScripts.isEmpty()) continue;
@@ -647,7 +720,7 @@ public class ScriptManager {
                 for (ScriptBlock script : rawScripts) {
                     if (script.isEnabled() && script.matchesTrigger("ON_TICK")) {
                         double seconds = getAsDouble(script.getTriggerParameters().getOrDefault("interval_seconds", 1.0), 1.0);
-                        if (seconds < 0.5) seconds = 0.5; // clamped
+                        if (seconds < 0.5) seconds = 0.5;
 
                         long lastTick = contextLastRunTime(script.getId());
                         if (System.currentTimeMillis() - lastTick >= (seconds * 1000)) {
@@ -664,7 +737,7 @@ public class ScriptManager {
     private long contextLastRunTime(String scriptId) { return lastRunTimes.getOrDefault(scriptId, 0L); }
     private void setContextLastRunTime(String scriptId, long time) { lastRunTimes.put(scriptId, time); }
 
-    // --- Timers API ---
+    // Timers API
     public void registerTimer(CitizenData citizen, String name, double intervalSeconds) {
         Map<String, ScheduledFuture<?>> timers = activeTimers.computeIfAbsent(citizen.getId(), k -> new ConcurrentHashMap<>());
         ScheduledFuture<?> old = timers.remove(name);
@@ -739,16 +812,13 @@ public class ScriptManager {
             }
         }
     }
-
-    // --- Direct Reflection Access to scripts list ---
     private List<ScriptBlock> getCitizenScripts(CitizenData citizen) {
         List<ScriptBlock> scripts = citizen.getScripts();
         return scripts != null ? scripts : Collections.emptyList();
     }
 
-    // --- Built-in Action & Condition Registry ---
     private void registerBuiltins() {
-        // --- Register Conditions ---
+        // Register Conditions
         registerCondition(new ScriptConditionHandler() {
             @Override public String getType() { return "COMPARE_VARIABLE"; }
             @Override public boolean evaluate(ScriptContext context, Map<String, Object> params) {
@@ -809,7 +879,7 @@ public class ScriptManager {
                 double duration = durationNum != null ? durationNum.doubleValue() : 0.0;
 
                 String cdKey = "cooldown_" + name;
-                Object cdEnd = context.getSessionVar(cdKey); // transient check first
+                Object cdEnd = context.getSessionVar(cdKey);
                 if (cdEnd instanceof Long && System.currentTimeMillis() < (Long) cdEnd) {
                     return false;
                 }
@@ -1051,23 +1121,7 @@ public class ScriptManager {
             }
         });
 
-        registerCondition(new ScriptConditionHandler() {
-            @Override public String getType() { return "IS_WEATHER"; }
-            @Override public boolean evaluate(ScriptContext context, Map<String, Object> params) {
-                String expected = (String) params.get("weather");
-                if (expected == null) return false;
-                try {
-                    Class<?> weatherClass = Class.forName("com.hypixel.hytale.server.core.modules.weather.WorldWeatherResource");
-                    com.hypixel.hytale.component.ResourceType<EntityStore, ?> resourceType = (com.hypixel.hytale.component.ResourceType<EntityStore, ?>) weatherClass.getMethod("getResourceType").invoke(null);
-                    Object weatherResource = context.getStore().getResource(resourceType);
-                    if (weatherResource != null) {
-                        String currentWeather = weatherResource.getClass().getMethod("getWeatherType").invoke(weatherResource).toString();
-                        return currentWeather.equalsIgnoreCase(expected);
-                    }
-                } catch (Exception ignored) {}
-                return false;
-            }
-        });
+
 
         registerCondition(new ScriptConditionHandler() {
             @Override public String getType() { return "DISTANCE_TO_LOCATION"; }
@@ -1124,18 +1178,15 @@ public class ScriptManager {
                     }
                 }
                 if (targetPos == null) return false;
-                
-                try {
-                    return (boolean) context.getWorld().getClass().getMethod("hasLineOfSight", Vector3d.class, Vector3d.class).invoke(context.getWorld(), start, targetPos);
-                } catch (Exception e) {
-                    return start.distance(targetPos) < 20.0;
-                }
+
+                return true; // Todo: Add this
             }
         });
 
         registerCondition(new ScriptConditionHandler() {
             @Override public String getType() { return "RAYCAST_HIT"; }
             @Override public boolean evaluate(ScriptContext context, Map<String, Object> params) {
+                // Todo: Add this
                 return true;
             }
         });
@@ -1222,7 +1273,7 @@ public class ScriptManager {
             }
         });
 
-        // --- Register Actions ---
+        // Register Actions
         registerAction(new ScriptActionHandler() {
             @Override public String getType() { return "WAIT"; }
             @Override public CompletableFuture<Void> execute(ScriptContext context, Map<String, Object> params) {
@@ -1376,10 +1427,138 @@ public class ScriptManager {
             @Override public CompletableFuture<Void> execute(ScriptContext context, Map<String, Object> params) {
                 if (context.getPlayer() == null) return CompletableFuture.completedFuture(null);
                 String rawCmd = (String) params.get("command");
-                Boolean runAsServer = (Boolean) params.getOrDefault("run_as_server", true);
+                boolean runAsServer = getBooleanParam(params.get("run_as_server"), true);
 
                 String command = ScriptExpressionEvaluator.resolve(rawCmd, context);
                 CommandExecutionUtil.execute(context.getPlayer(), command, runAsServer);
+                return CompletableFuture.completedFuture(null);
+            }
+        });
+
+        registerAction(new ScriptActionHandler() {
+            @Override public String getType() { return "RUN_COMMAND_AND_CAPTURE"; }
+            @Override public CompletableFuture<Void> execute(ScriptContext context, Map<String, Object> params) {
+                String rawCmd = (String) params.get("command");
+                String captureVar = (String) params.get("capture_variable");
+                String captureScope = (String) params.getOrDefault("capture_scope", "SESSION");
+                String regexPattern = (String) params.get("regex_pattern");
+
+                if (captureVar == null || regexPattern == null || rawCmd == null) {
+                    return CompletableFuture.completedFuture(null);
+                }
+
+                String command = ScriptExpressionEvaluator.resolve(rawCmd, context);
+                
+                // Execute as console and capture the output asynchronously
+                return CommandExecutionUtil.executeWithCapture(command).thenAccept(output -> {
+                    if (output != null && !output.isEmpty()) {
+                        try {
+                            Pattern pattern = Pattern.compile(regexPattern);
+                            Matcher matcher = pattern.matcher(output);
+                            if (matcher.find() && matcher.groupCount() >= 1) {
+                                String capturedValue = matcher.group(1);
+                                
+                                // Store in the specified variable scope
+                                if ("PLAYER".equalsIgnoreCase(captureScope) && context.getPlayer() != null) {
+                                    VariableManager.get().setPlayerVar(context.getPlayer().getUuid(), captureVar, capturedValue);
+                                } else if ("CITIZEN".equalsIgnoreCase(captureScope)) {
+                                    VariableManager.get().setCitizenVar(context.getCitizen(), captureVar, capturedValue);
+                                } else if ("GLOBAL".equalsIgnoreCase(captureScope)) {
+                                    VariableManager.get().setGlobalVar(captureVar, capturedValue);
+                                } else if ("SESSION".equalsIgnoreCase(captureScope)) {
+                                    context.setSessionVar(captureVar, capturedValue);
+                                }
+                            }
+                        } catch (Exception e) {
+                            getLogger().atWarning().log("[HyCitizens] Regex capture failed: " + e.getMessage());
+                        }
+                    }
+                });
+            }
+        });
+
+        registerAction(new ScriptActionHandler() {
+            @Override public String getType() { return "FOREACH_DAMAGE_DEALER"; }
+            @Override public CompletableFuture<Void> execute(ScriptContext context, Map<String, Object> params) {
+                if (context.isDryRun()) return CompletableFuture.completedFuture(null);
+                
+                CitizenData citizen = context.getCitizen();
+                if (citizen == null) return CompletableFuture.completedFuture(null);
+
+                Number maxDealersNum = (Number) params.get("max_dealers");
+                int maxDealers = maxDealersNum != null ? maxDealersNum.intValue() : 5;
+                
+                List<ScriptAction> subActions = (List<ScriptAction>) params.get("actions");
+                if (subActions == null || subActions.isEmpty()) return CompletableFuture.completedFuture(null);
+
+                Map<java.util.UUID, Double> dealers = citizen.getRecentDamageDealers();
+                if (dealers == null || dealers.isEmpty()) return CompletableFuture.completedFuture(null);
+
+                List<Map.Entry<java.util.UUID, Double>> sortedDealers = new ArrayList<>(dealers.entrySet());
+                sortedDealers.sort((a, b) -> Double.compare(b.getValue(), a.getValue()));
+
+                int count = 0;
+                for (Map.Entry<java.util.UUID, Double> entry : sortedDealers) {
+                    if (count >= maxDealers) break;
+                    
+                    java.util.UUID playerUuid = entry.getKey();
+                    double damageAmount = entry.getValue();
+                    
+                    // Set loop variables in session
+                    context.setSessionVar("loop:player_uuid", playerUuid.toString());
+                    context.setSessionVar("loop:damage_amount", damageAmount);
+
+                    // Try to get player name
+                    String playerName = "Unknown";
+                    if (context.getWorld() != null) {
+                        for (PlayerRef playerRef : context.getWorld().getPlayerRefs()) {
+                            if (playerRef.getUuid().equals(playerUuid)) {
+                                playerName = playerRef.getUsername();
+                                break;
+                            }
+                        }
+                    }
+                    context.setSessionVar("loop:player_name", playerName);
+
+                    // Execute sub-actions
+                    executeActions(subActions, context);
+                    count++;
+                }
+                
+                // Clean up loop variables
+                context.setSessionVar("loop:player_uuid", null);
+                context.setSessionVar("loop:player_name", null);
+                context.setSessionVar("loop:damage_amount", null);
+                
+                return CompletableFuture.completedFuture(null);
+            }
+        });
+
+        registerAction(new ScriptActionHandler() {
+            @Override public String getType() { return "SET_RESPAWN_SETTINGS"; }
+            @Override public CompletableFuture<Void> execute(ScriptContext context, Map<String, Object> params) {
+                if (context.isDryRun()) return CompletableFuture.completedFuture(null);
+                
+                CitizenData citizen = context.getCitizen();
+                if (citizen == null) return CompletableFuture.completedFuture(null);
+
+                citizen.setCustomRespawnSettingsEnabled(true);
+                
+                Number delayNum = (Number) params.get("delay_seconds");
+                if (delayNum != null) {
+                    citizen.setCustomRespawnDelaySeconds(delayNum.floatValue());
+                }
+                
+                Object requireNoPlayers = params.get("require_no_players_in_radius");
+                if (requireNoPlayers != null) {
+                    citizen.setRequireNoPlayersInRadiusForRespawn(Boolean.parseBoolean(requireNoPlayers.toString()));
+                }
+                
+                Number radiusNum = (Number) params.get("radius");
+                if (radiusNum != null) {
+                    citizen.setRespawnPlayerCheckRadius(radiusNum.floatValue());
+                }
+                
                 return CompletableFuture.completedFuture(null);
             }
         });
@@ -1484,7 +1663,7 @@ public class ScriptManager {
 
                 String scope = (String) params.getOrDefault("scope", "SESSION");
                 String name = (String) params.get("name");
-                Boolean integer = (Boolean) params.getOrDefault("integer", true);
+                boolean integer = getBooleanParam(params.get("integer"), true);
                 if (name == null || name.isEmpty()) return CompletableFuture.completedFuture(null);
 
                 double min = getAsDouble(params.get("min"), 1.0);
@@ -1549,7 +1728,7 @@ public class ScriptManager {
                 if (name == null || name.isBlank()) return CompletableFuture.completedFuture(null);
 
                 Object current = getScopedVariable(scope, name, context);
-                boolean next = !(current instanceof Boolean ? (Boolean) current : Boolean.parseBoolean(String.valueOf(current)));
+                boolean next = !getBooleanParam(current, false);
                 setScopedVariable(scope, name, next, context);
                 return CompletableFuture.completedFuture(null);
             }
@@ -1628,8 +1807,6 @@ public class ScriptManager {
 
                 if (url == null || url.isEmpty()) return CompletableFuture.completedFuture(null);
 
-                // Basic Webhook opt-in check (impl config check here)
-                // We'll run it asynchronously using java.net.http
                 String jsonPayload = gson.toJson(payload);
 
                 HttpRequest request = HttpRequest.newBuilder()
@@ -1685,7 +1862,7 @@ public class ScriptManager {
                         UUID currentWorldUuid = citizen.getWorldUUID();
                         UUID destWorldUuid = destWorld.getWorldConfig().getUuid();
                         if (!currentWorldUuid.equals(destWorldUuid)) {
-                            // Cross-world teleport: despawn, move config, spawn
+                            // Cross-world teleport
                             HyCitizensPlugin.get().getCitizensManager().despawnCitizen(citizen);
                             citizen.setWorldUUID(destWorldUuid);
                             citizen.setPosition(new Vector3d(x, y, z));
@@ -1712,6 +1889,10 @@ public class ScriptManager {
                 Number speedNum = (Number) params.get("speed");
                 Number minDistanceNum = (Number) params.get("min_distance");
                 Number maxDistanceNum = (Number) params.get("max_distance");
+                boolean hardStop = getBooleanParam(params.get("hard_stop_on_max_distance"), false);
+                if (params.get("hard_stop_on_max_distance") == null && params.get("cancel_on_max_distance") != null) {
+                    hardStop = getBooleanParam(params.get("cancel_on_max_distance"), false);
+                }
 
                 double speed = speedNum != null ? speedNum.doubleValue() : 1.2;
                 double minDistance = minDistanceNum != null ? minDistanceNum.doubleValue() : 2.0;
@@ -1722,7 +1903,8 @@ public class ScriptManager {
                 citizen.setMovementBehavior(mb);
 
                 HyCitizensPlugin.get().getCitizensManager().stopCitizenPatrol(citizen.getId());
-                followingPlayers.put(citizen.getId(), new FollowPlayerState(context.getPlayer().getUuid(), speed, minDistance, maxDistance));
+                followingPlayers.put(citizen.getId(), new FollowPlayerState(context.getPlayer().getUuid(), speed, minDistance, maxDistance, hardStop));
+                HyCitizensPlugin.get().getCitizensManager().updateCitizenRoleImmediately(citizen);
 
                 return CompletableFuture.completedFuture(null);
             }
@@ -1733,10 +1915,11 @@ public class ScriptManager {
             @Override public CompletableFuture<Void> execute(ScriptContext context, Map<String, Object> params) {
                 if (context.getCitizen() == null) return CompletableFuture.completedFuture(null);
                 CitizenData citizen = context.getCitizen();
-                followingPlayers.remove(citizen.getId());
+                stopFollowingPlayer(citizen, "COMMAND", context.getPlayer(), context.getStore());
                 MovementBehavior mb = new MovementBehavior("IDLE", 2.0f, 0f, 0f, 0f);
                 citizen.setMovementBehavior(mb);
                 HyCitizensPlugin.get().getCitizensManager().stopCitizenMovement(citizen.getId());
+                HyCitizensPlugin.get().getCitizensManager().updateCitizenRoleImmediately(citizen);
                 return CompletableFuture.completedFuture(null);
             }
         });
@@ -1751,11 +1934,12 @@ public class ScriptManager {
                 float speed = speedNum != null ? speedNum.floatValue() : 2.0f;
 
                 CitizenData citizen = context.getCitizen();
-                followingPlayers.remove(citizen.getId());
+                stopFollowingPlayer(citizen, "WANDER", context.getPlayer(), context.getStore());
                 HyCitizensPlugin.get().getCitizensManager().stopCitizenPatrol(citizen.getId());
 
                 MovementBehavior mb = new MovementBehavior("WANDER", speed, radius, radius, radius);
                 citizen.setMovementBehavior(mb);
+                HyCitizensPlugin.get().getCitizensManager().updateCitizenRoleImmediately(citizen);
                 return CompletableFuture.completedFuture(null);
             }
         });
@@ -1769,11 +1953,12 @@ public class ScriptManager {
                 float speed = speedNum != null ? speedNum.floatValue() : 2.0f;
 
                 CitizenData citizen = context.getCitizen();
-                followingPlayers.remove(citizen.getId());
+                stopFollowingPlayer(citizen, "PATROL", context.getPlayer(), context.getStore());
 
                 MovementBehavior mb = new MovementBehavior("PATROL", speed, 0f, 0f, 0f);
                 citizen.setMovementBehavior(mb);
                 HyCitizensPlugin.get().getCitizensManager().startCitizenPatrol(citizen.getId(), pathName);
+                HyCitizensPlugin.get().getCitizensManager().updateCitizenRoleImmediately(citizen);
                 return CompletableFuture.completedFuture(null);
             }
         });
@@ -1888,30 +2073,7 @@ public class ScriptManager {
             }
         });
 
-        registerAction(new ScriptActionHandler() {
-            @Override public String getType() { return "OPEN_MERCHANT_UI"; }
-            @SuppressWarnings("unchecked")
-            @Override public CompletableFuture<Void> execute(ScriptContext context, Map<String, Object> params) {
-                if (context.getPlayer() == null) return CompletableFuture.completedFuture(null);
-                String title = (String) params.get("title");
-                List<Map<String, Object>> trades = (List<Map<String, Object>>) params.get("trades");
 
-                if (trades == null) return CompletableFuture.completedFuture(null);
-
-                HyCitizensPlugin.get().getScriptingUI().openMerchantUI(context.getPlayer(), context.getStore(), title, trades);
-                return CompletableFuture.completedFuture(null);
-            }
-        });
-
-        registerAction(new ScriptActionHandler() {
-            @Override public String getType() { return "CLOSE_UI"; }
-            @Override public CompletableFuture<Void> execute(ScriptContext context, Map<String, Object> params) {
-                if (context.getPlayer() != null) {
-                    HyCitizensPlugin.get().getScriptingUI().closePlayerUI(context.getPlayer());
-                }
-                return CompletableFuture.completedFuture(null);
-            }
-        });
 
         registerAction(new ScriptActionHandler() {
             @Override public String getType() { return "SET_COOLDOWN"; }
@@ -2153,7 +2315,7 @@ public class ScriptManager {
 
                         CitizenData citizen = context.getCitizen();
                         if (destWorldUuid != null && !destWorldUuid.equals(citizen.getWorldUUID())) {
-                            // Cross-world teleport: despawn, move config, spawn
+                            // Cross-world teleport
                             HyCitizensPlugin.get().getCitizensManager().despawnCitizen(citizen);
                             citizen.setWorldUUID(destWorldUuid);
                             citizen.setPosition(new Vector3d(x, y, z));
@@ -2236,16 +2398,10 @@ public class ScriptManager {
                 Number yVal = (Number) params.get("y");
                 Number zVal = (Number) params.get("z");
                 if (xVal == null || yVal == null || zVal == null) return CompletableFuture.completedFuture(null);
-                
+
                 try {
-                    context.getWorld().getClass().getMethod("setBlock", int.class, int.class, int.class, String.class)
-                        .invoke(context.getWorld(), xVal.intValue(), yVal.intValue(), zVal.intValue(), "hytale:air");
-                } catch (Exception e) {
-                    try {
-                        context.getWorld().getClass().getMethod("setBlock", Vector3d.class, String.class)
-                            .invoke(context.getWorld(), new Vector3d(xVal.doubleValue(), yVal.doubleValue(), zVal.doubleValue()), "hytale:air");
-                    } catch (Exception ignored) {}
-                }
+                    context.getWorld().breakBlock(xVal.intValue(), yVal.intValue(), zVal.intValue(), SetBlockSettings.FORCE_CHANGED);
+                } catch (Exception _) {}
                 return CompletableFuture.completedFuture(null);
             }
         });
@@ -2260,14 +2416,8 @@ public class ScriptManager {
                 if (xVal == null || yVal == null || zVal == null || blockId == null) return CompletableFuture.completedFuture(null);
                 
                 try {
-                    context.getWorld().getClass().getMethod("setBlock", int.class, int.class, int.class, String.class)
-                        .invoke(context.getWorld(), xVal.intValue(), yVal.intValue(), zVal.intValue(), blockId);
-                } catch (Exception e) {
-                    try {
-                        context.getWorld().getClass().getMethod("setBlock", Vector3d.class, String.class)
-                            .invoke(context.getWorld(), new Vector3d(xVal.doubleValue(), yVal.doubleValue(), zVal.doubleValue()), blockId);
-                    } catch (Exception ignored) {}
-                }
+                    context.getWorld().setBlock(xVal.intValue(), yVal.intValue(), zVal.intValue(), blockId);
+                } catch (Exception _) {}
                 return CompletableFuture.completedFuture(null);
             }
         });
@@ -2306,49 +2456,7 @@ public class ScriptManager {
             }
         });
 
-        registerAction(new ScriptActionHandler() {
-            @Override public String getType() { return "SET_VELOCITY"; }
-            @Override public CompletableFuture<Void> execute(ScriptContext context, Map<String, Object> params) {
-                String targetType = (String) params.getOrDefault("target", "PLAYER");
-                double xVal = getAsDouble(params.getOrDefault("x", 0.0), 0.0);
-                double yVal = getAsDouble(params.getOrDefault("y", 0.0), 0.0);
-                double zVal = getAsDouble(params.getOrDefault("z", 0.0), 0.0);
-                
-                Ref<EntityStore> ref = "PLAYER".equalsIgnoreCase(targetType)
-                    ? (context.getPlayer() != null ? context.getPlayer().getReference() : null)
-                    : (context.getCitizen() != null ? context.getCitizen().getNpcRef() : null);
-                    
-                if (ref != null && ref.isValid()) {
-                    try {
-                        Class<?> compClass = Class.forName("com.hypixel.hytale.server.core.modules.entity.component.VelocityComponent");
-                        com.hypixel.hytale.component.ComponentType<EntityStore, ?> type = (com.hypixel.hytale.component.ComponentType<EntityStore, ?>) compClass.getMethod("getComponentType").invoke(null);
-                        Object velComp = ref.getStore().getComponent(ref, type);
-                        if (velComp == null) {
-                            velComp = compClass.getConstructor().newInstance();
-                        }
-                        velComp.getClass().getMethod("setVelocity", Vector3d.class).invoke(velComp, new Vector3d(xVal, yVal, zVal));
-                        putReflectiveComponent(ref.getStore(), ref, type, velComp);
-                    } catch (Exception ignored) {}
-                }
-                return CompletableFuture.completedFuture(null);
-            }
-        });
 
-        registerAction(new ScriptActionHandler() {
-            @Override public String getType() { return "GIVE_EXP"; }
-            @Override public CompletableFuture<Void> execute(ScriptContext context, Map<String, Object> params) {
-                getLogger().atWarning().log("GIVE_EXP is not supported by the current Hytale server API and was skipped.");
-                return CompletableFuture.completedFuture(null);
-            }
-        });
-
-        registerAction(new ScriptActionHandler() {
-            @Override public String getType() { return "TAKE_EXP"; }
-            @Override public CompletableFuture<Void> execute(ScriptContext context, Map<String, Object> params) {
-                getLogger().atWarning().log("TAKE_EXP is not supported by the current Hytale server API and was skipped.");
-                return CompletableFuture.completedFuture(null);
-            }
-        });
 
         registerAction(new ScriptActionHandler() {
             @Override public String getType() { return "PLAY_SOUND"; }
@@ -2393,16 +2501,9 @@ public class ScriptManager {
                 Number oy = (Number) params.getOrDefault("offset_y", 0.0);
                 Number oz = (Number) params.getOrDefault("offset_z", 0.0);
                 String targetNode = (String) params.getOrDefault("target_node", "Head");
-                Boolean detached = (Boolean) params.getOrDefault("detached", false);
+                boolean detached = getBooleanParam(params.get("detached"), false);
                 
-                try {
-                    Class<?> particleClass = Class.forName("com.hypixel.hytale.server.core.universe.world.ModelParticle");
-                    Object particle = particleClass.getConstructor().newInstance();
-                    particleClass.getMethod("setSystemId", String.class).invoke(particle, systemId);
-                    particleClass.getMethod("setPositionOffset", Vector3f.class).invoke(particle, new Vector3f(ox.floatValue(), oy.floatValue(), oz.floatValue()));
-                    particleClass.getMethod("setTargetNodeName", String.class).invoke(particle, targetNode);
-                    particleClass.getMethod("setDetachedFromModel", boolean.class).invoke(particle, detached);
-                } catch (Exception ignored) {}
+                // Todo: Add this
                 return CompletableFuture.completedFuture(null);
             }
         });
@@ -2411,18 +2512,33 @@ public class ScriptManager {
             @Override public String getType() { return "SPAWN_ENTITY"; }
             @Override public CompletableFuture<Void> execute(ScriptContext context, Map<String, Object> params) {
                 String role = (String) params.get("role");
-                String modelId = (String) params.get("model_id");
                 Number xVal = (Number) params.get("x");
                 Number yVal = (Number) params.get("y");
                 Number zVal = (Number) params.get("z");
                 String saveRefVar = (String) params.get("save_ref_variable");
-                if (role == null || modelId == null || xVal == null || yVal == null || zVal == null) return CompletableFuture.completedFuture(null);
-                
+                if (role == null || role.trim().isEmpty() || xVal == null || yVal == null || zVal == null) return CompletableFuture.completedFuture(null);
+
+                double x = xVal.doubleValue();
+                double y = yVal.doubleValue();
+                double z = zVal.doubleValue();
+
                 try {
-                    Class<?> npcPluginClass = Class.forName("com.hypixel.hytale.server.npc.NPCPlugin");
-                    Object npcPlugin = npcPluginClass.getMethod("get").invoke(null);
-                    Object roleIndex = npcPluginClass.getMethod("getIndex", String.class).invoke(npcPlugin, role);
-                } catch (Exception ignored) {}
+                    NPCPlugin npcPlugin = NPCPlugin.get();
+                    if (npcPlugin != null) {
+                        Pair<Ref<EntityStore>, INonPlayerCharacter> pair =
+                            npcPlugin.spawnNPC(context.getStore(), role, null, new org.joml.Vector3d(x, y, z), new Rotation3f());
+                        if (pair != null && saveRefVar != null && !saveRefVar.isEmpty()) {
+                            Ref<EntityStore> spawnedRef = pair.first();
+                            if (spawnedRef != null && spawnedRef.isValid()) {
+                                UUIDComponent uuidComp = context.getStore().getComponent(spawnedRef, UUIDComponent.getComponentType());
+                                String refId = uuidComp != null ? uuidComp.getUuid().toString() : spawnedRef.toString();
+                                context.setSessionVar(saveRefVar, refId);
+                            }
+                        }
+                    }
+                } catch (Exception e) {
+                    getLogger().atWarning().log("[HyCitizens] Failed to spawn NPC of role '" + role + "': " + e.getMessage());
+                }
                 return CompletableFuture.completedFuture(null);
             }
         });
@@ -2635,8 +2751,8 @@ public class ScriptManager {
         registerAction(new ScriptActionHandler() {
             @Override public String getType() { return "SET_INVULNERABLE"; }
             @Override public CompletableFuture<Void> execute(ScriptContext context, Map<String, Object> params) {
-                Boolean invulnerable = (Boolean) params.get("invulnerable");
-                if (invulnerable != null && context.getCitizen() != null) {
+                if (params.containsKey("invulnerable") && context.getCitizen() != null) {
+                    boolean invulnerable = getBooleanParam(params.get("invulnerable"), true);
                     context.getCitizen().setTakesDamage(!invulnerable);
                     HyCitizensPlugin.get().getCitizensManager().saveCitizen(context.getCitizen());
                     HyCitizensPlugin.get().getCitizensManager().updateSpawnedCitizen(context.getCitizen(), true);
@@ -2648,8 +2764,8 @@ public class ScriptManager {
         registerAction(new ScriptActionHandler() {
             @Override public String getType() { return "SET_SLEEPING"; }
             @Override public CompletableFuture<Void> execute(ScriptContext context, Map<String, Object> params) {
-                Boolean sleeping = (Boolean) params.get("sleeping");
-                if (sleeping != null && context.getCitizen() != null) {
+                if (params.containsKey("sleeping") && context.getCitizen() != null) {
+                    boolean sleeping = getBooleanParam(params.get("sleeping"), true);
                     String anim = sleeping ? "Sleep" : "Idle";
                     AnimationUtils.playAnimation(context.getCitizen().getNpcRef(), AnimationSlot.values()[1], anim, false, context.getStore());
                 }
@@ -2875,7 +2991,6 @@ public class ScriptManager {
             return;
         }
 
-        // Expose index
         context.setSessionVar("loop:index", index);
 
         executeActions(actions, context).thenRun(() -> {
@@ -3022,6 +3137,35 @@ public class ScriptManager {
             }
         } catch (Exception ignored) {}
         return null;
+    }
+
+    private static final Set<String> NUMERIC_KEYS = Set.of(
+        "x", "y", "z", "x1", "y1", "z1", "x2", "y2", "z2", 
+        "yaw", "pitch", "amount", "duration_seconds", "percent", 
+        "value", "slots", "max_dealers", "delay_seconds", "radius", 
+        "slot", "stop_after_seconds", "speed", "min_distance", "max_distance", 
+        "time_24h", "min", "max", "seconds", "interval_seconds",
+        "scale", "volume", "offset_x", "offset_y", "offset_z",
+        "fade_in_seconds", "stay_seconds", "fade_out_seconds", "timeout_seconds",
+        "max_iterations", "count", "min_count", "arrival_radius"
+    );
+
+    private static Object coerceNumericParam(String key, Object value) {
+        if (NUMERIC_KEYS.contains(key)) {
+            if (value == null) return null;
+            if (value instanceof String) {
+                String str = ((String) value).trim();
+                if (str.isEmpty()) {
+                    return null;
+                }
+                if (str.matches("^(?=.*[0-9])[0-9.+\\-*/%()\\s]+$")) {
+                    try {
+                        return ScriptExpressionEvaluator.evaluateMathExpression(str);
+                    } catch (Exception ignored) {}
+                }
+            }
+        }
+        return value;
     }
 
     private static double getAsDouble(Object val, double defaultValue) {

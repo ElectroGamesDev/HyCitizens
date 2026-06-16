@@ -79,7 +79,6 @@ public class VariableManager {
         flushDirtyVariables();
     }
 
-    // --- GLOBAL ---
     public Object getGlobalVar(String name) {
         return globalVariables.get(name);
     }
@@ -118,7 +117,6 @@ public class VariableManager {
         }
     }
 
-    // --- PLAYER ---
     public Object getPlayerVar(UUID playerUuid, String name) {
         Map<String, Object> vars = getOrLoadPlayerVariables(playerUuid);
         return vars.get(name);
@@ -165,7 +163,6 @@ public class VariableManager {
         return vars;
     }
 
-    // --- CITIZEN ---
     public Object getCitizenVar(CitizenData citizen, String name) {
         if (citizen == null) return null;
         // Citizen variables map gets populated during load
@@ -194,7 +191,6 @@ public class VariableManager {
         return vars != null ? vars : new ConcurrentHashMap<>();
     }
 
-    // --- UTILS ---
     private Object normalizeValue(Object val) {
         if (val instanceof Number) {
             return ((Number) val).doubleValue();

@@ -2,6 +2,7 @@ package com.electro.hycitizens.roles;
 
 import com.electro.hycitizens.HyCitizensPlugin;
 import com.electro.hycitizens.models.*;
+import com.electro.hycitizens.api.scripting.ScriptManager;
 import com.electro.hycitizens.util.GeneratedAssetReloader;
 import com.google.gson.*;
 
@@ -552,14 +553,18 @@ public class RoleGenerator {
         boolean isIdle = "IDLE".equals(moveType);
         boolean isPatrol = "PATROL".equals(moveType);
         boolean isFollowCitizen = "FOLLOW_CITIZEN".equals(moveType);
+        boolean isFollowPlayer = "FOLLOW_PLAYER".equals(moveType);
         if (isIdle) {
             return generateIdleRole(citizen);
         } else if (isPatrol) {
             return generatePatrolRole(citizen);
-        } else if (isFollowCitizen) {
-            float followStopDistance = getFollowStopDistance(citizen.getFollowDistance());
+        } else if (isFollowCitizen || isFollowPlayer) {
+            float followDistance = isFollowPlayer
+                    ? ScriptManager.get().getFollowPlayerMinDistance(citizen.getId())
+                    : citizen.getFollowDistance();
+            float followStopDistance = getFollowStopDistance(followDistance);
             return generateMoveTargetRole(citizen, citizen.getMovementBehavior().getWalkSpeed(), followStopDistance,
-                    Math.max(followStopDistance + 0.25f, Math.min(1.4f, citizen.getFollowDistance() + 0.35f)));
+                    Math.max(followStopDistance + 0.25f, Math.min(1.4f, followDistance + 0.35f)));
         } else {
             return generateVariantRole(citizen);
         }

@@ -113,6 +113,11 @@ public class EntityDamageListener extends DamageEventSystem {
 
             targetCitizen.setLastDamageTakenAt(System.currentTimeMillis());
 
+            // Track damage dealer for FOREACH_DAMAGE_DEALER
+            if (attackerPlayerRef != null) {
+                targetCitizen.addDamageDealer(attackerPlayerRef.getUuid(), event.getAmount());
+            }
+
             // Fire ON_DAMAGE trigger
             Map<String, Object> triggerArgs = new java.util.HashMap<>();
             triggerArgs.put("damage_amount", event.getAmount());

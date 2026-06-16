@@ -1,7 +1,9 @@
 package com.electro.hycitizens.commands;
 
 import com.electro.hycitizens.HyCitizensPlugin;
+import com.electro.hycitizens.api.scripting.ScriptManager;
 import com.electro.hycitizens.managers.ScriptEditorManager;
+import com.electro.hycitizens.models.CitizenData;
 import com.electro.hycitizens.ui.CitizensUI;
 import com.hypixel.hytale.component.Ref;
 import com.hypixel.hytale.component.Store;
@@ -68,6 +70,30 @@ public class CitizensCommand extends AbstractPlayerCommand {
                     return;
                 }
                 ScriptEditorManager.get().applyEditSession(playerRef, args[2], store);
+            }
+            case "trigger", "runscript" -> {
+                // /hc trigger <citizen_id> <command_name>
+                if (args.length < 4) {
+                    playerRef.sendMessage(Message.raw("[HyCitizens] Usage: /hc trigger <citizen_id> <command_name>").color(Color.RED));
+                    return;
+                }
+                String citizenId = args[2];
+                String commandName = args[3];
+
+                CitizenData citizen = plugin.getCitizensManager().getAllCitizens().stream()
+                        .filter(c -> c.getId().equalsIgnoreCase(citizenId))
+                        .findFirst()
+                        .orElse(null);
+
+                if (citizen == null) {
+                    playerRef.sendMessage(Message.raw("[HyCitizens] Citizen '" + citizenId + "' not found.").color(Color.RED));
+                    return;
+                }
+
+                java.util.Map<String, Object> triggerArgs = new java.util.HashMap<>();
+                triggerArgs.put("command", commandName);
+                ScriptManager.get().fireTrigger(citizen, "ON_COMMAND", triggerArgs, playerRef, store);
+                playerRef.sendMessage(Message.raw("[HyCitizens] Triggered script for citizen '" + citizenId + "'.").color(Color.GREEN));
             }
             default -> plugin.getCitizensUI().openCitizensGUI(playerRef, store, CitizensUI.Tab.MANAGE);
         }

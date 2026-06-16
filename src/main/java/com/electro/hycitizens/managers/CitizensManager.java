@@ -2216,6 +2216,7 @@ public class CitizensManager {
         despawnCitizenHologram(citizen);
     }
     public void spawnCitizen(CitizenData citizen, boolean save) {
+        citizen.clearRecentDamageDealers();
         if (citizen.isAwaitingRespawn()) {
             return;
         }
@@ -2394,19 +2395,76 @@ public class CitizensManager {
                 return;
             }
 
+            // Check custom respawn settings
+            if (citizen.isCustomRespawnSettingsEnabled() && citizen.isRequireNoPlayersInRadiusForRespawn()) {
+                scheduleRespawnWithPlayerCheck(citizen, world);
+            } else {
+                world.execute(() -> {
+                    spawnCitizen(citizen, true);
 
-
-            world.execute(() -> {
-                spawnCitizen(citizen, true);
-
-                // Fire ON_RESPAWN trigger
-                Store<EntityStore> store = world.getEntityStore().getStore();
-                if (store != null)
-                    ScriptManager.get().fireTrigger(citizen, "ON_RESPAWN", null, null, store);
-            });
+                    // Fire ON_RESPAWN trigger
+                    Store<EntityStore> store = world.getEntityStore().getStore();
+                    if (store != null)
+                        ScriptManager.get().fireTrigger(citizen, "ON_RESPAWN", null, null, store);
+                });
+            }
         }, clampedDelayMs, TimeUnit.MILLISECONDS);
 
         pendingRespawnTasks.put(citizen.getId(), task);
+    }
+
+    private void scheduleRespawnWithPlayerCheck(@Nonnull CitizenData citizen, @Nonnull World world) {
+        float radius = citizen.getRespawnPlayerCheckRadius();
+        Vector3d spawnPos = citizen.getPosition();
+
+        Runnable checkAndSpawn = new Runnable() {
+            @Override
+            public void run() {
+                if (getCitizen(citizen.getId()) == null) {
+                    pendingRespawnTasks.remove(citizen.getId());
+                    return;
+                }
+
+                world.execute(() -> {
+                    if (getCitizen(citizen.getId()) == null) {
+                        pendingRespawnTasks.remove(citizen.getId());
+                        return;
+                    }
+
+                    Store<EntityStore> store = world.getEntityStore().getStore();
+                    if (store == null) return;
+
+                    // Check if any player is within the radius
+                    boolean playerNearby = false;
+                    for (PlayerRef playerRef : world.getPlayerRefs()) {
+                        Ref<EntityStore> ref = playerRef.getReference();
+                        if (ref != null && ref.isValid()) {
+                            TransformComponent playerTransform = ref.getStore().getComponent(ref, TransformComponent.getComponentType());
+                            if (playerTransform != null) {
+                                double distance = playerTransform.getPosition().distance(spawnPos);
+                                if (distance <= radius) {
+                                    playerNearby = true;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+
+                    if (!playerNearby) {
+                        pendingRespawnTasks.remove(citizen.getId());
+                        spawnCitizen(citizen, true);
+                        ScriptManager.get().fireTrigger(citizen, "ON_RESPAWN", null, null, store);
+                    } else {
+                        // Reschedule check in 5 seconds
+                        ScheduledFuture<?> future = HytaleServer.SCHEDULED_EXECUTOR.schedule(this, 5, TimeUnit.SECONDS);
+                        pendingRespawnTasks.put(citizen.getId(), future);
+                    }
+                });
+            }
+        };
+
+        ScheduledFuture<?> initialFuture = HytaleServer.SCHEDULED_EXECUTOR.schedule(checkAndSpawn, 0, TimeUnit.MILLISECONDS);
+        pendingRespawnTasks.put(citizen.getId(), initialFuture);
     }
 
     private void scheduleLoadedRespawns() {
@@ -2552,7 +2610,68 @@ public class CitizensManager {
 
         String movementType = citizen.getMovementBehavior().getType();
         return "PATROL".equals(movementType)
+                || "FOLLOW_PLAYER".equals(movementType)
                 || ("FOLLOW_CITIZEN".equals(movementType) && !citizen.getFollowCitizenId().trim().isEmpty());
+    }
+
+    public void updateCitizenRoleImmediately(@Nonnull CitizenData citizen) {
+        Ref<EntityStore> npcRef = citizen.getNpcRef();
+        if (npcRef == null || !npcRef.isValid()) {
+            return;
+        }
+
+        roleGenerator.generateRoleIfChanged(citizen);
+        String roleName = roleGenerator.getRoleName(citizen);
+
+        int roleIndex = NPCPlugin.get().getIndex(roleName);
+        if (roleIndex == Integer.MIN_VALUE) {
+            roleGenerator.forceRoleGeneration(citizen);
+            roleIndex = NPCPlugin.get().getIndex(roleName);
+            if (roleIndex == Integer.MIN_VALUE) {
+                getLogger().atWarning().log("Role not registered yet: " + roleName);
+                return;
+            }
+        }
+
+        int finalRoleIndex = roleIndex;
+        World world = Universe.get().getWorld(citizen.getWorldUUID());
+        if (world == null) {
+            return;
+        }
+
+        world.execute(() -> {
+            NPCEntity npcEntity = npcRef.getStore().getComponent(npcRef, NPCEntity.getComponentType());
+            if (npcEntity == null || npcEntity.getRole() == null) {
+                return;
+            }
+
+            boolean needsMoveTarget = usesMarkerDrivenRole(citizen);
+            Vector3d initialPosition = citizen.getCurrentPosition() != null ? citizen.getCurrentPosition() : citizen.getPosition();
+
+            if (needsMoveTarget && patrolManager != null) {
+                patrolManager.ensureMoveTargetNow(citizen, world, initialPosition);
+            }
+
+            RoleChangeSystem.requestRoleChange(npcRef, npcEntity.getRole(), finalRoleIndex, true, npcRef.getStore());
+            
+            if (needsMoveTarget && patrolManager != null) {
+                HytaleServer.SCHEDULED_EXECUTOR.schedule(() -> world.execute(() -> {
+                    if (citizen.getNpcRef() != null && citizen.getNpcRef().isValid()) {
+                        patrolManager.ensureMoveTargetNow(
+                                citizen,
+                                world,
+                                initialPosition
+                        );
+                    }
+                }), 100, TimeUnit.MILLISECONDS);
+            }
+
+            HytaleServer.SCHEDULED_EXECUTOR.schedule(
+                    () -> refreshSpawnedCitizenAppearance(citizen),
+                    50,
+                    TimeUnit.MILLISECONDS
+            );
+        });
     }
 
     @Nonnull

@@ -48,8 +48,7 @@ public class ScriptEditorManager {
 
     private ScriptEditorManager() {}
 
-    // ── Public API ────────────────────────────────────────────────────────────
-
+    // Public API
     public void startEditSession(PlayerRef playerRef, String citizenId) {
         CitizenData citizen = HyCitizensPlugin.get().getCitizensManager().getCitizen(citizenId);
         if (citizen == null) {
@@ -210,7 +209,7 @@ public class ScriptEditorManager {
                 });
     }
 
-    // ── Helpers ───────────────────────────────────────────────────────────────
+    // Helpers
 
     private String getSecret() {
         return "HyCitizensPlugin";
@@ -242,7 +241,7 @@ public class ScriptEditorManager {
         }
     }
 
-    // ── Inner types ───────────────────────────────────────────────────────────
+    // Inner types
 
     private static class PendingEditSession {
         final String citizenId;
