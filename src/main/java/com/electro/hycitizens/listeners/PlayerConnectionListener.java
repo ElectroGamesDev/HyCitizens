@@ -37,7 +37,7 @@ public class PlayerConnectionListener {
         // We need to wait until the player is fully loaded into a world
         final long startTimeMs = System.currentTimeMillis();
 
-        final ScheduledFuture<?>[] futureRef = new java.util.concurrent.ScheduledFuture<?>[1];
+        final ScheduledFuture<?>[] futureRef = new ScheduledFuture<?>[1];
 
         futureRef[0] = HytaleServer.SCHEDULED_EXECUTOR.scheduleAtFixedRate(() -> {
             if (playerRef == null)

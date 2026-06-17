@@ -16,6 +16,8 @@ import com.hypixel.hytale.server.core.universe.world.storage.EntityStore;
 
 import javax.annotation.Nonnull;
 import java.awt.Color;
+import java.util.HashMap;
+import java.util.Map;
 
 public class CitizensCommand extends AbstractPlayerCommand {
     private final HyCitizensPlugin plugin;
@@ -90,7 +92,7 @@ public class CitizensCommand extends AbstractPlayerCommand {
                     return;
                 }
 
-                java.util.Map<String, Object> triggerArgs = new java.util.HashMap<>();
+                Map<String, Object> triggerArgs = new HashMap<>();
                 triggerArgs.put("command", commandName);
                 ScriptManager.get().fireTrigger(citizen, "ON_COMMAND", triggerArgs, playerRef, store);
                 playerRef.sendMessage(Message.raw("[HyCitizens] Triggered script for citizen '" + citizenId + "'.").color(Color.GREEN));

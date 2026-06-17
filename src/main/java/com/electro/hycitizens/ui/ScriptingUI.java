@@ -21,6 +21,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.function.Consumer;
 
 public class ScriptingUI {
     private final HyCitizensPlugin plugin;
@@ -199,7 +200,7 @@ public class ScriptingUI {
         page.open(store);
     }
 
-    public void openDialogueUI(@Nonnull PlayerRef playerRef, @Nonnull Store<EntityStore> store, String title, String body, List<Map<String, Object>> responses, java.util.function.Consumer<String> callback) {
+    public void openDialogueUI(@Nonnull PlayerRef playerRef, @Nonnull Store<EntityStore> store, String title, String body, List<Map<String, Object>> responses, Consumer<String> callback) {
         playerRef.sendMessage(Message.raw("Dialogue UI opened: " + title).color(Color.YELLOW));
         // TODO: Implement actual Dialogue UI
         if (responses != null && !responses.isEmpty()) {
