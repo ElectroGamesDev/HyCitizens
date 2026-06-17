@@ -60,6 +60,8 @@ public class CitizenData {
     // Entity References
     private transient Ref<EntityStore> npcRef;
     public final Map<UUID, Direction> lastLookDirections = new ConcurrentHashMap<>();
+    public final Map<UUID, Direction> lastBodyDirections = new ConcurrentHashMap<>();
+    public final Map<UUID, Boolean> bodyTurningStates = new ConcurrentHashMap<>();
     private transient Map<UUID, ScheduledFuture<?>> pendingLookResetTasks = new ConcurrentHashMap<>();
     public final Map<UUID, Direction> lastNametagLookDirections = new ConcurrentHashMap<>();
     private transient Map<UUID, ScheduledFuture<?>> pendingNametagLookResetTasks = new ConcurrentHashMap<>();

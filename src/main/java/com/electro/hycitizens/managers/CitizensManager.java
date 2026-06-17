@@ -80,6 +80,13 @@ public class CitizensManager {
     private static final int MAX_PENDING_NPC_SPAWN_RETRIES = 120;
     private static final int MAX_GENERATED_ROLE_RETRY_ATTEMPTS = 5;
     private static final long DEFERRED_CITIZEN_SAVE_DELAY_MS = 1_000L;
+    private static final float MIN_BODY_TURN_RATE = (float) Math.toRadians(120.0);
+    private static final float MAX_BODY_TURN_RATE = (float) Math.toRadians(600.0);
+    private static final float HEAD_TURN_RATE = (float) Math.toRadians(360.0);
+    private static final float MAX_HEAD_YAW = (float) Math.toRadians(75.0);
+    private static final float BODY_ROTATE_THRESHOLD = (float) Math.toRadians(45.0);
+    private static final float BODY_ALIGN_THRESHOLD = (float) Math.toRadians(15.0);
+    private static final float ROTATION_PACKET_THRESHOLD = 0.008f;
 
     private static final class PendingHologramRemoval {
         private final long chunkIndex;
@@ -123,6 +130,7 @@ public class CitizensManager {
     private final List<CitizenDeathListener> deathListeners = new ArrayList<>();
     private ThreadedScheduler skinUpdateTask = new ThreadedScheduler();
     private ThreadedScheduler rotateTask = new ThreadedScheduler();
+    private long lastRotateTickTime = System.currentTimeMillis();
     private ThreadedScheduler nametagMoveTask = new ThreadedScheduler();
     private ThreadedScheduler animationTask = new ThreadedScheduler();
     private ThreadedScheduler healthRegenTask = new ThreadedScheduler();
@@ -197,6 +205,14 @@ public class CitizensManager {
 
     private void startRotateScheduler() {
         rotateTask.scheduleAtFixedRate("citizens-rotate", () -> {
+            long now = System.currentTimeMillis();
+            float dt = (now - lastRotateTickTime) / 1000f;
+            lastRotateTickTime = now;
+            if (dt <= 0f || dt > 1.0f) {
+                dt = 0.060f; // fallback to 60ms
+            }
+            final float finalDt = dt;
+
             // Group citizens by world
             Map<UUID, List<CitizenData>> snapshot;
 
@@ -256,7 +272,7 @@ public class CitizensManager {
                                     && citizen.getCurrentScheduleRuntimeState() == ScheduleRuntimeState.INACTIVE;
                             if (shouldRotateCitizen) {
                                 cancelPendingLookReset(citizen, playerRef.getUuid());
-                                rotateCitizenToPlayer(citizen, playerRef);
+                                rotateCitizenToPlayer(citizen, playerRef, finalDt);
                             } else {
                                 scheduleLookResetIfNeeded(citizen, playerRef.getUuid());
                             }
@@ -4567,7 +4583,7 @@ public class CitizensManager {
         return true;
     }
 
-    public void rotateCitizenToPlayer(CitizenData citizen, PlayerRef playerRef) {
+    public void rotateCitizenToPlayer(CitizenData citizen, PlayerRef playerRef, float dt) {
         if (!isPlayerRefValid(playerRef)) {
             return;
         }
@@ -4587,39 +4603,103 @@ public class CitizensManager {
                 return;
             }
 
-            // Calculate rotation to look at player
+            // Calculate target rotation to look at player
             Vector3d entityPos = npcTransformComponent.getPosition();
             Vector3d playerPos = new Vector3d(playerRef.getTransform().getPosition());
 
             double dx = playerPos.x - entityPos.x;
             double dz = playerPos.z - entityPos.z;
 
-            // Flip the direction 180 degrees
-            float yaw = (float) (Math.atan2(dx, dz) + Math.PI);
+            // Flip the direction 180 degrees to get proper face-to-face yaw
+            float targetYaw = (float) (Math.atan2(dx, dz) + Math.PI);
 
             double dy = playerPos.y - entityPos.y;
             double horizontalDistance = Math.sqrt(dx * dx + dz * dz);
-            float pitch = (float) Math.atan2(dy, horizontalDistance);
+            float targetPitch = (float) Math.atan2(dy, horizontalDistance);
 
-            // Create directions
-            Direction lookDirection = new Direction(yaw, pitch, 0f);
-            Direction bodyDirection = new Direction(yaw, 0, 0f);
-
-            // Don't rotate if the player barely moved
             UUID playerUUID = playerRef.getUuid();
             Direction lastLook = citizen.lastLookDirections.get(playerUUID);
-            if (lastLook != null) {
-                float yawThreshold = 0.02f;
-                float pitchThreshold = 0.02f;
-                float yawDiff = Math.abs(lookDirection.yaw - lastLook.yaw);
-                float pitchDiff = Math.abs(lookDirection.pitch - lastLook.pitch);
+            Direction lastBody = citizen.lastBodyDirections.get(playerUUID);
 
-                if (yawDiff < yawThreshold && pitchDiff < pitchThreshold) {
-                    return;
+            // If no previous state exists, initialize with the current world entity rotation
+            if (lastLook == null || lastBody == null) {
+                Vector3f baseRotation = RotationUtil.toVector3f(npcTransformComponent.getRotation());
+                if (lastLook == null) {
+                    lastLook = toPacketDirection(baseRotation, true);
+                }
+                if (lastBody == null) {
+                    lastBody = toPacketDirection(baseRotation, false);
                 }
             }
 
+            float bodyDiff = turnAngle(lastBody.yaw, targetYaw);
+            boolean wasTurning = citizen.bodyTurningStates.getOrDefault(playerUUID, false);
+            boolean shouldTurn = wasTurning;
+            if (!wasTurning) {
+                if (Math.abs(bodyDiff) > BODY_ROTATE_THRESHOLD) {
+                    shouldTurn = true;
+                }
+            } else {
+                if (Math.abs(bodyDiff) > BODY_ALIGN_THRESHOLD) {
+                    shouldTurn = true;
+                } else {
+                    shouldTurn = false;
+                }
+            }
+            citizen.bodyTurningStates.put(playerUUID, shouldTurn);
+
+            float bodyYaw;
+            if (shouldTurn) {
+                // Calculate dynamic speed based on quadratic interpolation between MIN_BODY_TURN_RATE and MAX_BODY_TURN_RATE
+                float absDiff = Math.abs(bodyDiff);
+                float fraction = (absDiff - BODY_ALIGN_THRESHOLD) / ((float) Math.PI - BODY_ALIGN_THRESHOLD);
+                fraction = Math.max(0.0f, Math.min(1.0f, fraction));
+                float curveFraction = fraction * fraction; // quadratic ease-in scaling
+                float currentBodyTurnRate = MIN_BODY_TURN_RATE + curveFraction * (MAX_BODY_TURN_RATE - MIN_BODY_TURN_RATE);
+
+                float maxBodyStep = currentBodyTurnRate * dt;
+                if (absDiff <= maxBodyStep) {
+                    bodyYaw = targetYaw;
+                } else {
+                    bodyYaw = lastBody.yaw + Math.copySign(maxBodyStep, bodyDiff);
+                }
+            } else {
+                bodyYaw = lastBody.yaw;
+            }
+
+
+            float headDiff = turnAngle(lastLook.yaw, targetYaw);
+            float maxHeadStep = HEAD_TURN_RATE * dt;
+            float headYaw;
+            if (Math.abs(headDiff) <= maxHeadStep) {
+                headYaw = targetYaw;
+            } else {
+                headYaw = lastLook.yaw + Math.copySign(maxHeadStep, headDiff);
+            }
+
+
+            float relativeHeadYaw = turnAngle(bodyYaw, headYaw);
+            if (relativeHeadYaw > MAX_HEAD_YAW) {
+                headYaw = bodyYaw + MAX_HEAD_YAW;
+            } else if (relativeHeadYaw < -MAX_HEAD_YAW) {
+                headYaw = bodyYaw - MAX_HEAD_YAW;
+            }
+
+            Direction lookDirection = new Direction(headYaw, targetPitch, 0f);
+            Direction bodyDirection = new Direction(bodyYaw, 0f, 0f);
+
+            float headYawDiff = Math.abs(lookDirection.yaw - lastLook.yaw);
+            float headPitchDiff = Math.abs(lookDirection.pitch - lastLook.pitch);
+            float bodyYawDiff = Math.abs(bodyDirection.yaw - lastBody.yaw);
+
+            if (headYawDiff < ROTATION_PACKET_THRESHOLD && 
+                headPitchDiff < ROTATION_PACKET_THRESHOLD && 
+                bodyYawDiff < ROTATION_PACKET_THRESHOLD) {
+                return;
+            }
+
             citizen.lastLookDirections.put(playerUUID, lookDirection);
+            citizen.lastBodyDirections.put(playerUUID, bodyDirection);
 
             sendRotationUpdate(citizenNetworkId, playerRef, lookDirection, bodyDirection);
         }
@@ -4629,6 +4709,8 @@ public class CitizensManager {
         for (CitizenData citizen : citizens.values()) {
             cancelPendingLookReset(citizen, playerUuid);
             citizen.lastLookDirections.remove(playerUuid);
+            citizen.lastBodyDirections.remove(playerUuid);
+            citizen.bodyTurningStates.remove(playerUuid);
             cancelPendingNametagLookReset(citizen, playerUuid);
             citizen.lastNametagLookDirections.remove(playerUuid);
             citizen.getSequentialMessageIndex().remove(playerUuid);
@@ -4721,6 +4803,8 @@ public class CitizensManager {
                 sendRotationUpdate(citizenNetworkId, playerRef, baseLookDirection, baseBodyDirection);
 
                 citizen.lastLookDirections.remove(playerUuid);
+                citizen.lastBodyDirections.remove(playerUuid);
+                citizen.bodyTurningStates.remove(playerUuid);
                 clearPendingLookResetState(citizen, playerUuid, expectedTask);
             } catch (Exception e) {
                 clearPendingLookResetState(citizen, playerUuid, expectedTask);
@@ -4847,6 +4931,10 @@ public class CitizensManager {
         float yaw = rotation.y;
         float pitch = includePitch ? rotation.x : 0.0f;
         return new Direction(yaw, pitch, rotation.z);
+    }
+
+    private static float turnAngle(float from, float to) {
+        return (float) Math.atan2(Math.sin(to - from), Math.cos(to - from));
     }
 
     private void sendRotationUpdate(@Nonnull NetworkId citizenNetworkId, @Nonnull PlayerRef playerRef,
