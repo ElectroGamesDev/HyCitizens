@@ -1,3 +1,5 @@
+import java.util.jar.JarFile
+
 plugins {
     java
 }
@@ -17,6 +19,9 @@ dependencies {
 
     testImplementation(platform("org.junit:junit-bom:5.10.0"))
     testImplementation("org.junit.jupiter:junit-jupiter")
+    testImplementation("com.google.code.gson:gson:2.11.0")
+    testImplementation("com.hypixel.hytale:Server:latest.release")
+    testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
 
 java {
@@ -45,4 +50,29 @@ tasks.register<Jar>("fatJar") {
 
 tasks.build {
     dependsOn("fatJar")
+    dependsOn("verifyPluginJar")
+}
+
+tasks.register("verifyPluginJar") {
+    dependsOn("fatJar")
+    doLast {
+        val artifact = tasks.named<Jar>("fatJar").get().archiveFile.get().asFile
+        JarFile(artifact).use { jar ->
+            val manifestEntry = jar.getJarEntry("manifest.json")
+                ?: error("HyCitizens artifact is missing manifest.json")
+            val metadata = jar.getInputStream(manifestEntry).bufferedReader().use { it.readText() }
+            require(metadata.contains("\"Group\": \"com.electro\"")) { "Incorrect plugin group in manifest.json" }
+            require(metadata.contains("\"Name\": \"HyCitizens\"")) { "Incorrect plugin name in manifest.json" }
+            require(metadata.contains("\"Main\": \"com.electro.hycitizens.HyCitizensPlugin\"")) {
+                "Incorrect plugin main class in manifest.json"
+            }
+            require(metadata.contains("\"Version\": \"$version\"")) { "Incorrect plugin version in manifest.json" }
+            require(jar.getJarEntry("com/electro/hycitizens/HyCitizensPlugin.class") != null) {
+                "HyCitizens plugin entry class is missing"
+            }
+            require(jar.entries().asSequence().none { it.name.startsWith("com/electro/hyquests/") }) {
+                "HyQuests implementation classes must not be bundled into HyCitizens"
+            }
+        }
+    }
 }

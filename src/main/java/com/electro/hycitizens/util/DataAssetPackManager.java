@@ -9,6 +9,10 @@ import com.google.gson.JsonSyntaxException;
 import com.google.gson.Strictness;
 import com.google.gson.stream.JsonReader;
 import com.hypixel.hytale.server.core.HytaleServer;
+import com.hypixel.hytale.common.plugin.PluginManifest;
+import com.hypixel.hytale.codec.ExtraInfo;
+import com.hypixel.hytale.codec.util.RawJsonReader;
+import com.hypixel.hytale.server.core.asset.AssetModule;
 
 import javax.annotation.Nonnull;
 import java.io.IOException;
@@ -21,6 +25,7 @@ import java.nio.file.Paths;
 import java.util.Locale;
 
 import static com.hypixel.hytale.logger.HytaleLogger.getLogger;
+import com.electro.hycitizens.map.CitizenMapMarkerAsset;
 
 public class DataAssetPackManager {
     public static final Path DATA_PACK_PATH = Paths.get("mods", "HyCitizensData");
@@ -82,7 +87,7 @@ public class DataAssetPackManager {
 
     private static void migrateFromOldDataPackStructure() throws IOException {
         Path oldMapMarkersPath = DATA_PACK_PATH.resolve(Paths.get("Common", "UI", "WorldMap", "MapMarkers"));
-        Path newMapMarkersPath = com.electro.hycitizens.map.CitizenMapMarkerAsset.CUSTOM_MARKERS_PATH;
+        Path newMapMarkersPath = CitizenMapMarkerAsset.CUSTOM_MARKERS_PATH;
 
         // Migrate user custom markers
         if (Files.exists(oldMapMarkersPath) && Files.isDirectory(oldMapMarkersPath)) {
@@ -234,8 +239,8 @@ public class DataAssetPackManager {
 
     private static boolean registerPackAtRuntime() {
         try {
-            com.hypixel.hytale.server.core.asset.AssetModule assetModule =
-                com.hypixel.hytale.server.core.asset.AssetModule.get();
+            AssetModule assetModule =
+                AssetModule.get();
 
             if (assetModule == null) {
                 getLogger().atWarning().log("[HyCitizens] AssetModule not available yet");
@@ -257,12 +262,12 @@ public class DataAssetPackManager {
 
             String manifestJson = new String(Files.readAllBytes(manifestPath), java.nio.charset.StandardCharsets.UTF_8);
             char[] jsonChars = manifestJson.toCharArray();
-            com.hypixel.hytale.codec.util.RawJsonReader reader =
-                new com.hypixel.hytale.codec.util.RawJsonReader(jsonChars);
+            RawJsonReader reader =
+                new RawJsonReader(jsonChars);
 
-            com.hypixel.hytale.codec.ExtraInfo extraInfo = new com.hypixel.hytale.codec.ExtraInfo();
-            com.hypixel.hytale.common.plugin.PluginManifest manifest =
-                com.hypixel.hytale.common.plugin.PluginManifest.CODEC.decodeJson(reader, extraInfo);
+            ExtraInfo extraInfo = new ExtraInfo();
+            PluginManifest manifest =
+                PluginManifest.CODEC.decodeJson(reader, extraInfo);
 
             if (manifest == null) {
                 getLogger().atWarning().log("[HyCitizens] Failed to decode manifest");
@@ -279,7 +284,7 @@ public class DataAssetPackManager {
                     if (paramTypes.length == 4 &&
                         paramTypes[0] == String.class &&
                         paramTypes[1] == Path.class &&
-                        paramTypes[2] == com.hypixel.hytale.common.plugin.PluginManifest.class) {
+                        paramTypes[2] == PluginManifest.class) {
 
                         Object fourthParam;
                         if (paramTypes[3] == boolean.class || paramTypes[3] == Boolean.class) {

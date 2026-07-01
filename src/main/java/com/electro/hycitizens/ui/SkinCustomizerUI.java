@@ -5,6 +5,7 @@ import au.ellie.hyui.html.TemplateProcessor;
 import com.electro.hycitizens.HyCitizensPlugin;
 import com.electro.hycitizens.models.CitizenData;
 import com.electro.hycitizens.util.SkinUtilities;
+import com.electro.hycitizens.util.HtmlUtils;
 import com.electro.hycitizens.util.SkinUtilities.CosmeticOptionEntry;
 import com.hypixel.hytale.common.util.RandomUtil;
 import com.hypixel.hytale.component.Store;
@@ -89,7 +90,7 @@ public class SkinCustomizerUI {
         String html = buildHTML(state);
         PageBuilder page = PageBuilder.pageForPlayer(playerRef)
                 .withLifetime(CustomPageLifetime.CanDismiss)
-                .fromHtml(html);
+                .fromHtml(HtmlUtils.sanitizeHtmlForHyUI(html));
         setupListeners(page, playerRef, store, state);
         page.open(store);
     }

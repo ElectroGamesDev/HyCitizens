@@ -17,6 +17,8 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Stream;
 
 import static com.hypixel.hytale.logger.HytaleLogger.getLogger;
+import com.hypixel.hytale.server.core.HytaleServer;
+import com.hypixel.hytale.server.core.asset.type.model.config.ModelAsset;
 
 public class CustomNametagAssetManager {
     private static final String ASSET_PACK_NAME = "electro:HyCitizensData";
@@ -254,14 +256,14 @@ public class CustomNametagAssetManager {
     }
 
     private static void scheduleHotReloadCheck(@Nonnull String modelAssetId) {
-        com.hypixel.hytale.server.core.HytaleServer.SCHEDULED_EXECUTOR.schedule(() -> {
+        HytaleServer.SCHEDULED_EXECUTOR.schedule(() -> {
             checkModelAssetHotReload(modelAssetId, 0);
         }, HOT_RELOAD_FIRST_CHECK_MS, java.util.concurrent.TimeUnit.MILLISECONDS);
     }
 
     private static void checkModelAssetHotReload(@Nonnull String modelAssetId, int attempt) {
-        com.hypixel.hytale.server.core.asset.type.model.config.ModelAsset modelAsset =
-            com.hypixel.hytale.server.core.asset.type.model.config.ModelAsset.getAssetMap().getAsset(modelAssetId);
+        ModelAsset modelAsset =
+            ModelAsset.getAssetMap().getAsset(modelAssetId);
 
         if (modelAsset != null) {
             int totalWaitMs = (attempt == 0) ? HOT_RELOAD_FIRST_CHECK_MS : HOT_RELOAD_FIRST_CHECK_MS + (attempt * HOT_RELOAD_RETRY_CHECK_MS);
@@ -279,7 +281,7 @@ public class CustomNametagAssetManager {
         }
 
         if (attempt == 0) {
-            com.hypixel.hytale.server.core.HytaleServer.SCHEDULED_EXECUTOR.schedule(() -> {
+            HytaleServer.SCHEDULED_EXECUTOR.schedule(() -> {
                 checkModelAssetHotReload(modelAssetId, 1);
             }, HOT_RELOAD_RETRY_CHECK_MS, java.util.concurrent.TimeUnit.MILLISECONDS);
         } else {

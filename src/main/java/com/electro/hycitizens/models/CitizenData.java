@@ -13,6 +13,7 @@ import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -214,6 +215,8 @@ public class CitizenData {
     private List<String> combatMessageTargetGroups = new ArrayList<>();
     private List<String> flockArray = new ArrayList<>();
     private List<String> disableDamageGroups = new ArrayList<>(List.of("Self"));
+    private String interactDialogueId;
+    private String interactDialogueTrigger = "BOTH";
 
     public CitizenData(@Nonnull String id, @Nonnull String name, @Nonnull String modelId, @Nonnull UUID worldUUID,
                        @Nonnull Vector3d position, @Nonnull Vector3f rotation, float scale, @Nullable UUID npcUUID,
@@ -723,14 +726,14 @@ public class CitizenData {
     }
 
     @Nonnull
-    public List<com.electro.hycitizens.api.scripting.ScriptBlock> getScripts() {
+    public List<ScriptBlock> getScripts() {
         if (scripts == null) {
             scripts = new ArrayList<>();
         }
         return scripts;
     }
 
-    public void setScripts(@Nonnull List<com.electro.hycitizens.api.scripting.ScriptBlock> scripts) {
+    public void setScripts(@Nonnull List<ScriptBlock> scripts) {
         this.scripts = new ArrayList<>(scripts);
     }
 
@@ -1273,4 +1276,31 @@ public class CitizenData {
     @Nonnull
     public List<String> getDisableDamageGroups() { return disableDamageGroups; }
     public void setDisableDamageGroups(@Nonnull List<String> v) { this.disableDamageGroups = new ArrayList<>(v); }
+
+    @Nullable
+    public String getInteractDialogueId() { return interactDialogueId; }
+    public void setInteractDialogueId(@Nullable String interactDialogueId) { this.interactDialogueId = interactDialogueId; }
+
+    @Nonnull
+    public String getInteractDialogueTrigger() {
+        return switch (interactDialogueTrigger != null ? interactDialogueTrigger.toUpperCase(Locale.ROOT) : "BOTH") {
+            case "LEFT_CLICK" -> "LEFT_CLICK";
+            case "F_KEY" -> "F_KEY";
+            default -> "BOTH";
+        };
+    }
+
+    public void setInteractDialogueTrigger(@Nullable String interactDialogueTrigger) {
+        this.interactDialogueTrigger = switch (interactDialogueTrigger != null
+                ? interactDialogueTrigger.toUpperCase(Locale.ROOT) : "BOTH") {
+            case "LEFT_CLICK" -> "LEFT_CLICK";
+            case "F_KEY" -> "F_KEY";
+            default -> "BOTH";
+        };
+    }
+
+    public boolean isInteractDialogueTriggeredBy(@Nonnull String interactionSource) {
+        String trigger = getInteractDialogueTrigger();
+        return "BOTH".equals(trigger) || trigger.equalsIgnoreCase(interactionSource);
+    }
 }

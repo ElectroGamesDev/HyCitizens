@@ -6,6 +6,8 @@ import com.hypixel.hytale.server.npc.NPCPlugin;
 import it.unimi.dsi.fastutil.Pair;
 import com.hypixel.hytale.server.core.universe.world.npc.INonPlayerCharacter;
 import com.electro.hycitizens.models.CitizenData;
+import com.electro.hycitizens.managers.DialogueManager;
+import com.electro.hycitizens.api.dialogue.IDialogue;
 import com.electro.hycitizens.models.FactionConfig;
 import com.electro.hycitizens.models.MovementBehavior;
 import com.electro.hycitizens.api.scripting.ScriptAction.Branch;
@@ -13,6 +15,8 @@ import com.electro.hycitizens.interactions.CitizenInteraction;
 import com.electro.hycitizens.util.CommandExecutionUtil;
 
 import com.google.gson.Gson;
+import com.google.gson.JsonArray;
+import com.google.gson.JsonObject;
 import com.hypixel.hytale.builtin.weather.resources.WeatherResource;
 import com.hypixel.hytale.component.Archetype;
 import com.hypixel.hytale.component.Component;
@@ -55,6 +59,7 @@ import com.hypixel.hytale.server.core.modules.entitystats.modifier.Modifier;
 
 import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.concurrent.*;
@@ -63,6 +68,10 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.net.URI;
+import java.net.InetAddress;
+import java.time.Duration;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.regex.Pattern;
 import java.util.regex.Matcher;
 
@@ -79,12 +88,19 @@ import com.hypixel.hytale.server.core.inventory.container.ItemContainer;
 import com.hypixel.hytale.server.core.modules.time.WorldTimeResource;
 
 import static com.hypixel.hytale.logger.HytaleLogger.getLogger;
+import com.electro.hycitizens.util.RotationUtil;
+import com.hypixel.hytale.component.RemoveReason;
 
 public class ScriptManager {
     private static ScriptManager instance;
 
     private final Map<String, ScriptConditionHandler> conditions = new ConcurrentHashMap<>();
     private final Map<String, ScriptActionHandler> actions = new ConcurrentHashMap<>();
+    private final Map<String, ConditionTypeDescriptor> conditionDescriptors = new ConcurrentHashMap<>();
+    private final Map<String, ActionTypeDescriptor> actionDescriptors = new ConcurrentHashMap<>();
+    private final Map<String, TriggerTypeDescriptor> triggerDescriptors = new ConcurrentHashMap<>();
+    private final Map<String, VariableProviderDescriptor> variableDescriptors = new ConcurrentHashMap<>();
+    private final Map<String, EventTypeDescriptor> eventDescriptors = new ConcurrentHashMap<>();
 
     // Timer tracking: citizenId -> (timerName -> Future)
     private final Map<String, Map<String, ScheduledFuture<?>>> activeTimers = new ConcurrentHashMap<>();
@@ -129,7 +145,17 @@ public class ScriptManager {
     private ScheduledExecutorService proximityScheduler;
     private ScheduledExecutorService tickScheduler;
     private final Gson gson = new Gson();
-    private final HttpClient httpClient = HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NORMAL).build();
+    private final ScriptTemplateCompiler templateCompiler = new ScriptTemplateCompiler(gson);
+    private volatile ScriptValidationMode validationMode = ScriptValidationMode.STRICT;
+    private final Deque<ScriptExecutionTrace> recentExecutionTraces = new ConcurrentLinkedDeque<>();
+    private static final int MAX_EXECUTION_TRACES = 200;
+    private final HttpClient httpClient = HttpClient.newBuilder()
+            .followRedirects(HttpClient.Redirect.NEVER)
+            .connectTimeout(Duration.ofSeconds(3))
+            .build();
+    private final Semaphore httpConcurrency = new Semaphore(4);
+    private final AtomicLong httpRateWindow = new AtomicLong();
+    private final AtomicInteger httpRateCount = new AtomicInteger();
     private final Map<String, Set<String>> runningScripts = new ConcurrentHashMap<>();
 
     public static ScriptManager get() {
@@ -141,6 +167,7 @@ public class ScriptManager {
 
     private ScriptManager() {
         registerBuiltins();
+        registerBuiltinDescriptors();
     }
 
     public void init() {
@@ -183,11 +210,101 @@ public class ScriptManager {
     }
 
     public void registerCondition(ScriptConditionHandler handler) {
-        conditions.put(handler.getType().toUpperCase(), handler);
+        registerCondition(handler, new ConditionTypeDescriptor(
+                handler.getType().toUpperCase(), 1, "hycitizens", "General", "",
+                Map.of("type", "object"), Map.of()
+        ));
     }
 
     public void registerAction(ScriptActionHandler handler) {
-        actions.put(handler.getType().toUpperCase(), handler);
+        registerAction(handler, new ActionTypeDescriptor(
+                handler.getType().toUpperCase(), 1, "hycitizens", "General", "",
+                Map.of("type", "object"), Map.of(), false
+        ));
+    }
+
+    public synchronized void registerCondition(ScriptConditionHandler handler, ConditionTypeDescriptor descriptor) {
+        Objects.requireNonNull(handler, "handler");
+        Objects.requireNonNull(descriptor, "descriptor");
+        String id = handler.getType().toUpperCase(Locale.ROOT);
+        if (conditions.containsKey(id) || conditionDescriptors.containsKey(id)) {
+            throw new IllegalStateException("Duplicate script condition registration: " + id);
+        }
+        conditions.put(id, handler);
+        conditionDescriptors.put(id, descriptor);
+    }
+
+    public synchronized void registerAction(ScriptActionHandler handler, ActionTypeDescriptor descriptor) {
+        Objects.requireNonNull(handler, "handler");
+        Objects.requireNonNull(descriptor, "descriptor");
+        String id = handler.getType().toUpperCase(Locale.ROOT);
+        if (actions.containsKey(id) || actionDescriptors.containsKey(id)) {
+            throw new IllegalStateException("Duplicate script action registration: " + id);
+        }
+        actions.put(id, handler);
+        actionDescriptors.put(id, descriptor);
+    }
+
+    public JsonObject getCapabilitySchema() {
+        JsonObject root = new JsonObject();
+        root.addProperty("documentType", "hycitizens:scripting-capabilities");
+        root.addProperty("schemaVersion", 1);
+        JsonArray actionArray = new JsonArray();
+        actionDescriptors.values().stream().sorted(Comparator.comparing(ActionTypeDescriptor::id))
+                .forEach(descriptor -> actionArray.add(gson.toJsonTree(descriptor)));
+        JsonArray conditionArray = new JsonArray();
+        conditionDescriptors.values().stream().sorted(Comparator.comparing(ConditionTypeDescriptor::id))
+                .forEach(descriptor -> conditionArray.add(gson.toJsonTree(descriptor)));
+        root.add("actions", actionArray);
+        root.add("conditions", conditionArray);
+        root.add("triggers", gson.toJsonTree(triggerDescriptors.values()));
+        root.add("variables", gson.toJsonTree(variableDescriptors.values()));
+        root.add("events", gson.toJsonTree(eventDescriptors.values()));
+        return root;
+    }
+
+    public void registerTriggerDescriptor(TriggerTypeDescriptor descriptor) {
+        if (triggerDescriptors.putIfAbsent(descriptor.id(), descriptor) != null)
+            throw new IllegalStateException("Duplicate trigger descriptor: " + descriptor.id());
+    }
+
+    public void registerVariableProviderDescriptor(VariableProviderDescriptor descriptor) {
+        if (variableDescriptors.putIfAbsent(descriptor.id(), descriptor) != null)
+            throw new IllegalStateException("Duplicate variable descriptor: " + descriptor.id());
+    }
+
+    public void registerEventDescriptor(EventTypeDescriptor descriptor) {
+        if (eventDescriptors.putIfAbsent(descriptor.id(), descriptor) != null)
+            throw new IllegalStateException("Duplicate event descriptor: " + descriptor.id());
+    }
+
+    private void registerBuiltinDescriptors() {
+        for (String id : List.of("STOP_SCRIPT", "BREAK_LOOP", "CONTINUE_LOOP")) {
+            actionDescriptors.putIfAbsent(id, new ActionTypeDescriptor(
+                    id, 1, "hycitizens", "Control Flow", id,
+                    Map.of("type", "object", "additionalProperties", true), Map.of(), false
+            ));
+        }
+        for (String id : List.of("AND", "OR", "NOT")) {
+            conditionDescriptors.putIfAbsent(id, new ConditionTypeDescriptor(
+                    id, 1, "hycitizens", "Core Logic", id,
+                    Map.of("type", "object", "additionalProperties", true), Map.of()
+            ));
+        }
+        for (String id : List.of("ON_INTERACT", "ON_LEFT_CLICK", "ON_FIRST_INTERACT", "ON_PROXIMITY_ENTER",
+                "ON_PROXIMITY_EXIT", "ON_DAMAGE", "ON_DEATH", "ON_SPAWN", "ON_DESPAWN", "ON_TICK",
+                "ON_TIMER", "ON_CUSTOM", "ON_COMMAND", "ON_SIGNAL", "ON_SCHEDULE_CHANGE")) {
+            registerTriggerDescriptor(new TriggerTypeDescriptor(id, 1, "hycitizens", Map.of("type", "object"), id));
+        }
+        for (String id : List.of("SESSION", "PLAYER", "CITIZEN", "GLOBAL")) {
+            registerVariableProviderDescriptor(new VariableProviderDescriptor(
+                    id, 1, "hycitizens", Map.of("type", "object"), id + " variable scope"
+            ));
+        }
+        for (String id : List.of("DIALOG_STARTED", "DIALOG_COMPLETED", "DIALOG_NODE_ENTERED",
+                "DIALOG_RESPONSE_SELECTED", "SCRIPT_EXECUTION_FAILED")) {
+            registerEventDescriptor(new EventTypeDescriptor(id, 1, "hycitizens", Map.of("type", "object"), id));
+        }
     }
 
     // Template Compilation
@@ -202,43 +319,13 @@ public class ScriptManager {
             return rawBlock;
         }
 
-        // Deep copy template
-        ScriptBlock compiled = template.copy();
-
-        // Parameter substitution ({{param}})
-        Map<String, Object> params = rawBlock.getTemplateParameters();
-        String json = gson.toJson(compiled);
-
-        // Replace template parameters schema defaults first
-        Map<String, Object> schema = (Map<String, Object>) template.getTriggerParameters().get("parameters_schema"); // wait, schema lives in base
-        // Let's replace parameters recursively in JSON string
-        for (Map.Entry<String, Object> entry : params.entrySet()) {
-            String placeholder = "{{" + entry.getKey() + "}}";
-            String valStr = entry.getValue() != null ? entry.getValue().toString() : "";
-            json = json.replace(placeholder, valStr);
-        }
-
-        // Deserialize back
         try {
-            compiled = gson.fromJson(json, ScriptBlock.class);
-        } catch (Exception e) {
-            getLogger().atSevere().log("Failed to parse compiled script template: " + rawBlock.getTemplateId() + " - " + e.getMessage());
-            return rawBlock;
+            return templateCompiler.compile(template, rawBlock);
+        } catch (IllegalArgumentException error) {
+            getLogger().atWarning().log("Invalid script template parameters for "
+                    + rawBlock.getTemplateId() + ": " + error.getMessage());
+            throw error;
         }
-
-        // Append citizen script conditions & actions after template's
-        compiled.getConditions().addAll(rawBlock.getConditions());
-        compiled.getActions().addAll(rawBlock.getActions());
-
-        // Override identity parameters
-        compiled.setId(rawBlock.getId());
-        compiled.setName(rawBlock.getName());
-        compiled.setEnabled(rawBlock.isEnabled());
-        compiled.setPriority(rawBlock.getPriority());
-        compiled.setTriggers(rawBlock.getTriggers());
-        compiled.setTrigger(rawBlock.getTrigger());
-
-        return compiled;
     }
 
     private ScriptBlock loadTemplate(String templateId) {
@@ -256,6 +343,17 @@ public class ScriptManager {
 
     // Core Execution
     public void fireTrigger(CitizenData citizen, String triggerType, Map<String, Object> triggerArgs, PlayerRef player, Store<EntityStore> store) {
+        fireTrigger(citizen, triggerType, triggerArgs, player, store, ScriptConcurrencyMode.SEQUENTIAL);
+    }
+
+    public void fireTrigger(
+            CitizenData citizen,
+            String triggerType,
+            Map<String, Object> triggerArgs,
+            PlayerRef player,
+            Store<EntityStore> store,
+            ScriptConcurrencyMode concurrencyMode
+    ) {
         if (citizen == null) return;
 
         if ("ON_SPAWN".equalsIgnoreCase(triggerType)) {
@@ -272,7 +370,12 @@ public class ScriptManager {
         List<ScriptBlock> compiledScripts = new ArrayList<>();
         for (ScriptBlock raw : rawScripts) {
             if (raw.isEnabled() && matchesTriggerWithParameters(citizen, raw, triggerType, safeTriggerArgs)) {
-                compiledScripts.add(compileScript(raw));
+                try {
+                    compiledScripts.add(compileScript(raw));
+                } catch (IllegalArgumentException error) {
+                    getLogger().atWarning().log("[HyCitizens] Skipping invalid script " + raw.getId()
+                            + ": " + error.getMessage());
+                }
             }
         }
 
@@ -283,13 +386,31 @@ public class ScriptManager {
         if (world == null) return;
         Store<EntityStore> contextStore = store != null ? store : world.getEntityStore().getStore();
 
-        for (ScriptBlock script : compiledScripts) {
-            ScriptContext context = new ScriptContext(citizen, player, world, contextStore, triggerType, safeTriggerArgs);
-            executeScript(script, context);
-            if (context.isStopped()) {
-                break; // STOP_SCRIPT cancel lower priority
-            }
+        ScriptContext triggerContext = new ScriptContext(citizen, player, world, contextStore, triggerType, safeTriggerArgs);
+        if (concurrencyMode == ScriptConcurrencyMode.PARALLEL) {
+            CompletableFuture<?>[] executions = compiledScripts.stream()
+                    .map(script -> executeScriptResult(script, triggerContext))
+                    .toArray(CompletableFuture[]::new);
+            CompletableFuture.allOf(executions).exceptionally(error -> {
+                getLogger().atWarning().log("[HyCitizens] Parallel trigger execution failed for "
+                        + triggerType + ": " + error.getMessage());
+                return null;
+            });
+            return;
         }
+        CompletableFuture<Void> plan = CompletableFuture.completedFuture(null);
+        for (ScriptBlock script : compiledScripts) {
+            plan = plan.thenCompose(ignored -> {
+                if (triggerContext.isStopped()) {
+                    return CompletableFuture.completedFuture(null);
+                }
+                return executeScriptResult(script, triggerContext).thenApply(result -> null);
+            });
+        }
+        plan.exceptionally(error -> {
+            getLogger().atWarning().log("[HyCitizens] Trigger execution failed for " + triggerType + ": " + error.getMessage());
+            return null;
+        });
     }
 
     private boolean matchesTriggerWithParameters(CitizenData citizen, ScriptBlock script, String triggerType, Map<String, Object> triggerArgs) {
@@ -429,24 +550,49 @@ public class ScriptManager {
     }
 
     public void executeScript(ScriptBlock script, ScriptContext context) {
+        executeScriptResult(script, context);
+    }
+
+    public CompletableFuture<ScriptExecutionResult> executeScriptResult(ScriptBlock script, ScriptContext context) {
         // Evaluate conditions AND-gate
         for (ScriptCondition cond : script.getConditions()) {
             if (!evaluateCondition(cond, context)) {
-                return; // Guard failed
+                context.trace("script:" + script.getId() + ":guard-failed");
+                return CompletableFuture.completedFuture(ScriptExecutionResult.success(context));
             }
         }
 
-        String citizenId = context.getCitizen().getId();
+        String citizenId = context.getCitizen() != null ? context.getCitizen().getId() : "_generic";
         Set<String> citizenRunning = runningScripts.computeIfAbsent(citizenId, k -> ConcurrentHashMap.newKeySet());
         citizenRunning.add(script.getId());
+        context.trace("script:" + script.getId() + ":start");
 
-        // Execute action chain
-        executeActions(script.getActions(), context).whenComplete((v, t) -> {
+        return executeActionsResult(script.getActions(), context).whenComplete((result, error) -> {
             citizenRunning.remove(script.getId());
+            context.trace("script:" + script.getId() + ":end");
+            ScriptExecutionResult completed = result;
+            if (completed == null) {
+                Throwable cause = error != null ? error : new IllegalStateException("Script execution ended without a result");
+                completed = ScriptExecutionResult.failure(context, "EXECUTION", cause);
+            }
+            recentExecutionTraces.addFirst(new ScriptExecutionTrace(
+                    script.getId(), System.currentTimeMillis(), completed.success(),
+                    completed.failures(), completed.trace()
+            ));
+            while (recentExecutionTraces.size() > MAX_EXECUTION_TRACES) recentExecutionTraces.pollLast();
         });
     }
 
     public CompletableFuture<Void> executeActions(List<ScriptAction> actionsList, ScriptContext context) {
+        return executeActionsResult(actionsList, context).thenCompose(result -> {
+            if (!result.success() && !result.failures().isEmpty()) {
+                return CompletableFuture.failedFuture(result.failures().getFirst().cause());
+            }
+            return CompletableFuture.completedFuture(null);
+        });
+    }
+
+    public CompletableFuture<ScriptExecutionResult> executeActionsResult(List<ScriptAction> actionsList, ScriptContext context) {
         CompletableFuture<Void> future = CompletableFuture.completedFuture(null);
         for (ScriptAction action : actionsList) {
             future = future.thenCompose(v -> {
@@ -456,7 +602,11 @@ public class ScriptManager {
                 return executeAction(action, context);
             });
         }
-        return future;
+        return future.handle((ignored, error) -> {
+            if (error == null) return ScriptExecutionResult.success(context);
+            Throwable cause = error instanceof CompletionException && error.getCause() != null ? error.getCause() : error;
+            return ScriptExecutionResult.failure(context, "ACTION_CHAIN", cause);
+        });
     }
 
     public boolean evaluateCondition(ScriptCondition cond, ScriptContext context) {
@@ -478,6 +628,10 @@ public class ScriptManager {
         ScriptConditionHandler handler = conditions.get(type);
         if (handler == null) {
             getLogger().atWarning().log("Unknown script condition type: " + type);
+            context.trace("condition:" + type + ":unknown");
+            if (validationMode == ScriptValidationMode.STRICT) {
+                throw new IllegalArgumentException("Unknown script condition type: " + type);
+            }
             return false;
         }
 
@@ -487,16 +641,40 @@ public class ScriptManager {
             Object resolvedVal = ScriptExpressionEvaluator.evaluateParameter(entry.getValue(), context);
             resolvedParams.put(entry.getKey(), coerceNumericParam(entry.getKey(), resolvedVal));
         }
+        ConditionTypeDescriptor conditionDescriptor = conditionDescriptors.get(type);
+        if (conditionDescriptor != null) {
+            List<String> errors = conditionDescriptor.validate(resolvedParams);
+            if (!errors.isEmpty()) {
+                getLogger().atWarning().log("Invalid script condition " + type + ": " + String.join(", ", errors));
+                return false;
+            }
+        }
 
         return handler.evaluate(context, resolvedParams);
     }
 
     public CompletableFuture<Void> executeAction(ScriptAction action, ScriptContext context) {
         String type = action.getType().toUpperCase();
+        // Support loop control actions directly in engine
+        if ("BREAK_LOOP".equals(type)) {
+            context.setBreakLoop(true);
+            return CompletableFuture.completedFuture(null);
+        } else if ("CONTINUE_LOOP".equals(type)) {
+            context.setContinueLoop(true);
+            return CompletableFuture.completedFuture(null);
+        } else if ("STOP_SCRIPT".equals(type)) {
+            context.setStopped(true);
+            return CompletableFuture.completedFuture(null);
+        }
+
         ScriptActionHandler handler = actions.get(type);
         if (handler == null) {
             getLogger().atWarning().log("Unknown script action type: " + type);
-            return CompletableFuture.completedFuture(null);
+            context.trace("action:" + type + ":unknown");
+            if (validationMode == ScriptValidationMode.PERMISSIVE) {
+                return CompletableFuture.completedFuture(null);
+            }
+            return CompletableFuture.failedFuture(new IllegalArgumentException("Unknown script action type: " + type));
         }
 
         // Resolve target & parameters
@@ -509,17 +687,14 @@ public class ScriptManager {
             Object resolvedVal = ScriptExpressionEvaluator.evaluateParameter(entry.getValue(), context);
             resolvedParams.put(entry.getKey(), coerceNumericParam(entry.getKey(), resolvedVal));
         }
-
-        // Support loop control actions directly in engine
-        if ("BREAK_LOOP".equals(type)) {
-            context.setBreakLoop(true);
-            return CompletableFuture.completedFuture(null);
-        } else if ("CONTINUE_LOOP".equals(type)) {
-            context.setContinueLoop(true);
-            return CompletableFuture.completedFuture(null);
-        } else if ("STOP_SCRIPT".equals(type)) {
-            context.setStopped(true);
-            return CompletableFuture.completedFuture(null);
+        ActionTypeDescriptor actionDescriptor = actionDescriptors.get(type);
+        if (actionDescriptor != null) {
+            List<String> errors = actionDescriptor.validate(resolvedParams);
+            if (!errors.isEmpty()) {
+                return CompletableFuture.failedFuture(
+                        new IllegalArgumentException("Invalid action " + type + ": " + String.join(", ", errors))
+                );
+            }
         }
 
         // Handle target overriding
@@ -542,10 +717,14 @@ public class ScriptManager {
         }
 
         try {
-            return handler.execute(targetContext, resolvedParams);
+            context.trace("action:" + type);
+            return handler.execute(targetContext, resolvedParams).exceptionallyCompose(error ->
+                    CompletableFuture.failedFuture(error instanceof CompletionException && error.getCause() != null
+                            ? error.getCause() : error)
+            );
         } catch (Exception e) {
             getLogger().atSevere().log("Error executing script action: " + type + " - " + e.getMessage());
-            return CompletableFuture.completedFuture(null);
+            return CompletableFuture.failedFuture(e);
         }
     }
 
@@ -565,7 +744,7 @@ public class ScriptManager {
                 if (p != null) targetPlayer = p;
             } catch (Exception ignored) {}
         }
-        return new ScriptContext(context.getCitizen(), targetPlayer, context.getWorld(), context.getStore(), context.getTriggerType(), null);
+        return new ScriptContext(context, targetPlayer);
     }
 
     private PlayerRef getNearestPlayer(ScriptContext context, double radius) {
@@ -589,7 +768,17 @@ public class ScriptManager {
 
     //  Proximity and Ticks Throttled Processing
     private void checkProximities() {
-        // Update following players pathfinding targets
+        for (World world : Universe.get().getWorlds().values()) {
+            world.execute(() -> checkProximitiesOnWorld(world));
+        }
+    }
+
+    private void checkProximitiesOnWorld(World world) {
+        Store<EntityStore> store = world.getEntityStore().getStore();
+        List<CitizenData> worldCitizens = HyCitizensPlugin.get().getCitizensManager().getAllCitizens().stream()
+                .filter(citizen -> Universe.get().getWorld(citizen.getWorldUUID()) == world)
+                .toList();
+
         for (Map.Entry<String, FollowPlayerState> entry : followingPlayers.entrySet()) {
             String citizenId = entry.getKey();
             FollowPlayerState followState = entry.getValue();
@@ -598,25 +787,22 @@ public class ScriptManager {
                 followingPlayers.remove(citizenId);
                 continue;
             }
+            if (Universe.get().getWorld(citizen.getWorldUUID()) != world) continue;
             if (!"FOLLOW_PLAYER".equals(citizen.getMovementBehavior().getType())) {
                 followingPlayers.remove(citizenId);
                 continue;
             }
-            World world = Universe.get().getWorld(citizen.getWorldUUID());
-            if (world == null) continue;
-
-            world.execute(() -> {
                 if (HyCitizensPlugin.get().getCitizensManager().isCitizenInAiBusyState(citizen)) {
-                    return;
+                    continue;
                 }
                 PlayerRef player = Universe.get().getPlayer(followState.playerUuid);
                 if (player == null || !player.isValid() || player.getWorldUuid() == null || !player.getWorldUuid().equals(citizen.getWorldUUID())) {
-                    stopFollowingPlayer(citizen, "PLAYER_DISCONNECT", null, world.getEntityStore().getStore());
+                    stopFollowingPlayer(citizen, "PLAYER_DISCONNECT", null, store);
                     MovementBehavior mb = new MovementBehavior("IDLE", 2.0f, 0.0f, 0.0f, 0.0f);
                     citizen.setMovementBehavior(mb);
                     HyCitizensPlugin.get().getCitizensManager().stopCitizenMovement(citizenId);
                     HyCitizensPlugin.get().getCitizensManager().updateCitizenRoleImmediately(citizen);
-                    return;
+                    continue;
                 }
                 Vector3d pPos = player.getTransform().getPosition();
                 Vector3d cPos = citizen.getCurrentPosition() != null ? citizen.getCurrentPosition() : citizen.getPosition();
@@ -624,7 +810,7 @@ public class ScriptManager {
 
                 if (dist > followState.maxDistance) {
                     if (followState.hardStopOnMaxDistance) {
-                        stopFollowingPlayer(citizen, "MAX_DISTANCE", player, world.getEntityStore().getStore());
+                        stopFollowingPlayer(citizen, "MAX_DISTANCE", player, store);
                         MovementBehavior mb = new MovementBehavior("IDLE", 2.0f, 0.0f, 0.0f, 0.0f);
                         citizen.setMovementBehavior(mb);
                         HyCitizensPlugin.get().getCitizensManager().stopCitizenMovement(citizenId);
@@ -639,10 +825,19 @@ public class ScriptManager {
                     // Destination reached
                     HyCitizensPlugin.get().getCitizensManager().stopCitizenMovement(citizenId);
                 }
-            });
         }
 
-        for (CitizenData citizen : HyCitizensPlugin.get().getCitizensManager().getAllCitizens()) {
+        final double cellSize = 16.0;
+        Map<Long, List<PlayerRef>> playerCells = new HashMap<>();
+        Set<UUID> currentPlayers = new HashSet<>();
+        for (PlayerRef player : world.getPlayerRefs()) {
+            if (!player.isValid()) continue;
+            Vector3d position = player.getTransform().getPosition();
+            playerCells.computeIfAbsent(spatialCell(position, cellSize), ignored -> new ArrayList<>()).add(player);
+            currentPlayers.add(player.getUuid());
+        }
+
+        for (CitizenData citizen : worldCitizens) {
             List<ScriptBlock> rawScripts = getCitizenScripts(citizen);
             if (rawScripts == null || rawScripts.isEmpty()) continue;
 
@@ -664,73 +859,77 @@ public class ScriptManager {
 
             if (!hasProxEnter && !hasProxExit) continue;
 
-            World world = Universe.get().getWorld(citizen.getWorldUUID());
-            if (world == null) continue;
-
-            Vector3d cPos = citizen.getCurrentPosition() != null ? citizen.getCurrentPosition() : citizen.getPosition();
             Map<UUID, Boolean> citizenProxState = proximityStates.computeIfAbsent(citizen.getId(), k -> new ConcurrentHashMap<>());
+            Vector3d cPos = citizen.getCurrentPosition() != null ? citizen.getCurrentPosition() : citizen.getPosition();
+            int cellRadius = Math.max(1, (int) Math.ceil(radius / cellSize));
+            int centerX = (int) Math.floor(cPos.x / cellSize);
+            int centerZ = (int) Math.floor(cPos.z / cellSize);
+            Set<UUID> checkedPlayers = new HashSet<>();
 
-            final double checkRadius = radius;
-            final boolean runEnter = hasProxEnter;
-            final boolean runExit = hasProxExit;
-
-            world.execute(() -> {
-                Store<EntityStore> store = world.getEntityStore().getStore();
-                Set<UUID> currentPlayers = new HashSet<>();
-
-                for (PlayerRef player : world.getPlayerRefs()) {
-                    if (player.isValid()) {
-                        double dist = player.getTransform().getPosition().distance(cPos);
-                        boolean inside = dist <= checkRadius;
-                        UUID pUuid = player.getUuid();
-
-                        boolean wasInside = citizenProxState.getOrDefault(pUuid, false);
-                        if (inside && !wasInside) {
-                            citizenProxState.put(pUuid, true);
-                            if (runEnter) {
-                                fireTrigger(citizen, "ON_PROXIMITY_ENTER", null, player, store);
-                            }
-                        } else if (!inside && wasInside) {
-                            citizenProxState.put(pUuid, false);
-                            if (runExit) {
-                                fireTrigger(citizen, "ON_PROXIMITY_EXIT", null, player, store);
-                            }
+            for (int dx = -cellRadius; dx <= cellRadius; dx++) {
+                for (int dz = -cellRadius; dz <= cellRadius; dz++) {
+                    for (PlayerRef player : playerCells.getOrDefault(spatialCell(centerX + dx, centerZ + dz), List.of())) {
+                        UUID playerId = player.getUuid();
+                        checkedPlayers.add(playerId);
+                        boolean inside = player.getTransform().getPosition().distance(cPos) <= radius;
+                        boolean wasInside = citizenProxState.getOrDefault(playerId, false);
+                        citizenProxState.put(playerId, inside);
+                        if (inside && !wasInside && hasProxEnter) {
+                            fireTrigger(citizen, "ON_PROXIMITY_ENTER", null, player, store);
+                        } else if (!inside && wasInside && hasProxExit) {
+                            fireTrigger(citizen, "ON_PROXIMITY_EXIT", null, player, store);
                         }
-                        currentPlayers.add(pUuid);
                     }
                 }
+            }
 
-                // Cleanup disconnected players from proximity state
-                citizenProxState.keySet().retainAll(currentPlayers);
-            });
+            for (UUID previousPlayer : new HashSet<>(citizenProxState.keySet())) {
+                if (!currentPlayers.contains(previousPlayer)) {
+                    citizenProxState.remove(previousPlayer);
+                } else if (!checkedPlayers.contains(previousPlayer) && Boolean.TRUE.equals(citizenProxState.put(previousPlayer, false))
+                        && hasProxExit) {
+                    PlayerRef player = Universe.get().getPlayer(previousPlayer);
+                    if (player != null && player.isValid()) {
+                        fireTrigger(citizen, "ON_PROXIMITY_EXIT", null, player, store);
+                    }
+                }
+            }
         }
     }
 
     private void checkTicks() {
-        // Todo: Optimize this better
+        for (World world : Universe.get().getWorlds().values()) {
+            world.execute(() -> checkTicksOnWorld(world));
+        }
+    }
+
+    private void checkTicksOnWorld(World world) {
+        Store<EntityStore> store = world.getEntityStore().getStore();
         for (CitizenData citizen : HyCitizensPlugin.get().getCitizensManager().getAllCitizens()) {
+            if (Universe.get().getWorld(citizen.getWorldUUID()) != world) continue;
             List<ScriptBlock> rawScripts = getCitizenScripts(citizen);
             if (rawScripts == null || rawScripts.isEmpty()) continue;
-
-            World world = Universe.get().getWorld(citizen.getWorldUUID());
-            if (world == null) continue;
-
-            world.execute(() -> {
-                Store<EntityStore> store = world.getEntityStore().getStore();
-                for (ScriptBlock script : rawScripts) {
-                    if (script.isEnabled() && script.matchesTrigger("ON_TICK")) {
-                        double seconds = getAsDouble(script.getTriggerParameters().getOrDefault("interval_seconds", 1.0), 1.0);
-                        if (seconds < 0.5) seconds = 0.5;
-
-                        long lastTick = contextLastRunTime(script.getId());
-                        if (System.currentTimeMillis() - lastTick >= (seconds * 1000)) {
-                            setContextLastRunTime(script.getId(), System.currentTimeMillis());
-                            fireTrigger(citizen, "ON_TICK", null, null, store);
-                        }
+            for (ScriptBlock script : rawScripts) {
+                if (script.isEnabled() && script.matchesTrigger("ON_TICK")) {
+                    double seconds = getAsDouble(script.getTriggerParameters().getOrDefault("interval_seconds", 1.0), 1.0);
+                    if (seconds < 0.5) seconds = 0.5;
+                    String runKey = citizen.getId() + ":" + script.getId();
+                    long lastTick = contextLastRunTime(runKey);
+                    if (System.currentTimeMillis() - lastTick >= (seconds * 1000)) {
+                        setContextLastRunTime(runKey, System.currentTimeMillis());
+                        fireTrigger(citizen, "ON_TICK", null, null, store);
                     }
                 }
-            });
+            }
         }
+    }
+
+    private long spatialCell(Vector3d position, double cellSize) {
+        return spatialCell((int) Math.floor(position.x / cellSize), (int) Math.floor(position.z / cellSize));
+    }
+
+    private long spatialCell(int x, int z) {
+        return ((long) x << 32) ^ (z & 0xffffffffL);
     }
 
     private final Map<String, Long> lastRunTimes = new ConcurrentHashMap<>();
@@ -1853,7 +2052,7 @@ public class ScriptManager {
 
                 if ("PLAYER".equalsIgnoreCase(entityType)) {
                     if (context.getPlayer() != null) {
-                        Teleport tp = new Teleport(destWorld, new Vector3d(x, y, z), com.electro.hycitizens.util.RotationUtil.toRotation(new Vector3f(yaw, pitch, 0f)));
+                        Teleport tp = new Teleport(destWorld, new Vector3d(x, y, z), RotationUtil.toRotation(new Vector3f(yaw, pitch, 0f)));
                         context.getStore().putComponent(context.getPlayer().getReference(), Teleport.getComponentType(), tp);
                     }
                 } else {
@@ -2550,7 +2749,7 @@ public class ScriptManager {
                 if ("CITIZEN".equalsIgnoreCase(target) && context.getCitizen() != null) {
                     Ref<EntityStore> ref = context.getCitizen().getNpcRef();
                     if (ref != null && ref.isValid()) {
-                        ref.getStore().removeEntity(ref, com.hypixel.hytale.component.RemoveReason.REMOVE);
+                        ref.getStore().removeEntity(ref, RemoveReason.REMOVE);
                     }
                 }
                 return CompletableFuture.completedFuture(null);
@@ -2909,30 +3108,55 @@ public class ScriptManager {
                 String resultVar = (String) params.get("result_variable");
                 String scope = (String) params.getOrDefault("result_scope", "SESSION");
                 if (url == null || resultVar == null) return CompletableFuture.completedFuture(null);
-                
-                HttpRequest.Builder builder = HttpRequest.newBuilder().uri(URI.create(url));
+
+                if (!HyCitizensPlugin.get().getConfigManager().getBoolean("scripting.http.enabled", false)) {
+                    return CompletableFuture.failedFuture(new SecurityException("MAKE_HTTP_REQUEST is disabled"));
+                }
+
+                URI uri;
+                try {
+                    uri = validateHttpUri(url);
+                } catch (Exception error) {
+                    return CompletableFuture.failedFuture(error);
+                }
+                if (!allowHttpRequest()) {
+                    return CompletableFuture.failedFuture(new IllegalStateException("HTTP scripting rate limit exceeded"));
+                }
+                if (!httpConcurrency.tryAcquire()) {
+                    return CompletableFuture.failedFuture(new IllegalStateException("HTTP scripting concurrency limit exceeded"));
+                }
+
+                HttpRequest.Builder builder = HttpRequest.newBuilder().uri(uri).timeout(Duration.ofSeconds(5));
                 if ("POST".equalsIgnoreCase(method)) {
                     Object payload = params.get("payload");
-                    builder.POST(HttpRequest.BodyPublishers.ofString(gson.toJson(payload)));
+                    builder.header("Content-Type", "application/json")
+                            .POST(HttpRequest.BodyPublishers.ofString(gson.toJson(payload), StandardCharsets.UTF_8));
                 } else {
                     builder.GET();
                 }
-                
+
                 CompletableFuture<Void> future = new CompletableFuture<>();
-                httpClient.sendAsync(builder.build(), HttpResponse.BodyHandlers.ofString())
+                getLogger().atInfo().log("[HyCitizens] Privileged HTTP script request to " + uri.getScheme() + "://" + uri.getHost());
+                httpClient.sendAsync(builder.build(), HttpResponse.BodyHandlers.ofInputStream())
                     .thenAccept(res -> {
-                        String body = res.body();
-                        Object val = body;
                         try {
-                            val = gson.fromJson(body, Map.class);
-                        } catch (Exception e) {
+                            int maxBytes = Math.max(1_024, HyCitizensPlugin.get().getConfigManager()
+                                    .getInt("scripting.http.max_response_bytes", 262_144));
+                            byte[] bytes = res.body().readNBytes(maxBytes + 1);
+                            if (bytes.length > maxBytes) {
+                                throw new IOException("HTTP response exceeded " + maxBytes + " bytes");
+                            }
+                            String body = new String(bytes, StandardCharsets.UTF_8);
+                            Object val = body;
                             try {
-                                val = gson.fromJson(body, List.class);
-                            } catch (Exception ignored) {}
-                        }
-                        
-                        final Object finalVal = val;
-                        context.getWorld().execute(() -> {
+                                val = gson.fromJson(body, Map.class);
+                            } catch (Exception e) {
+                                try {
+                                    val = gson.fromJson(body, List.class);
+                                } catch (Exception ignored) {}
+                            }
+                            final Object finalVal = val;
+                            Runnable storeResult = () -> {
                             if ("PLAYER".equalsIgnoreCase(scope) && context.getPlayer() != null) {
                                 VariableManager.get().setPlayerVar(context.getPlayer().getUuid(), resultVar, finalVal);
                             } else if ("CITIZEN".equalsIgnoreCase(scope)) {
@@ -2943,15 +3167,237 @@ public class ScriptManager {
                                 context.setSessionVar(resultVar, finalVal);
                             }
                             future.complete(null);
-                        });
+                            };
+                            if (context.getWorld() != null) context.getWorld().execute(storeResult); else storeResult.run();
+                        } catch (Exception error) {
+                            future.completeExceptionally(error);
+                        } finally {
+                            httpConcurrency.release();
+                            try { res.body().close(); } catch (IOException ignored) {}
+                        }
                     }).exceptionally(ex -> {
-                        future.complete(null);
+                        httpConcurrency.release();
+                        future.completeExceptionally(ex);
                         return null;
                     });
                 return future;
             }
+        }, new ActionTypeDescriptor(
+                "MAKE_HTTP_REQUEST", 1, "hycitizens", "Privileged", "Restricted outbound HTTP request",
+                Map.of("type", "object", "required", List.of("url", "result_variable")),
+                Map.of("warning", "Disabled by default and restricted by server allowlist"), true
+        ));
+
+        registerAction(new ScriptActionHandler() {
+            @Override public String getType() { return "START_PRESET_DIALOGUE"; }
+            @Override public CompletableFuture<Void> execute(ScriptContext context, Map<String, Object> params) {
+                if (context.getPlayer() == null) return CompletableFuture.completedFuture(null);
+                String dialogueId = (String) params.get("dialogue_id");
+                if (dialogueId == null) dialogueId = (String) params.get("id");
+                if (dialogueId == null || dialogueId.isEmpty()) {
+                    getLogger().atWarning().log("[HyCitizens] START_PRESET_DIALOGUE executed with null or empty dialogue_id!");
+                    return CompletableFuture.completedFuture(null);
+                }
+
+                IDialogue dialogue = DialogueManager.get().getDialogue(dialogueId);
+                if (dialogue == null) {
+                    getLogger().atWarning().log("[HyCitizens] No dialogue found with ID: " + dialogueId);
+                    context.getPlayer().sendMessage(Message.raw("[Dialogue Error] No preset dialogue found with ID: " + dialogueId).color(Color.RED));
+                    return CompletableFuture.completedFuture(null);
+                }
+
+                String npcId = context.getCitizen() != null ? context.getCitizen().getId() : null;
+                DialogueManager.get().startDialogueSession(context.getPlayer(), dialogue, context, npcId);
+                return CompletableFuture.completedFuture(null);
+            }
+        });
+
+        // SET_CITIZEN_DIALOGUE Action
+        registerAction(new ScriptActionHandler() {
+            @Override public String getType() { return "SET_CITIZEN_DIALOGUE"; }
+            @Override public CompletableFuture<Void> execute(ScriptContext context, Map<String, Object> params) {
+                String citizenId = (String) params.get("citizen_id");
+                String dialogueId = (String) params.get("dialogue_id");
+                if (dialogueId == null) dialogueId = (String) params.get("id");
+
+                CitizenData citizen = null;
+                if (citizenId != null && !citizenId.isEmpty()) {
+                    citizen = HyCitizensPlugin.get().getCitizensManager().getCitizen(citizenId);
+                } else if (context.getCitizen() != null) {
+                    citizen = context.getCitizen();
+                }
+
+                if (citizen == null) {
+                    getLogger().atWarning().log("[HyCitizens] SET_CITIZEN_DIALOGUE executed with no valid citizen!");
+                    return CompletableFuture.completedFuture(null);
+                }
+
+                String owner = "visual-script:set-dialog:" + citizen.getId();
+                if ("none".equalsIgnoreCase(dialogueId) || "null".equalsIgnoreCase(dialogueId) || dialogueId == null || dialogueId.isEmpty()) {
+                    DialogueManager.get().removeOverridesByOwner(owner);
+                } else {
+                    DialogueManager.get().removeOverridesByOwner(owner);
+                    DialogueManager.get().addOverride(new com.electro.hycitizens.api.dialogue.DialogOverride(
+                            UUID.randomUUID(),
+                            com.electro.hycitizens.api.dialogue.DialogOverride.Scope.NPC,
+                            citizen.getId(),
+                            dialogueId,
+                            getAsInt(params.get("priority"), 0),
+                            owner,
+                            getAsLong(params.get("expires_at"), 0L)
+                    ));
+                }
+                return CompletableFuture.completedFuture(null);
+            }
+        });
+
+        // START_QUEST Action
+        registerAction(new ScriptActionHandler() {
+            @Override public String getType() { return "START_QUEST"; }
+            @Override public CompletableFuture<Void> execute(ScriptContext context, Map<String, Object> params) {
+                if (context.getPlayer() == null) return CompletableFuture.completedFuture(null);
+                String questId = (String) params.get("quest_id");
+                if (questId == null) questId = (String) params.get("id");
+                if (questId == null || questId.isEmpty()) return CompletableFuture.completedFuture(null);
+
+                try {
+                    QuestIntegration.startQuest(context.getPlayer(), questId);
+                } catch (QuestIntegration.QuestIntegrationException e) {
+                    getLogger().atWarning().log("[HyCitizens] START_QUEST failed for '" + questId + "': " + e.getMessage());
+                    return CompletableFuture.failedFuture(e);
+                }
+                return CompletableFuture.completedFuture(null);
+            }
+        });
+
+        // PROGRESS_QUEST_OBJECTIVE Action
+        registerAction(new ScriptActionHandler() {
+            @Override public String getType() { return "PROGRESS_QUEST_OBJECTIVE"; }
+            @Override public CompletableFuture<Void> execute(ScriptContext context, Map<String, Object> params) {
+                if (context.getPlayer() == null) return CompletableFuture.completedFuture(null);
+                String rawType = (String) params.get("type");
+                String target = (String) params.get("target");
+                int amount = getAsInt(params.get("amount"), 1);
+                if (rawType == null || rawType.isEmpty()) return CompletableFuture.completedFuture(null);
+
+                try {
+                    QuestIntegration.progressObjective(
+                            context.getPlayer(),
+                            rawType,
+                            target != null ? target : "",
+                            amount
+                    );
+                } catch (QuestIntegration.QuestIntegrationException | IllegalArgumentException e) {
+                    getLogger().atWarning().log("[HyCitizens] PROGRESS_QUEST_OBJECTIVE failed: " + e.getMessage());
+                    return CompletableFuture.failedFuture(e);
+                }
+                return CompletableFuture.completedFuture(null);
+            }
+        });
+
+        registerAction(new ScriptActionHandler() {
+            @Override public String getType() { return "APPLY_DIALOG_PATCH"; }
+            @Override public CompletableFuture<Void> execute(ScriptContext context, Map<String, Object> params) {
+                try {
+                    String dialogId = Objects.toString(params.get("dialog_id"), "");
+                    String nodeId = Objects.toString(params.get("node_id"), "");
+                    String operation = Objects.toString(params.get("operation"), "");
+                    String scopeName = Objects.toString(params.getOrDefault("scope", "PLAYER"), "PLAYER");
+                    if (dialogId.isEmpty() || nodeId.isEmpty() || operation.isEmpty()) {
+                        return CompletableFuture.failedFuture(new IllegalArgumentException("Dialog patch requires dialog_id, node_id, and operation"));
+                    }
+                    com.electro.hycitizens.api.dialogue.DialogPatch.Scope scope =
+                            com.electro.hycitizens.api.dialogue.DialogPatch.Scope.valueOf(scopeName.toUpperCase(Locale.ROOT));
+                    String scopeId = switch (scope) {
+                        case GLOBAL -> "";
+                        case NPC -> context.getCitizen() != null ? context.getCitizen().getId() : "";
+                        case PLAYER -> context.getPlayer() != null ? context.getPlayer().getUuid().toString() : "";
+                        case SESSION -> Objects.toString(params.get("session_id"), "");
+                    };
+                    UUID patchId = params.get("patch_id") != null
+                            ? UUID.fromString(params.get("patch_id").toString()) : UUID.randomUUID();
+                    com.electro.hycitizens.api.dialogue.DialogPatch patch =
+                            new com.electro.hycitizens.api.dialogue.DialogPatch(
+                                    patchId, dialogId, scope, scopeId,
+                                    Objects.toString(params.getOrDefault("owner", "visual-script"), "visual-script"),
+                                    getAsInt(params.get("priority"), 0),
+                                    getAsLong(params.get("expires_at"), 0L),
+                                    com.electro.hycitizens.api.dialogue.DialogPatch.Operation.valueOf(operation.toUpperCase(Locale.ROOT)),
+                                    nodeId, Objects.toString(params.get("response_id"), null),
+                                    Objects.toString(params.get("value"), null)
+                            );
+                    DialogueManager.get().applyPatch(patch);
+                    context.setSessionVar("last_dialog_patch_id", patchId.toString());
+                    return CompletableFuture.completedFuture(null);
+                } catch (RuntimeException error) {
+                    return CompletableFuture.failedFuture(error);
+                }
+            }
+        });
+
+        registerAction(new ScriptActionHandler() {
+            @Override public String getType() { return "REMOVE_DIALOG_PATCH"; }
+            @Override public CompletableFuture<Void> execute(ScriptContext context, Map<String, Object> params) {
+                String id = Objects.toString(params.getOrDefault("patch_id", context.getSessionVar("last_dialog_patch_id")), "");
+                if (id.isEmpty()) return CompletableFuture.completedFuture(null);
+                DialogueManager.get().removePatch(UUID.fromString(id));
+                return CompletableFuture.completedFuture(null);
+            }
+        });
+
+        // PLAYER_HAS_QUEST Condition
+        registerCondition(new ScriptConditionHandler() {
+            @Override public String getType() { return "PLAYER_HAS_QUEST"; }
+            @Override public boolean evaluate(ScriptContext context, Map<String, Object> params) {
+                if (context.getPlayer() == null) return false;
+                String questId = (String) params.get("quest_id");
+                if (questId == null) questId = (String) params.get("id");
+                if (questId == null || questId.isEmpty()) return false;
+
+                try {
+                    return QuestIntegration.hasActiveQuest(context.getPlayer().getUuid(), questId);
+                } catch (QuestIntegration.QuestIntegrationException e) {
+                    getLogger().atWarning().log("[HyCitizens] PLAYER_HAS_QUEST failed for '" + questId + "': " + e.getMessage());
+                    return false;
+                }
+            }
+        });
+
+        // PLAYER_COMPLETED_QUEST Condition
+        registerCondition(new ScriptConditionHandler() {
+            @Override public String getType() { return "PLAYER_COMPLETED_QUEST"; }
+            @Override public boolean evaluate(ScriptContext context, Map<String, Object> params) {
+                if (context.getPlayer() == null) return false;
+                String questId = (String) params.get("quest_id");
+                if (questId == null) questId = (String) params.get("id");
+                if (questId == null || questId.isEmpty()) return false;
+
+                try {
+                    return QuestIntegration.hasCompletedQuest(context.getPlayer().getUuid(), questId);
+                } catch (QuestIntegration.QuestIntegrationException e) {
+                    getLogger().atWarning().log("[HyCitizens] PLAYER_COMPLETED_QUEST failed for '" + questId + "': " + e.getMessage());
+                    return false;
+                }
+            }
+        });
+
+        registerCondition(new ScriptConditionHandler() {
+            @Override public String getType() { return "PLAYER_REWARD_CLAIMED"; }
+            @Override public boolean evaluate(ScriptContext context, Map<String, Object> params) {
+                if (context.getPlayer() == null) return false;
+                String questId = (String) params.getOrDefault("quest_id", params.get("id"));
+                if (questId == null || questId.isEmpty()) return false;
+                try {
+                    return QuestIntegration.isRewardClaimed(context.getPlayer().getUuid(), questId);
+                } catch (QuestIntegration.QuestIntegrationException error) {
+                    getLogger().atWarning().log("[HyCitizens] PLAYER_REWARD_CLAIMED failed for '"
+                            + questId + "': " + error.getMessage());
+                    return false;
+                }
+            }
         });
     }
+
 
     private void runWhileIteration(ScriptCondition cond, List<ScriptAction> actions, int maxIterations, int iteration, ScriptContext context, CompletableFuture<Void> loopFuture) {
         if (iteration >= maxIterations) {
@@ -3340,5 +3786,96 @@ public class ScriptManager {
             return false;
         }
         return handler.evaluate(context, params);
+    }
+
+    public void setValidationMode(ScriptValidationMode validationMode) {
+        this.validationMode = Objects.requireNonNull(validationMode);
+    }
+
+    public ScriptValidationMode getValidationMode() {
+        return validationMode;
+    }
+
+    public List<ScriptExecutionTrace> getRecentExecutionTraces() {
+        return List.copyOf(recentExecutionTraces);
+    }
+
+    public List<String> validateScript(ScriptBlock script) {
+        List<String> diagnostics = new ArrayList<>();
+        for (ScriptCondition condition : script.getConditions()) validateConditionTree(condition, diagnostics);
+        for (ScriptAction action : script.getActions()) validateActionTree(action, diagnostics);
+        return List.copyOf(diagnostics);
+    }
+
+    private void validateConditionTree(ScriptCondition condition, List<String> diagnostics) {
+        String type = condition.getType() == null ? "" : condition.getType().toUpperCase(Locale.ROOT);
+        if (!Set.of("AND", "OR", "NOT").contains(type) && !conditions.containsKey(type)) {
+            diagnostics.add("Unknown condition type: " + type);
+        }
+        condition.getConditions().forEach(child -> validateConditionTree(child, diagnostics));
+        if (condition.getCondition() != null) validateConditionTree(condition.getCondition(), diagnostics);
+    }
+
+    private void validateActionTree(ScriptAction action, List<String> diagnostics) {
+        String type = action.getType() == null ? "" : action.getType().toUpperCase(Locale.ROOT);
+        if (!Set.of("BREAK_LOOP", "CONTINUE_LOOP", "STOP_SCRIPT").contains(type) && !actions.containsKey(type)) {
+            diagnostics.add("Unknown action type: " + type);
+        }
+        action.getActions().forEach(child -> validateActionTree(child, diagnostics));
+        action.getTrueActions().forEach(child -> validateActionTree(child, diagnostics));
+        action.getFalseActions().forEach(child -> validateActionTree(child, diagnostics));
+        action.getBranches().forEach(branch ->
+                branch.getActions().forEach(child -> validateActionTree(child, diagnostics)));
+    }
+
+    private static long getAsLong(Object value, long defaultValue) {
+        if (value instanceof Number number) return number.longValue();
+        if (value != null) {
+            try { return Long.parseLong(value.toString()); }
+            catch (NumberFormatException ignored) {}
+        }
+        return defaultValue;
+    }
+
+    private URI validateHttpUri(String rawUrl) throws Exception {
+        URI uri = URI.create(rawUrl);
+        String scheme = uri.getScheme() != null ? uri.getScheme().toLowerCase(Locale.ROOT) : "";
+        String allowedProtocols = HyCitizensPlugin.get().getConfigManager()
+                .getString("scripting.http.allowed_protocols", "https");
+        Set<String> protocols = new HashSet<>();
+        for (String value : allowedProtocols.split(",")) protocols.add(value.trim().toLowerCase(Locale.ROOT));
+        if (!protocols.contains(scheme) || uri.getHost() == null || uri.getUserInfo() != null) {
+            throw new SecurityException("HTTP URL protocol or authority is not allowed");
+        }
+
+        String host = uri.getHost().toLowerCase(Locale.ROOT);
+        String allowedHosts = HyCitizensPlugin.get().getConfigManager().getString("scripting.http.allowed_hosts", "");
+        boolean hostAllowed = Arrays.stream(allowedHosts.split(","))
+                .map(String::trim)
+                .filter(value -> !value.isEmpty())
+                .map(value -> value.toLowerCase(Locale.ROOT))
+                .anyMatch(value -> host.equals(value) || (value.startsWith("*.") && host.endsWith(value.substring(1))));
+        if (!hostAllowed) {
+            throw new SecurityException("HTTP host is not in scripting.http.allowed_hosts");
+        }
+
+        for (InetAddress address : InetAddress.getAllByName(host)) {
+            if (address.isAnyLocalAddress() || address.isLoopbackAddress() || address.isLinkLocalAddress()
+                    || address.isSiteLocalAddress() || address.isMulticastAddress()) {
+                throw new SecurityException("HTTP host resolves to a private or local address");
+            }
+        }
+        return uri;
+    }
+
+    private boolean allowHttpRequest() {
+        long minute = System.currentTimeMillis() / 60_000L;
+        long previous = httpRateWindow.get();
+        if (previous != minute && httpRateWindow.compareAndSet(previous, minute)) {
+            httpRateCount.set(0);
+        }
+        int limit = Math.max(1, HyCitizensPlugin.get().getConfigManager()
+                .getInt("scripting.http.max_requests_per_minute", 30));
+        return httpRateCount.incrementAndGet() <= limit;
     }
 }

@@ -9,7 +9,7 @@ import com.hypixel.hytale.server.core.universe.world.storage.EntityStore;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
-public class ScriptContext {
+public class ScriptContext extends ExecutionContext {
 
     private final CitizenData citizen;
     private final PlayerRef player;          // null on playerless triggers
@@ -27,6 +27,7 @@ public class ScriptContext {
     private boolean dryRun = false;
 
     public ScriptContext(CitizenData citizen, PlayerRef player, World world, Store<EntityStore> store, String triggerType, Map<String, Object> triggerArgs) {
+        super();
         this.citizen = citizen;
         this.player = player;
         this.world = world;
@@ -34,9 +35,17 @@ public class ScriptContext {
         this.triggerType = triggerType;
         this.triggerArgs = triggerArgs != null ? new ConcurrentHashMap<>(triggerArgs) : new ConcurrentHashMap<>();
         this.sessionScope = new ConcurrentHashMap<>();
+        if (player != null) putCapability(ExecutionCapabilities.Actor.class, new ExecutionCapabilities.Actor(player));
+        if (citizen != null) putCapability(ExecutionCapabilities.Subject.class, new ExecutionCapabilities.Subject(citizen));
+        putCapability(ExecutionCapabilities.WorldAccess.class, new ExecutionCapabilities.WorldAccess(world, store));
+        putCapability(ExecutionCapabilities.EventPayload.class,
+                new ExecutionCapabilities.EventPayload(triggerType, Map.copyOf(this.triggerArgs)));
+        putCapability(ExecutionCapabilities.VariableScopes.class,
+                new ExecutionCapabilities.VariableScopes(this.sessionScope));
     }
 
     public ScriptContext(ScriptContext parent, PlayerRef overridePlayer) {
+        super(new ConcurrentHashMap<>(parent.sharedCapabilities()), parent.sharedCancellation(), parent.sharedTrace());
         this.citizen = parent.citizen;
         this.player = overridePlayer;
         this.world = parent.world;
@@ -49,6 +58,11 @@ public class ScriptContext {
         this.continueLoop = parent.continueLoop;
         this.dryRun = parent.dryRun;
         this.sessionScope = parent.sessionScope;
+        if (overridePlayer != null) {
+            putCapability(ExecutionCapabilities.Actor.class, new ExecutionCapabilities.Actor(overridePlayer));
+        } else {
+            sharedCapabilities().remove(ExecutionCapabilities.Actor.class);
+        }
     }
 
     public CitizenData getCitizen()              { return citizen; }
@@ -72,8 +86,11 @@ public class ScriptContext {
     public void incrementRecursionDepth()        { recursionDepth++; }
 
     // Control flow getters/setters
-    public boolean isStopped() { return stopped; }
-    public void setStopped(boolean stopped) { this.stopped = stopped; }
+    public boolean isStopped() { return stopped || isCancelled(); }
+    public void setStopped(boolean stopped) {
+        this.stopped = stopped;
+        if (stopped) cancel();
+    }
 
     public boolean isBreakLoop() { return breakLoop; }
     public void setBreakLoop(boolean breakLoop) { this.breakLoop = breakLoop; }

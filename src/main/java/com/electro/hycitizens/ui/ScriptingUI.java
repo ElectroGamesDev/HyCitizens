@@ -5,6 +5,9 @@ import au.ellie.hyui.html.TemplateProcessor;
 import com.electro.hycitizens.HyCitizensPlugin;
 import com.electro.hycitizens.managers.ScriptEditorManager;
 import com.electro.hycitizens.models.CitizenData;
+import com.hypixel.hytale.server.core.universe.Universe;
+import com.hypixel.hytale.component.Ref;
+import com.electro.hycitizens.util.HtmlUtils;
 import com.hypixel.hytale.component.Store;
 import com.hypixel.hytale.protocol.packets.interface_.CustomPageLifetime;
 import com.hypixel.hytale.protocol.packets.interface_.CustomUIEventBindingType;
@@ -22,6 +25,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.function.Consumer;
+import com.electro.hycitizens.api.scripting.ScriptContext;
+import com.electro.hycitizens.api.scripting.ScriptManager;
 
 public class ScriptingUI {
     private final HyCitizensPlugin plugin;
@@ -35,7 +40,7 @@ public class ScriptingUI {
         List<Map<String, Object>> scriptList = new ArrayList<>();
         if (citizen.getScripts() != null) {
             for (int i = 0; i < citizen.getScripts().size(); i++) {
-                com.electro.hycitizens.api.scripting.ScriptBlock sb = citizen.getScripts().get(i);
+                ScriptBlock sb = citizen.getScripts().get(i);
                 Map<String, Object> map = new HashMap<>();
                 map.put("index", i);
                 map.put("id", sb.getId());
@@ -124,7 +129,7 @@ public class ScriptingUI {
 
         PageBuilder page = PageBuilder.pageForPlayer(playerRef)
                 .withLifetime(CustomPageLifetime.CanDismiss)
-                .fromHtml(html);
+                .fromHtml(HtmlUtils.sanitizeHtmlForHyUI(html));
 
         page.addEventListener("back-btn", CustomUIEventBindingType.Activating, event -> {
             plugin.getCitizensUI().openEditCitizenGUI(playerRef, store, citizen);
@@ -141,7 +146,7 @@ public class ScriptingUI {
         if (citizen.getScripts() != null) {
             for (int i = 0; i < citizen.getScripts().size(); i++) {
                 final int index = i;
-                com.electro.hycitizens.api.scripting.ScriptBlock sb = citizen.getScripts().get(i);
+                ScriptBlock sb = citizen.getScripts().get(i);
 
                 page.addEventListener("toggle-script-" + index, CustomUIEventBindingType.Activating, event -> {
                     sb.setEnabled(!sb.isEnabled());
@@ -156,22 +161,22 @@ public class ScriptingUI {
                 });
 
                 page.addEventListener("run-script-" + index, CustomUIEventBindingType.Activating, event -> {
-                    com.hypixel.hytale.component.Ref<com.hypixel.hytale.server.core.universe.world.storage.EntityStore> npcRef = citizen.getNpcRef();
+                    Ref<EntityStore> npcRef = citizen.getNpcRef();
                     if (npcRef == null || !npcRef.isValid()) {
                         playerRef.sendMessage(Message.raw("NPC is not currently spawned in the world!").color(Color.RED));
                         return;
                     }
                     playerRef.sendMessage(Message.raw("Triggering script '" + sb.getName() + "' for test...").color(Color.YELLOW));
-                    com.electro.hycitizens.api.scripting.ScriptContext ctx = new com.electro.hycitizens.api.scripting.ScriptContext(
+                    ScriptContext ctx = new ScriptContext(
                             citizen,
                             playerRef,
-                            com.hypixel.hytale.server.core.universe.Universe.get().getWorld(citizen.getWorldUUID()),
+                            Universe.get().getWorld(citizen.getWorldUUID()),
                             store,
                             "MANUAL_TEST",
                             null
                     );
-                    com.electro.hycitizens.api.scripting.ScriptBlock compiled = com.electro.hycitizens.api.scripting.ScriptManager.get().compileScript(sb);
-                    com.electro.hycitizens.api.scripting.ScriptManager.get().executeScript(compiled, ctx);
+                    ScriptBlock compiled = ScriptManager.get().compileScript(sb);
+                    ScriptManager.get().executeScript(compiled, ctx);
                     playerRef.sendMessage(Message.raw("Script triggered successfully!").color(Color.GREEN));
                 });
             }

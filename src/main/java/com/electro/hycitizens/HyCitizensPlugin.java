@@ -1,5 +1,7 @@
 package com.electro.hycitizens;
 
+import com.electro.hycitizens.managers.DialogueManager;
+
 import com.electro.hycitizens.actions.BuilderActionInteract;
 import com.electro.hycitizens.commands.CitizensCommand;
 import com.electro.hycitizens.components.CitizenNpcIdentityComponent;
@@ -40,6 +42,8 @@ import java.util.Map;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.concurrent.TimeUnit;
+import com.electro.hycitizens.api.scripting.ScriptManager;
+import com.electro.hycitizens.api.scripting.VariableManager;
 
 public class HyCitizensPlugin extends JavaPlugin {
     private static HyCitizensPlugin instance;
@@ -112,8 +116,11 @@ public class HyCitizensPlugin extends JavaPlugin {
         this.scriptingUI = new ScriptingUI(this);
 
         // Initialize scripting engine
-        com.electro.hycitizens.api.scripting.ScriptManager.get().init();
-        com.electro.hycitizens.api.scripting.VariableManager.get().init();
+        ScriptManager.get().init();
+        VariableManager.get().init();
+
+        // Initialize dialogue manager
+        DialogueManager.get().init();
 
         this.interactionHandler = new PlayerInteractionHandler();
         this.interactionHandler.register();
@@ -138,9 +145,10 @@ public class HyCitizensPlugin extends JavaPlugin {
 
     @Override
     protected void shutdown() {
+        DialogueManager.get().shutdown();
         // Shutdown scripting engine
-        com.electro.hycitizens.api.scripting.VariableManager.get().shutdown();
-        com.electro.hycitizens.api.scripting.ScriptManager.get().shutdown();
+        VariableManager.get().shutdown();
+        ScriptManager.get().shutdown();
 
         if (citizensManager != null) {
             if (citizensManager.getRoleGenerator() != null) {

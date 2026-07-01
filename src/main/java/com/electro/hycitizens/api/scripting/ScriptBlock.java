@@ -6,6 +6,9 @@ import java.util.List;
 import java.util.Map;
 
 public class ScriptBlock {
+    private String documentType = "hycitizens:script";
+    private int schemaVersion = 1;
+    private long revision = 1;
     private String id;
     private String name = "";
     private boolean enabled = true;
@@ -21,11 +24,18 @@ public class ScriptBlock {
     private Map<String, Object> templateParameters = new LinkedHashMap<>();
 
     public ScriptBlock() {}
+    public String getDocumentType() { return documentType; }
+    public void setDocumentType(String documentType) { this.documentType = documentType; }
 
     public ScriptBlock(String id, String trigger) {
         this.id = id;
         this.trigger = trigger;
     }
+
+    public int getSchemaVersion() { return schemaVersion; }
+    public void setSchemaVersion(int schemaVersion) { this.schemaVersion = schemaVersion; }
+    public long getRevision() { return revision; }
+    public void setRevision(long revision) { this.revision = revision; }
 
     public String getId() {
         return id;

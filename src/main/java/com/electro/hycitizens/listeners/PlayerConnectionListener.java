@@ -1,6 +1,10 @@
 package com.electro.hycitizens.listeners;
 
 import com.electro.hycitizens.HyCitizensPlugin;
+import com.electro.hycitizens.managers.DialogueManager;
+import com.electro.hycitizens.managers.DialogEditorManager;
+import com.electro.hycitizens.managers.ScriptEditorManager;
+import com.electro.hycitizens.api.scripting.VariableManager;
 import com.electro.hycitizens.util.UpdateChecker;
 import com.hypixel.hytale.component.Ref;
 import com.hypixel.hytale.server.core.HytaleServer;
@@ -134,5 +138,10 @@ public class PlayerConnectionListener {
     public void onPlayerDisconnect(@Nonnull PlayerDisconnectEvent event) {
         UUID playerUuid = event.getPlayerRef().getUuid();
         plugin.getCitizensManager().clearPlayerRuntimeState(playerUuid);
+        DialogueManager.get().endDialogueSession(event.getPlayerRef(), "DISCONNECT");
+        DialogueManager.get().unloadPlayerState(event.getPlayerRef().getUuid());
+        VariableManager.get().unloadPlayer(event.getPlayerRef().getUuid());
+        DialogEditorManager.get().revokeSessions(playerUuid);
+        ScriptEditorManager.get().revokeSessions(playerUuid);
     }
 }

@@ -64,6 +64,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 import static com.hypixel.hytale.logger.HytaleLogger.getLogger;
+import com.electro.hycitizens.api.scripting.ScriptBlock;
 
 public class CitizensManager {
     private static final int MAX_PENDING_HOLOGRAM_REMOVAL_ATTEMPTS = 20;
@@ -1542,8 +1543,8 @@ public class CitizensManager {
         String scriptsJson = config.getString(basePath + ".scripts");
         if (scriptsJson != null && !scriptsJson.isEmpty()) {
             try {
-                java.lang.reflect.Type listType = new com.google.gson.reflect.TypeToken<List<com.electro.hycitizens.api.scripting.ScriptBlock>>(){}.getType();
-                List<com.electro.hycitizens.api.scripting.ScriptBlock> scripts = new com.google.gson.Gson().fromJson(scriptsJson, listType);
+                java.lang.reflect.Type listType = new com.google.gson.reflect.TypeToken<List<ScriptBlock>>(){}.getType();
+                List<ScriptBlock> scripts = new com.google.gson.Gson().fromJson(scriptsJson, listType);
                 if (scripts != null) {
                     citizenData.setScripts(scripts);
                 }
@@ -1563,6 +1564,9 @@ public class CitizensManager {
                 getLogger().atWarning().log("Failed to load scriptVariables for citizen " + name + ": " + e.getMessage());
             }
         }
+
+        citizenData.setInteractDialogueId(config.getString(basePath + ".interact-dialogue-id", null));
+        citizenData.setInteractDialogueTrigger(config.getString(basePath + ".interact-dialogue-trigger", "BOTH"));
 
         return citizenData;
     }
@@ -2035,6 +2039,8 @@ public class CitizensManager {
             // Save scripts and scriptVariables
             config.set(basePath + ".scripts", new com.google.gson.Gson().toJson(citizen.getScripts()));
             config.set(basePath + ".scriptVariables", new com.google.gson.Gson().toJson(citizen.getScriptVariables()));
+            config.set(basePath + ".interact-dialogue-id", citizen.getInteractDialogueId());
+            config.set(basePath + ".interact-dialogue-trigger", citizen.getInteractDialogueTrigger());
 
             boolean npcSpawned = citizen.getNpcRef() != null && citizen.getNpcRef().isValid();
 
@@ -2215,7 +2221,7 @@ public class CitizensManager {
             scheduleManager.clearCitizen(citizenId);
         }
         roleGenerator.deleteRoleFile(citizenId);
-        com.electro.hycitizens.api.scripting.ScriptManager.get().cleanupCitizen(citizenId);
+        ScriptManager.get().cleanupCitizen(citizenId);
 
         if (citizen == null) {
             return;
@@ -2958,7 +2964,7 @@ public class CitizensManager {
         if (scheduleManager != null) {
             scheduleManager.refreshCitizen(citizen);
         }
-        com.electro.hycitizens.api.scripting.ScriptManager.get().fireTrigger(citizen, "ON_SPAWN", new java.util.HashMap<>(), null, store);
+        ScriptManager.get().fireTrigger(citizen, "ON_SPAWN", new java.util.HashMap<>(), null, store);
         citizensCurrentlySpawning.remove(citizen.getId());
     }
 
@@ -3073,7 +3079,7 @@ public class CitizensManager {
         if (scheduleManager != null) {
             scheduleManager.refreshCitizen(citizen);
         }
-        com.electro.hycitizens.api.scripting.ScriptManager.get().fireTrigger(citizen, "ON_SPAWN", new java.util.HashMap<>(), null, store);
+        ScriptManager.get().fireTrigger(citizen, "ON_SPAWN", new java.util.HashMap<>(), null, store);
         citizensCurrentlySpawning.remove(citizen.getId());
     }
 
@@ -3132,6 +3138,12 @@ public class CitizensManager {
     }
 
     public boolean hasFKeyActions(@Nonnull CitizenData citizen) {
+        if (citizen.getInteractDialogueId() != null
+                && !citizen.getInteractDialogueId().isEmpty()
+                && citizen.isInteractDialogueTriggeredBy("F_KEY")) {
+            return true;
+        }
+
         for (CommandAction cmd : citizen.getCommandActions()) {
             String trigger = cmd.getInteractionTrigger();
             if (trigger == null || "BOTH".equals(trigger) || "F_KEY".equals(trigger)) {
@@ -3163,7 +3175,7 @@ public class CitizensManager {
         }
 
         if (citizen.getScripts() != null) {
-            for (com.electro.hycitizens.api.scripting.ScriptBlock script : citizen.getScripts()) {
+            for (ScriptBlock script : citizen.getScripts()) {
                 if (script.isEnabled() && (script.matchesTrigger("ON_INTERACT") || script.matchesTrigger("ON_FIRST_INTERACT"))) {
                     Map<String, Object> params = script.getTriggerParameters();
                     if (params != null && params.containsKey("source")) {
@@ -3987,7 +3999,7 @@ public class CitizensManager {
             return;
         }
 
-        com.electro.hycitizens.api.scripting.ScriptManager.get().fireTrigger(citizen, "ON_DESPAWN", new java.util.HashMap<>(), null, world.getEntityStore().getStore());
+        ScriptManager.get().fireTrigger(citizen, "ON_DESPAWN", new java.util.HashMap<>(), null, world.getEntityStore().getStore());
 
         boolean despawned = false;
         Ref<EntityStore> npcRef = citizen.getNpcRef();
@@ -5875,9 +5887,9 @@ public class CitizensManager {
         if (isNowInCombat != citizen.wasInCombat()) {
             citizen.setWasInCombat(isNowInCombat);
             if (isNowInCombat) {
-                com.electro.hycitizens.api.scripting.ScriptManager.get().fireTrigger(citizen, "ON_COMBAT_START", new java.util.HashMap<>(), null, null);
+                ScriptManager.get().fireTrigger(citizen, "ON_COMBAT_START", new java.util.HashMap<>(), null, null);
             } else {
-                com.electro.hycitizens.api.scripting.ScriptManager.get().fireTrigger(citizen, "ON_COMBAT_END", new java.util.HashMap<>(), null, null);
+                ScriptManager.get().fireTrigger(citizen, "ON_COMBAT_END", new java.util.HashMap<>(), null, null);
             }
         }
     }

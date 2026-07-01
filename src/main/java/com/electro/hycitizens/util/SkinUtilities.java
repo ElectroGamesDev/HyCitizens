@@ -1,5 +1,16 @@
 package com.electro.hycitizens.util;
 
+import com.electro.hycitizens.map.MemoryCommonAsset;
+import com.google.gson.Gson;
+import com.hypixel.hytale.server.core.asset.common.CommonAssetModule;
+import com.hypixel.hytale.server.core.cosmetics.CosmeticRegistry;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+
+
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.hypixel.hytale.component.Ref;
@@ -80,7 +91,7 @@ public class SkinUtilities {
     private static List<CosmeticOptionEntry> buildEntries(
             @Nonnull String slotName,
             @Nonnull Map<String, PlayerSkinPart> map,
-            @Nonnull com.hypixel.hytale.server.core.cosmetics.CosmeticRegistry reg) {
+            @Nonnull CosmeticRegistry reg) {
 
         List<CosmeticOptionEntry> entries = new ArrayList<>();
 
@@ -613,5 +624,94 @@ public class SkinUtilities {
             case "cape" -> "Cape";
             default -> slotName;
         };
+    }
+
+    @Nonnull
+    public static String getHeadshotRenderUrl(@Nonnull PlayerSkin skin, int size, int rotation) {
+        JsonObject json = new JsonObject();
+        json.addProperty("bodyCharacteristic", skin.bodyCharacteristic != null ? skin.bodyCharacteristic : "human_male");
+        if (skin.underwear != null) json.addProperty("underwear", skin.underwear);
+        if (skin.face != null) json.addProperty("face", skin.face);
+        if (skin.eyes != null) json.addProperty("eyes", skin.eyes);
+        if (skin.ears != null) json.addProperty("ears", skin.ears);
+        if (skin.mouth != null) json.addProperty("mouth", skin.mouth);
+        if (skin.facialHair != null) json.addProperty("facialHair", skin.facialHair);
+        if (skin.haircut != null) json.addProperty("haircut", skin.haircut);
+        if (skin.eyebrows != null) json.addProperty("eyebrows", skin.eyebrows);
+        if (skin.pants != null) json.addProperty("pants", skin.pants);
+        if (skin.overpants != null) json.addProperty("overpants", skin.overpants);
+        if (skin.undertop != null) json.addProperty("undertop", skin.undertop);
+        if (skin.overtop != null) json.addProperty("overtop", skin.overtop);
+        if (skin.shoes != null) json.addProperty("shoes", skin.shoes);
+        if (skin.headAccessory != null) json.addProperty("headAccessory", skin.headAccessory);
+        if (skin.faceAccessory != null) json.addProperty("faceAccessory", skin.faceAccessory);
+        if (skin.earAccessory != null) json.addProperty("earAccessory", skin.earAccessory);
+        if (skin.skinFeature != null) json.addProperty("skinFeature", skin.skinFeature);
+        if (skin.gloves != null) json.addProperty("gloves", skin.gloves);
+        if (skin.cape != null) json.addProperty("cape", skin.cape);
+
+        String jsonString = new Gson().toJson(json);
+        String base64Token = Base64.getUrlEncoder().withoutPadding().encodeToString(jsonString.getBytes(StandardCharsets.UTF_8));
+
+        return "https://api.hytl.skin/character/render?token=" + base64Token 
+                + "&size=" + size 
+                + "&rotation=" + rotation;
+    }
+
+    @Nonnull
+    public static CompletableFuture<String> cacheHeadshotAndGetUrl(@Nonnull String npcId, @Nonnull PlayerSkin skin) {
+        String skinJson = new Gson().toJson(skin);
+        String hash = String.format("%08x", skinJson.hashCode());
+        String fileName = npcId + "_" + hash + ".png";
+        
+        String assetPathRelative = "Common/UI/custom/headshots/" + fileName;
+        Path localDiskPath = Paths.get("mods", "HyCitizensData", "Common", "UI", "custom", "headshots", fileName);
+        String virtualUrl = "asset://electro/UI/custom/headshots/" + fileName;
+
+        if (Files.exists(localDiskPath)) {
+            CommonAssetModule commonAssetModule = CommonAssetModule.get();
+            if (commonAssetModule != null) {
+                try {
+                    byte[] bytes = Files.readAllBytes(localDiskPath);
+                    MemoryCommonAsset asset = new MemoryCommonAsset(assetPathRelative, bytes);
+                    commonAssetModule.addCommonAsset("electro:HyCitizensData", asset);
+                } catch (IOException ignored) {}
+            }
+            return CompletableFuture.completedFuture(virtualUrl);
+        }
+
+        String renderUrl = getHeadshotRenderUrl(skin, 250, 20);
+        HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create(renderUrl))
+                .header("User-Agent", "Hytale-Plugin-HyCitizens/1.0")
+                .timeout(Duration.ofSeconds(8))
+                .GET()
+                .build();
+
+        return httpClient.sendAsync(request, HttpResponse.BodyHandlers.ofByteArray())
+                .thenApply(response -> {
+                    if (response.statusCode() == 200 && response.body() != null && response.body().length > 0) {
+                        try {
+                            Files.createDirectories(localDiskPath.getParent());
+                            Files.write(localDiskPath, response.body());
+                            
+                            CommonAssetModule commonAssetModule = CommonAssetModule.get();
+                            if (commonAssetModule != null) {
+                                MemoryCommonAsset asset = new MemoryCommonAsset(assetPathRelative, response.body());
+                                commonAssetModule.addCommonAsset("electro:HyCitizensData", asset);
+                            }
+                            return virtualUrl;
+                        } catch (Exception e) {
+                            getLogger().atWarning().log("[HyCitizens] Failed to save headshot to disk: " + e.getMessage());
+                        }
+                    } else {
+                        getLogger().atWarning().log("[HyCitizens] Failed to download NPC headshot (status code " + response.statusCode() + ") - falling back to official portrait or default.");
+                    }
+                    return "";
+                })
+                .exceptionally(ex -> {
+                    getLogger().atWarning().log("[HyCitizens] Headshot download exception: " + ex.getMessage());
+                    return "";
+                });
     }
 }

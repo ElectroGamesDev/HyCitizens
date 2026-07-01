@@ -23,6 +23,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import static com.hypixel.hytale.logger.HytaleLogger.getLogger;
+import com.hypixel.hytale.component.ResourceType;
 
 public class ScriptExpressionEvaluator {
 
@@ -78,7 +79,13 @@ public class ScriptExpressionEvaluator {
             String resolvedValue = "";
 
             if ("player".equals(scope)) {
-                resolvedValue = resolvePlayerField(varName, context);
+                if ("has_quest".equalsIgnoreCase(varName) && extraArg != null) {
+                    resolvedValue = String.valueOf(evaluateHasQuestPlaceholder(extraArg, context));
+                } else if ("completed_quest".equalsIgnoreCase(varName) && extraArg != null) {
+                    resolvedValue = String.valueOf(evaluateCompletedQuestPlaceholder(extraArg, context));
+                } else {
+                    resolvedValue = resolvePlayerField(varName, context);
+                }
             } else if ("citizen".equals(scope)) {
                 resolvedValue = resolveCitizenField(varName, context);
             } else if ("global".equals(scope)) {
@@ -426,7 +433,7 @@ public class ScriptExpressionEvaluator {
     private static String getCurrentWeather(ScriptContext context) {
         try {
             Class<?> weatherClass = Class.forName("com.hypixel.hytale.server.core.modules.weather.WorldWeatherResource");
-            com.hypixel.hytale.component.ResourceType<EntityStore, ?> resourceType = (com.hypixel.hytale.component.ResourceType<EntityStore, ?>) weatherClass.getMethod("getResourceType").invoke(null);
+            ResourceType<EntityStore, ?> resourceType = (ResourceType<EntityStore, ?>) weatherClass.getMethod("getResourceType").invoke(null);
             Object weatherResource = context.getStore().getResource(resourceType);
             if (weatherResource != null) {
                 return weatherResource.getClass().getMethod("getWeatherType").invoke(weatherResource).toString();
@@ -450,5 +457,25 @@ public class ScriptExpressionEvaluator {
             }
         }
         return free;
+    }
+
+    private static boolean evaluateHasQuestPlaceholder(String questId, ScriptContext context) {
+        if (context.getPlayer() == null) return false;
+        try {
+            return QuestIntegration.hasActiveQuest(context.getPlayer().getUuid(), questId);
+        } catch (QuestIntegration.QuestIntegrationException e) {
+            getLogger().atWarning().log("[HyCitizens] ${player:has_quest:" + questId + "} failed: " + e.getMessage());
+            return false;
+        }
+    }
+
+    private static boolean evaluateCompletedQuestPlaceholder(String questId, ScriptContext context) {
+        if (context.getPlayer() == null) return false;
+        try {
+            return QuestIntegration.hasCompletedQuest(context.getPlayer().getUuid(), questId);
+        } catch (QuestIntegration.QuestIntegrationException e) {
+            getLogger().atWarning().log("[HyCitizens] ${player:completed_quest:" + questId + "} failed: " + e.getMessage());
+            return false;
+        }
     }
 }

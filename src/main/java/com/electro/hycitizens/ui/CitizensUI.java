@@ -6,6 +6,14 @@ import au.ellie.hyui.html.TemplateProcessor;
 import com.electro.hycitizens.HyCitizensPlugin;
 import com.electro.hycitizens.map.CitizenMapMarkerAsset;
 import com.electro.hycitizens.models.*;
+import com.electro.hycitizens.api.dialogue.Dialogue;
+import com.electro.hycitizens.api.dialogue.DialogueNode;
+import com.electro.hycitizens.api.dialogue.IDialogue;
+import com.electro.hycitizens.api.dialogue.IDialogueNode;
+import com.electro.hycitizens.api.scripting.ScriptContext;
+import com.electro.hycitizens.managers.DialogEditorManager;
+import com.electro.hycitizens.managers.DialogueManager;
+import com.electro.hycitizens.util.HtmlUtils;
 import com.electro.hycitizens.roles.RoleGenerator;
 import com.hypixel.hytale.codec.Codec;
 import com.hypixel.hytale.common.util.RandomUtil;
@@ -39,11 +47,15 @@ import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
 import java.awt.*;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.time.LocalDateTime;
 import java.util.*;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Consumer;
+import com.electro.hycitizens.util.SkinUtilities;
 
 public class CitizensUI {
     private final HyCitizensPlugin plugin;
@@ -957,7 +969,7 @@ public class CitizensUI {
         public boolean isHideNpc() { return citizen.isHideNpc(); }
         public boolean isMapMarkerEnabled() { return citizen.isMapMarkerEnabled(); }
         public String getThumbnailUrl() {
-            String image = com.electro.hycitizens.map.CitizenMapMarkerAsset.resolveMarkerImage(citizen);
+            String image = CitizenMapMarkerAsset.resolveMarkerImage(citizen);
             return escapeHtml(image);
         }
     }
@@ -1679,7 +1691,7 @@ public class CitizensUI {
         public SafeCitizen getCitizen() { return citizen; }
         public CitizenData getRawCitizen() { return rawCitizen; }
         public String getThumbnailImage() {
-            return rawCitizen != null ? com.electro.hycitizens.map.CitizenMapMarkerAsset.resolveMarkerImage(rawCitizen) : "";
+            return rawCitizen != null ? CitizenMapMarkerAsset.resolveMarkerImage(rawCitizen) : "";
         }
         public String getCitizenId() { return rawCitizen != null ? rawCitizen.getId() : ""; }
         public String getCitizenIdShort() {
@@ -2205,6 +2217,10 @@ public class CitizensUI {
                                     <div class="spacer-h-sm"></div>
                                     <button id="change-position-btn" class="secondary-button" style="flex-weight: 0; anchor-width: 190; anchor-height: 44;">Update Position</button>
                                 </div>
+                                <div class="spacer-sm"></div>
+                                <div class="form-row" style="width: 100%; horizontal-align: center;">
+                                    <button id="dialogues-config-btn" class="secondary-button" style="flex-weight: 0; anchor-width: 190; anchor-height: 44;">Dialogs</button>
+                                </div>
                             </div>
                             <div class="spacer-xl"></div>
                         </div>
@@ -2231,7 +2247,7 @@ public class CitizensUI {
 
         PageBuilder page = PageBuilder.pageForPlayer(playerRef)
                 .withLifetime(CustomPageLifetime.CanDismiss)
-                .fromHtml(html);
+                .fromHtml(HtmlUtils.sanitizeHtmlForHyUI(html));
 
         setupMainEventListeners(page, playerRef, store, currentTab, unifiedList, searchQuery, viewingGroup, editingCitizen);
         if (editingCitizen != null) {
@@ -2583,7 +2599,7 @@ public class CitizensUI {
 
         PageBuilder page = PageBuilder.pageForPlayer(playerRef)
                 .withLifetime(CustomPageLifetime.CanDismiss)
-                .fromHtml(html);
+                .fromHtml(HtmlUtils.sanitizeHtmlForHyUI(html));
 
         setupCreateCitizenListeners(page, playerRef, store, isPlayerModel, name, nametagOffset, hideNametag, hideNpc,
                 mapMarkerEnabled, mapMarkerType, mapMarkerName, mapMarkerCustomIcon, mapMarkerMaxDistance,
@@ -2862,7 +2878,7 @@ public class CitizensUI {
 
         PageBuilder page = PageBuilder.pageForPlayer(playerRef)
                 .withLifetime(CustomPageLifetime.CanDismiss)
-                .fromHtml(html);
+                .fromHtml(HtmlUtils.sanitizeHtmlForHyUI(html));
 
         setupCommandActionsListeners(page, playerRef, store, citizenId, actions, isCreating);
 
@@ -3228,6 +3244,8 @@ public class CitizensUI {
         clonedCitizen.setCombatMessageTargetGroups(new ArrayList<>(citizen.getCombatMessageTargetGroups()));
         clonedCitizen.setFlockArray(new ArrayList<>(citizen.getFlockArray()));
         clonedCitizen.setDisableDamageGroups(new ArrayList<>(citizen.getDisableDamageGroups()));
+        clonedCitizen.setInteractDialogueId(citizen.getInteractDialogueId());
+        clonedCitizen.setInteractDialogueTrigger(citizen.getInteractDialogueTrigger());
 
         plugin.getCitizensManager().addCitizen(clonedCitizen, true);
         playerRef.sendMessage(Message.raw("Citizen '" + citizen.getName() + "' cloned at your position!").color(Color.GREEN));
@@ -3272,7 +3290,7 @@ public class CitizensUI {
 
         PageBuilder page = PageBuilder.pageForPlayer(playerRef)
                 .withLifetime(CustomPageLifetime.CanDismiss)
-                .fromHtml(html);
+                .fromHtml(HtmlUtils.sanitizeHtmlForHyUI(html));
 
         final String[] newName = {oldGroupName};
         page.addEventListener("new-group-name", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
@@ -3342,7 +3360,7 @@ public class CitizensUI {
 
         PageBuilder page = PageBuilder.pageForPlayer(playerRef)
                 .withLifetime(CustomPageLifetime.CanDismiss)
-                .fromHtml(html);
+                .fromHtml(HtmlUtils.sanitizeHtmlForHyUI(html));
 
         final String[] groupName = {""};
         page.addEventListener("group-name", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
@@ -3412,7 +3430,7 @@ public class CitizensUI {
 
         PageBuilder page = PageBuilder.pageForPlayer(playerRef)
                 .withLifetime(CustomPageLifetime.CanDismiss)
-                .fromHtml(html);
+                .fromHtml(HtmlUtils.sanitizeHtmlForHyUI(html));
 
         final String[] selectedParent = {currentParent};
         page.addEventListener("group-parent", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
@@ -3531,7 +3549,7 @@ public class CitizensUI {
 
         PageBuilder page = PageBuilder.pageForPlayer(playerRef)
                 .withLifetime(CustomPageLifetime.CanDismiss)
-                .fromHtml(html);
+                .fromHtml(HtmlUtils.sanitizeHtmlForHyUI(html));
 
         final String[] lineValues = lines.toArray(new String[0]);
 
@@ -3716,7 +3734,7 @@ public class CitizensUI {
 
         PageBuilder page = PageBuilder.pageForPlayer(playerRef)
                 .withLifetime(CustomPageLifetime.CanDismiss)
-                .fromHtml(html);
+                .fromHtml(HtmlUtils.sanitizeHtmlForHyUI(html));
 
         final String[] editedName = {currentName};
         final float[] nametagOffset = {currentNametagOffset};
@@ -4169,7 +4187,7 @@ public class CitizensUI {
                     openCitizensGUI(playerRef, store, Tab.MANAGE);
                 } else {
                     playerRef.sendMessage(Message.raw("Fetching skin for \"" + skinUsername[0] + "\"...").color(Color.YELLOW));
-                    com.electro.hycitizens.util.SkinUtilities.getSkin(skinUsername[0].trim()).thenAccept(skin -> {
+                    SkinUtilities.getSkin(skinUsername[0].trim()).thenAccept(skin -> {
                         if (skin != null) {
                             citizen.setCachedSkin(skin);
                             citizen.setLastSkinUpdate(System.currentTimeMillis());
@@ -4437,7 +4455,7 @@ public class CitizensUI {
                     try {
                         page.addEventListener("customize-skin-btn", CustomUIEventBindingType.Activating, event -> {
                             if (citizen.getCachedSkin() == null) {
-                                citizen.setCachedSkin(com.electro.hycitizens.util.SkinUtilities.createDefaultSkin());
+                                citizen.setCachedSkin(SkinUtilities.createDefaultSkin());
                             }
                             syncDraftToCitizen.run();
                             plugin.getSkinCustomizerUI().openSkinCustomizerGUI(playerRef, store, citizen);
@@ -4607,6 +4625,10 @@ public class CitizensUI {
                 syncDraftToCitizen.run();
                 openScriptsGUI(playerRef, store, citizen);
             });
+            page.addEventListener("dialogues-config-btn", CustomUIEventBindingType.Activating, event -> {
+                syncDraftToCitizen.run();
+                openDialogConfigGUI(playerRef, store, citizen);
+            });
         }
 
         try {
@@ -4760,7 +4782,7 @@ public class CitizensUI {
                     openManageForGroup(playerRef, store, citizen.getGroup());
                 } else {
                     playerRef.sendMessage(Message.raw("Fetching skin for \"" + skinUsername[0] + "\"...").color(Color.YELLOW));
-                    com.electro.hycitizens.util.SkinUtilities.getSkin(skinUsername[0].trim()).thenAccept(skin -> {
+                    SkinUtilities.getSkin(skinUsername[0].trim()).thenAccept(skin -> {
                         World world = Universe.get().getWorld(citizen.getWorldUUID());
                         if (world != null) {
                             world.execute(() -> {
@@ -4982,7 +5004,7 @@ public class CitizensUI {
 
         PageBuilder page = PageBuilder.pageForPlayer(playerRef)
                 .withLifetime(CustomPageLifetime.CanDismiss)
-                .fromHtml(html);
+                .fromHtml(HtmlUtils.sanitizeHtmlForHyUI(html));
 
         final String[] commandText = {command.getCommand()};
         final boolean[] runAsServer = {command.isRunAsServer()};
@@ -5525,7 +5547,7 @@ public class CitizensUI {
 
         PageBuilder page = PageBuilder.pageForPlayer(playerRef)
                 .withLifetime(CustomPageLifetime.CanDismiss)
-                .fromHtml(html);
+                .fromHtml(HtmlUtils.sanitizeHtmlForHyUI(html));
 
         setupBehaviorsListeners(page, playerRef, store, citizen);
 
@@ -6003,7 +6025,7 @@ public class CitizensUI {
 
         PageBuilder page = PageBuilder.pageForPlayer(playerRef)
                 .withLifetime(CustomPageLifetime.CanDismiss)
-                .fromHtml(html);
+                .fromHtml(HtmlUtils.sanitizeHtmlForHyUI(html));
 
         setupFactionsListeners(page, playerRef, store, citizen, factions);
         page.open(store);
@@ -6136,7 +6158,7 @@ public class CitizensUI {
 
         PageBuilder page = PageBuilder.pageForPlayer(playerRef)
                 .withLifetime(CustomPageLifetime.CanDismiss)
-                .fromHtml(html);
+                .fromHtml(HtmlUtils.sanitizeHtmlForHyUI(html));
 
         setupFactionEditorListeners(page, playerRef, store, citizen, faction, creating);
         page.open(store);
@@ -6450,7 +6472,7 @@ public class CitizensUI {
 
         PageBuilder page = PageBuilder.pageForPlayer(playerRef)
                 .withLifetime(CustomPageLifetime.CanDismiss)
-                .fromHtml(html);
+                .fromHtml(HtmlUtils.sanitizeHtmlForHyUI(html));
 
         setupAnimationEditorListeners(page, playerRef, store, citizen, existing, editIndex);
 
@@ -6747,7 +6769,7 @@ public class CitizensUI {
 
         PageBuilder page = PageBuilder.pageForPlayer(playerRef)
                 .withLifetime(CustomPageLifetime.CanDismiss)
-                .fromHtml(html);
+                .fromHtml(HtmlUtils.sanitizeHtmlForHyUI(html));
 
         setupMessagesListeners(page, playerRef, store, citizen);
 
@@ -6908,7 +6930,7 @@ public class CitizensUI {
 
         PageBuilder page = PageBuilder.pageForPlayer(playerRef)
                 .withLifetime(CustomPageLifetime.CanDismiss)
-                .fromHtml(html);
+                .fromHtml(HtmlUtils.sanitizeHtmlForHyUI(html));
 
         final String[] messageText = {message.getMessage()};
         final float[] delaySeconds = {message.getDelaySeconds()};
@@ -7091,7 +7113,7 @@ public class CitizensUI {
 
         PageBuilder page = PageBuilder.pageForPlayer(playerRef)
                 .withLifetime(CustomPageLifetime.CanDismiss)
-                .fromHtml(html);
+                .fromHtml(HtmlUtils.sanitizeHtmlForHyUI(html));
 
         page.addEventListener("toggle-first-enabled", CustomUIEventBindingType.Activating, event -> {
             citizen.setFirstInteractionEnabled(!citizen.isFirstInteractionEnabled());
@@ -7234,7 +7256,7 @@ public class CitizensUI {
 
         PageBuilder page = PageBuilder.pageForPlayer(playerRef)
                 .withLifetime(CustomPageLifetime.CanDismiss)
-                .fromHtml(html);
+                .fromHtml(HtmlUtils.sanitizeHtmlForHyUI(html));
 
         page.addEventListener("mode-all", CustomUIEventBindingType.Activating, event -> {
             citizen.setFirstInteractionCommandSelectionMode("ALL");
@@ -7349,7 +7371,7 @@ public class CitizensUI {
 
         PageBuilder page = PageBuilder.pageForPlayer(playerRef)
                 .withLifetime(CustomPageLifetime.CanDismiss)
-                .fromHtml(html);
+                .fromHtml(HtmlUtils.sanitizeHtmlForHyUI(html));
 
         final String[] commandText = {command.getCommand()};
         final boolean[] runAsServer = {command.isRunAsServer()};
@@ -7491,7 +7513,7 @@ public class CitizensUI {
 
         PageBuilder page = PageBuilder.pageForPlayer(playerRef)
                 .withLifetime(CustomPageLifetime.CanDismiss)
-                .fromHtml(html);
+                .fromHtml(HtmlUtils.sanitizeHtmlForHyUI(html));
 
         page.addEventListener("mode-all", CustomUIEventBindingType.Activating, event -> {
             citizen.setFirstInteractionMessagesConfig(new MessagesConfig(messages, "ALL", currentConfig.isEnabled()));
@@ -7599,7 +7621,7 @@ public class CitizensUI {
 
         PageBuilder page = PageBuilder.pageForPlayer(playerRef)
                 .withLifetime(CustomPageLifetime.CanDismiss)
-                .fromHtml(html);
+                .fromHtml(HtmlUtils.sanitizeHtmlForHyUI(html));
 
         final String[] messageText = {message.getMessage()};
         final float[] delaySeconds = {message.getDelaySeconds()};
@@ -7925,7 +7947,7 @@ public class CitizensUI {
 
         PageBuilder page = PageBuilder.pageForPlayer(playerRef)
                 .withLifetime(CustomPageLifetime.CanDismiss)
-                .fromHtml(html);
+                .fromHtml(HtmlUtils.sanitizeHtmlForHyUI(html));
 
         setupCombatConfigListeners(page, playerRef, store, citizen);
 
@@ -8318,7 +8340,7 @@ public class CitizensUI {
 
         PageBuilder page = PageBuilder.pageForPlayer(playerRef)
                 .withLifetime(CustomPageLifetime.CanDismiss)
-                .fromHtml(html);
+                .fromHtml(HtmlUtils.sanitizeHtmlForHyUI(html));
 
         setupDetectionConfigListeners(page, playerRef, store, citizen);
 
@@ -8613,7 +8635,7 @@ public class CitizensUI {
 
         PageBuilder page = PageBuilder.pageForPlayer(playerRef)
                 .withLifetime(CustomPageLifetime.CanDismiss)
-                .fromHtml(html);
+                .fromHtml(HtmlUtils.sanitizeHtmlForHyUI(html));
 
         setupAdvancedSettingsListeners(page, playerRef, store, citizen);
 
@@ -9069,7 +9091,7 @@ public class CitizensUI {
 
         PageBuilder page = PageBuilder.pageForPlayer(playerRef)
                 .withLifetime(CustomPageLifetime.CanDismiss)
-                .fromHtml(html);
+                .fromHtml(HtmlUtils.sanitizeHtmlForHyUI(html));
 
         setupDeathConfigListeners(page, playerRef, store, citizen, dc, drops, cmds, msgs);
 
@@ -9368,7 +9390,7 @@ public class CitizensUI {
 
         PageBuilder page = PageBuilder.pageForPlayer(playerRef)
                 .withLifetime(CustomPageLifetime.CanDismiss)
-                .fromHtml(html);
+                .fromHtml(HtmlUtils.sanitizeHtmlForHyUI(html));
 
         final String[] searchText = {searchFilter};
 
@@ -9479,7 +9501,7 @@ public class CitizensUI {
 
         PageBuilder page = PageBuilder.pageForPlayer(playerRef)
                 .withLifetime(CustomPageLifetime.CanDismiss)
-                .fromHtml(html);
+                .fromHtml(HtmlUtils.sanitizeHtmlForHyUI(html));
 
         final int[] quantity = {currentQty};
         final float[] chancePercent = {currentChance};
@@ -9592,7 +9614,7 @@ public class CitizensUI {
 
         PageBuilder page = PageBuilder.pageForPlayer(playerRef)
                 .withLifetime(CustomPageLifetime.CanDismiss)
-                .fromHtml(html);
+                .fromHtml(HtmlUtils.sanitizeHtmlForHyUI(html));
 
         final String[] commandText = {command.getCommand()};
         final boolean[] runAsServer = {command.isRunAsServer()};
@@ -9883,7 +9905,7 @@ public class CitizensUI {
 
         PageBuilder page = PageBuilder.pageForPlayer(playerRef)
                 .withLifetime(CustomPageLifetime.CanDismiss)
-                .fromHtml(html);
+                .fromHtml(HtmlUtils.sanitizeHtmlForHyUI(html));
 
         page.addEventListener("schedule-toggle-enabled", CustomUIEventBindingType.Activating, event -> {
             scheduleConfig.setEnabled(!scheduleConfig.isEnabled());
@@ -10129,7 +10151,7 @@ public class CitizensUI {
 
         PageBuilder page = PageBuilder.pageForPlayer(playerRef)
                 .withLifetime(CustomPageLifetime.CanDismiss)
-                .fromHtml(html);
+                .fromHtml(HtmlUtils.sanitizeHtmlForHyUI(html));
 
         final String[] locationName = {location.getName()};
         page.addEventListener("schedule-location-name", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
@@ -10315,7 +10337,7 @@ public class CitizensUI {
 
         PageBuilder page = PageBuilder.pageForPlayer(playerRef)
                 .withLifetime(CustomPageLifetime.CanDismiss)
-                .fromHtml(html);
+                .fromHtml(HtmlUtils.sanitizeHtmlForHyUI(html));
 
         final String[] entryName = {draftEntry.getName()};
         final double[] startTime24 = {draftEntry.getStartTime24()};
@@ -10513,7 +10535,7 @@ public class CitizensUI {
 
         PageBuilder page = PageBuilder.pageForPlayer(playerRef)
                 .withLifetime(CustomPageLifetime.CanDismiss)
-                .fromHtml(html);
+                .fromHtml(HtmlUtils.sanitizeHtmlForHyUI(html));
 
         final String[] messageText = {message.getMessage()};
         final float[] delaySeconds = {message.getDelaySeconds()};
@@ -10660,7 +10682,7 @@ public class CitizensUI {
 
         PageBuilder page = PageBuilder.pageForPlayer(playerRef)
                 .withLifetime(CustomPageLifetime.CanDismiss)
-                .fromHtml(html);
+                .fromHtml(HtmlUtils.sanitizeHtmlForHyUI(html));
 
         setupPatrolPathsListeners(page, playerRef, store, citizen, allPaths);
 
@@ -10752,7 +10774,7 @@ public class CitizensUI {
 
         PageBuilder page = PageBuilder.pageForPlayer(playerRef)
                 .withLifetime(CustomPageLifetime.CanDismiss)
-                .fromHtml(html);
+                .fromHtml(HtmlUtils.sanitizeHtmlForHyUI(html));
 
         final String[] newName = {oldPathName};
         page.addEventListener("new-path-name", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
@@ -10881,7 +10903,7 @@ public class CitizensUI {
 
         PageBuilder page = PageBuilder.pageForPlayer(playerRef)
                 .withLifetime(CustomPageLifetime.CanDismiss)
-                .fromHtml(html);
+                .fromHtml(HtmlUtils.sanitizeHtmlForHyUI(html));
 
         setupPatrolPathEditorListeners(page, playerRef, store, citizen, path, indexedWaypoints);
 
@@ -11089,5 +11111,275 @@ public class CitizensUI {
 
     public void openScriptsGUI(@Nonnull PlayerRef playerRef, @Nonnull Store<EntityStore> store, @Nonnull CitizenData citizen) {
         plugin.getScriptingUI().openScriptsGUI(playerRef, store, citizen);
+    }
+
+    public void openDialogConfigGUI(@Nonnull PlayerRef playerRef, @Nonnull Store<EntityStore> store, @Nonnull CitizenData citizen) {
+        List<IDialogue> dialoguesListStable = new ArrayList<>(DialogueManager.get().getDialogues().values());
+        List<Map<String, Object>> dialogueList = new ArrayList<>();
+        int dialogueListIndex = 0;
+        for (IDialogue d : dialoguesListStable) {
+            Map<String, Object> map = new HashMap<>();
+            map.put("index", dialogueListIndex++);
+            map.put("id", d.getId());
+            map.put("title", d.getTitle().isEmpty() ? d.getId() : d.getTitle());
+            map.put("startNode", d.getStartNodeId());
+            map.put("nodeCount", d.getNodes().size());
+            
+            boolean isInteract = d.getId().equals(citizen.getInteractDialogueId());
+            map.put("isInteractActive", isInteract);
+            String triggerLabel = switch (citizen.getInteractDialogueTrigger()) {
+                case "LEFT_CLICK" -> "Left Click";
+                case "F_KEY" -> "F Key";
+                default -> "Both";
+            };
+            map.put("interactButtonText", isInteract ? "Interact: " + triggerLabel : "Set Interaction");
+            map.put("interactButtonClass", isInteract ? "primary-button" : "secondary-button");
+            dialogueList.add(map);
+        }
+
+        TemplateProcessor template = createBaseTemplate()
+                .setVariable("citizenName", citizen.getName())
+                .setVariable("dialogues", dialogueList)
+                .setVariable("hasDialogues", !dialogueList.isEmpty());
+
+        String html = template.process(getSharedStyles() + """
+                <div class="page-overlay">
+                    <div class="main-container decorated-container" style="anchor-width: 1000; anchor-height: 720;">
+
+                        <!-- Header -->
+                        <div class="header container-title">
+                            <div class="header-content">
+                                <p class="header-title">Citizen Dialogs</p>
+                            </div>
+                        </div>
+
+                        <!-- Body -->
+                        <div class="body">
+
+                            <p class="page-description">Manage and test dialog trees for {{$citizenName}}</p>
+                            <div class="spacer-sm"></div>
+
+                            <!-- Info + Actions Section -->
+                            <div class="section">
+                                {{@sectionHeader:title=Dialog Presets}}
+                                
+                                <div style="layout: center; flex-direction: row; justify-content: center; gap: 16;">
+                                    <button id="new-dialog-btn" class="primary-button" style="anchor-width: 200; anchor-height: 38;">+ New Dialog</button>
+                                    <div class="spacer-h-sm"></div>
+                                    <button id="reload-presets-btn" class="secondary-button" style="anchor-width: 180; anchor-height: 38;">Reload Presets</button>
+                                </div>
+                                
+                                <div class="spacer-sm"></div>
+
+                                <div class="card">
+                                    <div class="card-body">
+                                        <p style="color: #8b949e; font-size: 12;"><span style="color: #58a6ff;">Info:</span> Dialogs are saved automatically to <span style="color: #58a6ff;">mods/HyCitizensData/Dialogs/</span> when you edit them.</p>
+                                        <div class="spacer-xs"></div>
+                                        <p style="color: #8b949e; font-size: 12;">Use the "Edit in Browser" button to launch the visual editor. Use "Test Dialog" to execute and test.</p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="spacer-md"></div>
+
+                            <!-- Dialogs List -->
+                            {{#if hasDialogues}}
+                            <div class="list-container" data-hyui-scrollbar-style='"Common.ui" "DefaultScrollbarStyle"' style="anchor-height: 280;">
+                                {{#each dialogues}}
+                                <div class="command-item">
+                                    <div class="command-icon command-icon-player" style="background-color: rgba(56, 139, 253, 0.15);">
+                                        <p class="command-icon-text command-icon-text-player" style="font-size: 8; color: #58a6ff;">D</p>
+                                    </div>
+                                    <div class="command-content">
+                                        <p class="command-text" style="color: #ffd075; font-weight: bold;">{{$title}} ({{$id}})</p>
+                                        <p class="command-type">Start Node: {{$startNode}} | Total Nodes: {{$nodeCount}}</p>
+                                    </div>
+                                    <div class="command-actions" style="anchor-width: 500;">
+                                        <button id="interact-dialog-{{$index}}" class="{{$interactButtonClass}} small-secondary-button" style="anchor-width: 140;">{{$interactButtonText}}</button>
+                                        <div class="spacer-h-sm"></div>
+                                        <button id="run-dialog-{{$index}}" class="secondary-button small-secondary-button" style="anchor-width: 120;">Test Dialog</button>
+                                        <div class="spacer-h-sm"></div>
+                                        <button id="edit-dialog-{{$index}}" class="primary-button small-secondary-button" style="anchor-width: 140;">Edit in Browser</button>
+                                    </div>
+                                </div>
+                                <div class="spacer-sm"></div>
+                                {{/each}}
+                            </div>
+                            {{else}}
+                            <div class="empty-state">
+                                <div class="empty-state-content">
+                                    <p class="empty-state-title">No Dialogs Loaded</p>
+                                    <p class="empty-state-description">Click "+ New Dialog" to create a dialog configuration visually.</p>
+                                </div>
+                            </div>
+                            {{/if}}
+
+                        </div>
+
+                        <!-- Footer -->
+                        <div class="footer">
+                            <button id="back-btn" class="secondary-button" style="anchor-width: 130;">Back</button>
+                        </div>
+
+                    </div>
+                </div>
+                """);
+
+        PageBuilder page = PageBuilder.pageForPlayer(playerRef)
+                .withLifetime(CustomPageLifetime.CanDismiss)
+                .fromHtml(HtmlUtils.sanitizeHtmlForHyUI(html));
+
+        page.addEventListener("new-dialog-btn", CustomUIEventBindingType.Activating, (event, ctx) -> {
+            String newId = "dialog_" + UUID.randomUUID().toString().replace("-", "").substring(0, 8);
+            String newTitle = "New Dialog (" + newId + ")";
+
+            Dialogue newDialogue = new Dialogue();
+            newDialogue.setId(newId);
+            newDialogue.setTitle(newTitle);
+            newDialogue.setStartNode("start_node");
+
+            DialogueNode startNode = new DialogueNode();
+            startNode.setId("start_node");
+            startNode.setText("Hello! How can I help you?");
+            startNode.setSpeaker("NPC");
+            newDialogue.putNode(startNode);
+
+            try {
+                Path dialogFile = com.electro.hycitizens.util.DialogPaths.DIALOGS_DIRECTORY.resolve(newId + ".json");
+                Files.createDirectories(dialogFile.getParent());
+                String prettyJson = DialogueManager.get().getGson().toJson(newDialogue, IDialogue.class);
+                Files.writeString(dialogFile, prettyJson, StandardCharsets.UTF_8);
+
+                DialogueManager.get().registerDialogue(newDialogue);
+                playerRef.sendMessage(Message.raw("[HyCitizens] Created new blank dialog '" + newId + "' successfully.").color(Color.GREEN));
+            } catch (Exception e) {
+                playerRef.sendMessage(Message.raw("[HyCitizens] Failed to create blank dialog file: " + e.getMessage()).color(Color.RED));
+            }
+
+            ctx.getPage().ifPresent(p -> p.close());
+            DialogEditorManager.get().startEditSession(playerRef, newId);
+        });
+
+        page.addEventListener("reload-presets-btn", CustomUIEventBindingType.Activating, event -> {
+            DialogueManager.get().loadDialogues();
+            playerRef.sendMessage(Message.raw("Dialog presets reloaded and validated!").color(Color.GREEN));
+            openDialogConfigGUI(playerRef, store, citizen);
+        });
+
+        page.addEventListener("back-btn", CustomUIEventBindingType.Activating, event -> {
+            openEditCitizenGUI(playerRef, store, citizen);
+        });
+
+        int runIndex = 0;
+        for (IDialogue d : dialoguesListStable) {
+            final IDialogue finalD = d;
+            final int index = runIndex++;
+            
+            page.addEventListener("interact-dialog-" + index, CustomUIEventBindingType.Activating, (event, ctx) -> {
+                openDialogInteractionGUI(playerRef, store, citizen, finalD);
+            });
+
+            page.addEventListener("run-dialog-" + index, CustomUIEventBindingType.Activating, (event, ctx) -> {
+                ctx.getPage().ifPresent(p -> p.close());
+                playerRef.sendMessage(Message.raw("Launching dialog '" + finalD.getTitle() + "' in manual test mode...").color(Color.YELLOW));
+                ScriptContext scriptCtx = new ScriptContext(
+                        citizen,
+                        playerRef,
+                        Universe.get().getWorld(citizen.getWorldUUID()),
+                        store,
+                        "MANUAL_TEST",
+                        null
+                );
+                DialogueManager.get().startDialogueSession(playerRef, finalD, scriptCtx, citizen.getId());
+            });
+
+            page.addEventListener("edit-dialog-" + index, CustomUIEventBindingType.Activating, (event, ctx) -> {
+                ctx.getPage().ifPresent(p -> p.close());
+                DialogEditorManager.get().startEditSession(playerRef, finalD.getId());
+            });
+        }
+        page.open(store);
+    }
+
+    private void openDialogInteractionGUI(@Nonnull PlayerRef playerRef, @Nonnull Store<EntityStore> store,
+                                          @Nonnull CitizenData citizen, @Nonnull IDialogue dialogue) {
+        boolean isActive = dialogue.getId().equals(citizen.getInteractDialogueId());
+        String currentTrigger = isActive ? citizen.getInteractDialogueTrigger() : "BOTH";
+
+        TemplateProcessor template = createBaseTemplate()
+                .setVariable("dialogTitle", dialogue.getTitle().isEmpty() ? dialogue.getId() : dialogue.getTitle())
+                .setVariable("isActive", isActive)
+                .setVariable("isLeftClick", "LEFT_CLICK".equals(currentTrigger))
+                .setVariable("isFKey", "F_KEY".equals(currentTrigger))
+                .setVariable("isBoth", "BOTH".equals(currentTrigger));
+
+        String html = template.process(getSharedStyles() + """
+                <div class="page-overlay">
+                    <div class="main-container decorated-container" style="anchor-width: 680; anchor-height: 500;">
+                        <div class="header container-title">
+                            <div class="header-content">
+                                <p class="header-title">Dialog Interaction</p>
+                            </div>
+                        </div>
+
+                        <div class="body">
+                            <p class="page-description">Choose how players start "{{$dialogTitle}}".</p>
+                            <div class="spacer-md"></div>
+
+                            <div class="section">
+                                {{@sectionHeader:title=Interaction Trigger,description=Which player action opens this dialog}}
+                                <button id="dialog-trigger-left" class="{{#if isLeftClick}}primary-button{{else}}secondary-button{{/if}}" style="anchor-height: 42;">Left Click</button>
+                                <div class="spacer-sm"></div>
+                                <button id="dialog-trigger-f-key" class="{{#if isFKey}}primary-button{{else}}secondary-button{{/if}}" style="anchor-height: 42;">F Key</button>
+                                <div class="spacer-sm"></div>
+                                <button id="dialog-trigger-both" class="{{#if isBoth}}primary-button{{else}}secondary-button{{/if}}" style="anchor-height: 42;">Both</button>
+                            </div>
+
+                            {{#if isActive}}
+                            <div class="spacer-md"></div>
+                            <button id="clear-dialog-interaction" class="secondary-button" style="anchor-height: 38;">Clear Interaction Dialog</button>
+                            {{/if}}
+                        </div>
+
+                        <div class="footer">
+                            <button id="cancel-dialog-interaction" class="secondary-button" style="anchor-width: 140;">Cancel</button>
+                        </div>
+                    </div>
+                </div>
+                """);
+
+        PageBuilder page = PageBuilder.pageForPlayer(playerRef)
+                .withLifetime(CustomPageLifetime.CanDismiss)
+                .fromHtml(HtmlUtils.sanitizeHtmlForHyUI(html));
+
+        page.addEventListener("dialog-trigger-left", CustomUIEventBindingType.Activating,
+                event -> saveDialogInteraction(playerRef, store, citizen, dialogue, "LEFT_CLICK"));
+        page.addEventListener("dialog-trigger-f-key", CustomUIEventBindingType.Activating,
+                event -> saveDialogInteraction(playerRef, store, citizen, dialogue, "F_KEY"));
+        page.addEventListener("dialog-trigger-both", CustomUIEventBindingType.Activating,
+                event -> saveDialogInteraction(playerRef, store, citizen, dialogue, "BOTH"));
+        if (isActive) {
+            page.addEventListener("clear-dialog-interaction", CustomUIEventBindingType.Activating, event -> {
+                citizen.setInteractDialogueId(null);
+                HyCitizensPlugin.get().getCitizensManager().saveCitizen(citizen);
+                playerRef.sendMessage(Message.raw("[HyCitizens] Cleared interaction dialog for "
+                        + citizen.getName()).color(Color.GREEN));
+                openDialogConfigGUI(playerRef, store, citizen);
+            });
+        }
+        page.addEventListener("cancel-dialog-interaction", CustomUIEventBindingType.Activating,
+                event -> openDialogConfigGUI(playerRef, store, citizen));
+        page.open(store);
+    }
+
+    private void saveDialogInteraction(@Nonnull PlayerRef playerRef, @Nonnull Store<EntityStore> store,
+                                       @Nonnull CitizenData citizen, @Nonnull IDialogue dialogue,
+                                       @Nonnull String trigger) {
+        citizen.setInteractDialogueId(dialogue.getId());
+        citizen.setInteractDialogueTrigger(trigger);
+        HyCitizensPlugin.get().getCitizensManager().saveCitizen(citizen);
+        playerRef.sendMessage(Message.raw("[HyCitizens] Set " + citizen.getName()
+                + "'s interaction dialog to " + dialogue.getTitle() + " (" + trigger + ").").color(Color.GREEN));
+        openDialogConfigGUI(playerRef, store, citizen);
     }
 }

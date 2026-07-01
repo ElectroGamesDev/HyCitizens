@@ -40,6 +40,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import static com.hypixel.hytale.logger.HytaleLogger.getLogger;
+import com.electro.hycitizens.api.scripting.ScriptManager;
 
 public class EntityDeathListener extends DeathSystems.OnDeathSystem {
     private static final Random RANDOM = new Random();
@@ -121,7 +122,7 @@ public class EntityDeathListener extends DeathSystems.OnDeathSystem {
         if (attackerPlayerRef != null) {
             triggerArgs.put("attacker_name", attackerPlayerRef.getUsername());
         }
-        com.electro.hycitizens.api.scripting.ScriptManager.get().fireTrigger(foundCitizen, "ON_DEATH", triggerArgs, attackerPlayerRef, store);
+        ScriptManager.get().fireTrigger(foundCitizen, "ON_DEATH", triggerArgs, attackerPlayerRef, store);
         foundCitizen.clearRecentDamageDealers();
 
         foundCitizen.setLastDeathTime(now);

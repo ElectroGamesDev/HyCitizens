@@ -29,6 +29,8 @@ import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
+import com.electro.hycitizens.api.scripting.ScriptBlock;
+import com.electro.hycitizens.api.scripting.ScriptManager;
 
 public class CitizenInteraction {
 
@@ -252,6 +254,12 @@ public class CitizenInteraction {
     }
 
     public static boolean hasConfiguredInteraction(@Nonnull CitizenData citizen, @Nonnull String interactionSource) {
+        if (citizen.getInteractDialogueId() != null
+                && !citizen.getInteractDialogueId().isEmpty()
+                && citizen.isInteractDialogueTriggeredBy(interactionSource)) {
+            return true;
+        }
+
         if (hasMatchingCommand(citizen.getCommandActions(), interactionSource)) {
             return true;
         }
@@ -267,7 +275,7 @@ public class CitizenInteraction {
         }
 
         if (citizen.getScripts() != null) {
-            for (com.electro.hycitizens.api.scripting.ScriptBlock script : citizen.getScripts()) {
+            for (ScriptBlock script : citizen.getScripts()) {
                 if (script.isEnabled() && (script.matchesTrigger("ON_INTERACT") || script.matchesTrigger("ON_FIRST_INTERACT"))) {
                     Map<String, Object> params = script.getTriggerParameters();
                     if (params != null && params.containsKey("source")) {
@@ -294,6 +302,33 @@ public class CitizenInteraction {
 
         if (interactEvent.isCancelled())
             return;
+
+        // Check for interact dialogue
+        String interactDiagId = citizen.getInteractDialogueId();
+        if (interactDiagId != null
+                && !interactDiagId.isEmpty()
+                && citizen.isInteractDialogueTriggeredBy(interactionSource)) {
+            if (com.electro.hycitizens.managers.DialogueManager.get().getDialogue(interactDiagId) != null) {
+                if (HyCitizensPlugin.get().getCitizensManager().isCitizenInCombat(citizen)) {
+                    playerRef.sendMessage(Message.raw("This citizen is busy in combat.").color(Color.RED));
+                    return;
+                }
+
+                com.hypixel.hytale.server.core.universe.world.World world = com.hypixel.hytale.server.core.universe.Universe.get().getWorld(playerRef.getWorldUuid());
+                com.electro.hycitizens.api.scripting.ScriptContext scriptContext = new com.electro.hycitizens.api.scripting.ScriptContext(
+                        citizen,
+                        playerRef,
+                        world,
+                        playerRef.getReference().getStore(),
+                        "ON_INTERACT",
+                        null
+                );
+                if (com.electro.hycitizens.managers.DialogueManager.get()
+                        .resolveAndStart(playerRef, citizen.getId(), interactDiagId, scriptContext)) {
+                    return;
+                }
+            }
+        }
 
         if (!hasConfiguredInteraction(citizen, interactionSource)) {
             return;
@@ -379,9 +414,9 @@ public class CitizenInteraction {
         Map<String, Object> triggerArgs = new java.util.HashMap<>();
         triggerArgs.put("interaction_source", interactionSource);
         if (isFirst) {
-            com.electro.hycitizens.api.scripting.ScriptManager.get().fireTrigger(citizen, "ON_FIRST_INTERACT", triggerArgs, playerRef, playerRef.getReference().getStore());
+            ScriptManager.get().fireTrigger(citizen, "ON_FIRST_INTERACT", triggerArgs, playerRef, playerRef.getReference().getStore());
         }
-        com.electro.hycitizens.api.scripting.ScriptManager.get().fireTrigger(citizen, "ON_INTERACT", triggerArgs, playerRef, playerRef.getReference().getStore());
+        ScriptManager.get().fireTrigger(citizen, "ON_INTERACT", triggerArgs, playerRef, playerRef.getReference().getStore());
     }
 
     private static boolean hasMatchingCommand(@Nonnull List<CommandAction> commands, @Nonnull String interactionSource) {
