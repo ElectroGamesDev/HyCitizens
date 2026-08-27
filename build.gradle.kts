@@ -9,13 +9,13 @@ version = "2.0"
 
 repositories {
     mavenCentral()
-    //maven("https://maven.hytale.com/release/")
-    maven("https://maven.hytale.com/pre-release/")
+    maven("https://maven.hytale.com/release/")
+    //maven("https://maven.hytale.com/pre-release/")
 }
 
 dependencies {
     compileOnly("com.hypixel.hytale:Server:latest.release")
-    implementation(files("libs/HyUI-0.9.7-all.jar"))
+    implementation(fileTree("libs") { include("*.jar") })
 
     testImplementation(platform("org.junit:junit-bom:5.10.0"))
     testImplementation("org.junit.jupiter:junit-jupiter")
