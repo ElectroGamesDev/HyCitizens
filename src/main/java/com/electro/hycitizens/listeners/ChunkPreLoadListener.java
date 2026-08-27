@@ -16,7 +16,8 @@ import com.hypixel.hytale.server.core.entity.UUIDComponent;
 import com.hypixel.hytale.server.core.modules.entity.component.PersistentModel;
 import com.hypixel.hytale.server.core.universe.Universe;
 import com.hypixel.hytale.server.core.universe.world.World;
-import com.hypixel.hytale.server.core.universe.world.chunk.EntityChunk;
+import com.hypixel.hytale.server.core.universe.world.chunk.ChunkColumn;
+import com.hypixel.hytale.server.core.universe.world.chunk.section.EntitySection;
 import com.hypixel.hytale.server.core.universe.world.chunk.WorldChunk;
 import com.hypixel.hytale.server.core.universe.world.storage.ChunkStore;
 import com.hypixel.hytale.server.core.universe.world.events.ChunkPreLoadProcessEvent;
@@ -120,15 +121,23 @@ public class ChunkPreLoadListener {
             return candidates;
         }
 
-        EntityChunk entityChunk = chunkHolder.getComponent(EntityChunk.getComponentType());
-        if (entityChunk == null) {
+        ChunkColumn chunkColumn = chunkHolder.getComponent(ChunkColumn.getComponentType());
+        if (chunkColumn == null) {
             return candidates;
         }
 
-        for (Holder<EntityStore> entityHolder : entityChunk.getEntityHolders()) {
-            CitizenData matchedCitizen = resolveChunkEntityCitizen(entityHolder, worldCitizens, citizensByNpcUuid);
-            if (matchedCitizen != null) {
-                candidates.add(matchedCitizen);
+        Holder<ChunkStore>[] sectionHolders = chunkColumn.getSectionHolders();
+        if (sectionHolders != null) {
+            for (Holder<ChunkStore> sectionHolder : sectionHolders) {
+                if (sectionHolder == null) continue;
+                EntitySection entitySection = sectionHolder.getComponent(EntitySection.getComponentType());
+                if (entitySection == null) continue;
+                for (Holder<EntityStore> entityHolder : entitySection.getEntityHolders()) {
+                    CitizenData matchedCitizen = resolveChunkEntityCitizen(entityHolder, worldCitizens, citizensByNpcUuid);
+                    if (matchedCitizen != null) {
+                        candidates.add(matchedCitizen);
+                    }
+                }
             }
         }
 
@@ -538,54 +547,70 @@ public class ChunkPreLoadListener {
             return;
         }
 
-        EntityChunk entityChunk = chunkHolder.getComponent(EntityChunk.getComponentType());
-        if (entityChunk == null) {
+        ChunkColumn chunkColumn = chunkHolder.getComponent(ChunkColumn.getComponentType());
+        if (chunkColumn == null) {
             return;
         }
 
-        int repairedCount = 0;
-        for (Holder<EntityStore> entityHolder : entityChunk.getEntityHolders()) {
-            if (entityHolder == null) {
-                continue;
-            }
-
-            PersistentModel persistentModel = entityHolder.getComponent(PersistentModel.getComponentType());
-            if (persistentModel == null) {
-                continue;
-            }
-
-            Model.ModelReference modelReference = persistentModel.getModelReference();
-            if (modelReference == null) {
-                entityHolder.tryRemoveComponent(PersistentModel.getComponentType());
-                repairedCount++;
-                continue;
-            }
-
-            float scale = modelReference.getScale();
-            if (Float.isFinite(scale) && scale > 0.0f && scale <= 100.0f) {
-                continue;
-            }
-
-            String modelAssetId = modelReference.getModelAssetId();
-            if (modelAssetId == null || modelAssetId.isEmpty()) {
-                entityHolder.tryRemoveComponent(PersistentModel.getComponentType());
-            } else {
-                entityHolder.putComponent(
-                        PersistentModel.getComponentType(),
-                        new PersistentModel(new Model.ModelReference(
-                                modelAssetId,
-                                Float.isFinite(scale) && scale > 0.0f ? 100.0f : MIN_MODEL_SCALE,
-                                modelReference.getRandomAttachmentIds(),
-                                modelReference.isStaticModel()
-                        ))
-                );
-            }
-            repairedCount++;
+        Holder<ChunkStore>[] sectionHolders = chunkColumn.getSectionHolders();
+        if (sectionHolders == null) {
+            return;
         }
 
-        if (repairedCount > 0) {
-            entityChunk.markNeedsSaving();
-            getLogger().atWarning().log("Repaired " + repairedCount + " invalid PersistentModel scale values while loading chunk "
+        int totalRepairedCount = 0;
+        for (Holder<ChunkStore> sectionHolder : sectionHolders) {
+            if (sectionHolder == null) continue;
+            EntitySection entitySection = sectionHolder.getComponent(EntitySection.getComponentType());
+            if (entitySection == null) continue;
+
+            int sectionRepairedCount = 0;
+            for (Holder<EntityStore> entityHolder : entitySection.getEntityHolders()) {
+                if (entityHolder == null) {
+                    continue;
+                }
+
+                PersistentModel persistentModel = entityHolder.getComponent(PersistentModel.getComponentType());
+                if (persistentModel == null) {
+                    continue;
+                }
+
+                Model.ModelReference modelReference = persistentModel.getModelReference();
+                if (modelReference == null) {
+                    entityHolder.tryRemoveComponent(PersistentModel.getComponentType());
+                    sectionRepairedCount++;
+                    continue;
+                }
+
+                float scale = modelReference.getScale();
+                if (Float.isFinite(scale) && scale > 0.0f && scale <= 100.0f) {
+                    continue;
+                }
+
+                String modelAssetId = modelReference.getModelAssetId();
+                if (modelAssetId == null || modelAssetId.isEmpty()) {
+                    entityHolder.tryRemoveComponent(PersistentModel.getComponentType());
+                } else {
+                    entityHolder.putComponent(
+                            PersistentModel.getComponentType(),
+                            new PersistentModel(new Model.ModelReference(
+                                    modelAssetId,
+                                    Float.isFinite(scale) && scale > 0.0f ? 100.0f : MIN_MODEL_SCALE,
+                                    modelReference.getRandomAttachmentIds(),
+                                    modelReference.isStaticModel()
+                            ))
+                    );
+                }
+                sectionRepairedCount++;
+            }
+
+            if (sectionRepairedCount > 0) {
+                entitySection.markNeedsSaving();
+                totalRepairedCount += sectionRepairedCount;
+            }
+        }
+
+        if (totalRepairedCount > 0) {
+            getLogger().atWarning().log("Repaired " + totalRepairedCount + " invalid PersistentModel scale values while loading chunk "
                     + event.getChunk().getX() + ", " + event.getChunk().getZ() + " in world '" + event.getChunk().getWorld().getName() + "'.");
         }
     }

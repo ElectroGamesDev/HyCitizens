@@ -14,7 +14,8 @@ import com.hypixel.hytale.server.core.universe.world.storage.EntityStore;
 import com.hypixel.hytale.server.npc.corecomponents.ActionBase;
 import com.hypixel.hytale.server.npc.corecomponents.builders.BuilderActionBase;
 import com.hypixel.hytale.server.npc.entities.NPCEntity;
-import com.hypixel.hytale.server.npc.role.Role;
+import com.hypixel.hytale.server.npc.instructions.ExecutionSupport;
+import com.hypixel.hytale.server.npc.role.support.StateSupport;
 import com.hypixel.hytale.server.npc.sensorinfo.InfoProvider;
 
 import javax.annotation.Nonnull;
@@ -26,14 +27,20 @@ public class CitizenInteractionActionbase extends ActionBase {
         super(builderActionBase);
     }
 
-    public boolean canExecute(@Nonnull Ref<EntityStore> ref, @Nonnull Role role, InfoProvider sensorInfo, double dt, @Nonnull Store<EntityStore> store) {
-        return (super.canExecute(ref, role, sensorInfo, dt, store) && role.getStateSupport().getInteractionIterationTarget() != null);
+    public boolean canExecute(@Nonnull Ref<EntityStore> ref, @Nonnull ExecutionSupport executionSupport, InfoProvider sensorInfo, double dt, @Nonnull Store<EntityStore> store) {
+        StateSupport stateSupport = executionSupport.getStateSupport();
+        return (super.canExecute(ref, executionSupport, sensorInfo, dt, store) && stateSupport != null && stateSupport.getInteractionIterationTarget() != null);
     }
 
-    public boolean execute(@Nonnull Ref<EntityStore> ref, @Nonnull Role role, InfoProvider sensorInfo, double dt, @Nonnull Store<EntityStore> store) {
-        super.execute(ref, role, sensorInfo, dt, store);
+    public boolean execute(@Nonnull Ref<EntityStore> ref, @Nonnull ExecutionSupport executionSupport, InfoProvider sensorInfo, double dt, @Nonnull Store<EntityStore> store) {
+        super.execute(ref, executionSupport, sensorInfo, dt, store);
 
-        Ref<EntityStore> playerReference = role.getStateSupport().getInteractionIterationTarget();
+        StateSupport stateSupport = executionSupport.getStateSupport();
+        if (stateSupport == null) {
+            return false;
+        }
+
+        Ref<EntityStore> playerReference = stateSupport.getInteractionIterationTarget();
         if (playerReference == null) {
             return false;
         }

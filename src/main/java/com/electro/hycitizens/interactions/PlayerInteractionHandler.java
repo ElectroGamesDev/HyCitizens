@@ -12,6 +12,7 @@ import com.hypixel.hytale.server.core.Message;
 import com.hypixel.hytale.server.core.entity.UUIDComponent;
 import com.hypixel.hytale.server.core.entity.entities.Player;
 import com.hypixel.hytale.server.core.inventory.ItemStack;
+import com.hypixel.hytale.server.core.inventory.InventoryComponent;
 import com.hypixel.hytale.server.core.io.PacketHandler;
 import com.hypixel.hytale.server.core.io.adapter.PacketAdapters;
 import com.hypixel.hytale.server.core.io.adapter.PacketWatcher;
@@ -105,7 +106,12 @@ public class PlayerInteractionHandler implements PacketWatcher {
                 ? CitizenInteraction.SOURCE_F_KEY
                 : CitizenInteraction.SOURCE_LEFT_CLICK;
 
-        Store<EntityStore> store = playerRef.getReference().getStore();
+        Ref<EntityStore> playerEntityRef = playerRef.getReference();
+        if (playerEntityRef == null || !playerEntityRef.isValid()) {
+            return;
+        }
+
+        Store<EntityStore> store = playerEntityRef.getStore();
         Ref<EntityStore> entity = store.getExternalData().getRefFromNetworkId(chain.data.entityId);
         if (entity == null) {
             return;
@@ -161,7 +167,7 @@ public class PlayerInteractionHandler implements PacketWatcher {
             return false;
         }
 
-        ItemStack held = player.getInventory().getItemInHand();
+        ItemStack held = InventoryComponent.getItemInHand(ref.getStore(), ref);
         if (held == null || !"CitizenStick".equals(held.getItemId())) {
             return false;
         }

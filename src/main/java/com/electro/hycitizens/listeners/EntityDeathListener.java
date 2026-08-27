@@ -19,6 +19,7 @@ import com.hypixel.hytale.server.core.entity.entities.Player;
 import com.hypixel.hytale.server.core.inventory.ItemStack;
 import com.hypixel.hytale.server.core.modules.entity.component.TransformComponent;
 import com.hypixel.hytale.server.core.modules.entity.damage.Damage;
+import com.hypixel.hytale.server.core.modules.entity.damage.DamageCause;
 import com.hypixel.hytale.server.core.modules.entity.damage.DeathComponent;
 import com.hypixel.hytale.server.core.modules.entity.damage.DeathSystems;
 import com.hypixel.hytale.server.core.modules.entity.item.ItemComponent;
@@ -38,8 +39,10 @@ import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 import static com.hypixel.hytale.logger.HytaleLogger.getLogger;
+import com.electro.hycitizens.api.scripting.ScriptManager;
 
 public class EntityDeathListener extends DeathSystems.OnDeathSystem {
     private static final Random RANDOM = new Random();
@@ -113,6 +116,18 @@ public class EntityDeathListener extends DeathSystems.OnDeathSystem {
             handleDeathDrops(foundCitizen, dc, npcTransformComponent.getPosition());
         }
 
+        // Fire ON_DEATH scripting trigger
+        Map<String, Object> triggerArgs = new HashMap<>();
+        if (deathInfo != null) {
+            DamageCause damageCause = DamageCause.getAssetMap().getAsset(deathInfo.getDamageCauseIndex());
+            triggerArgs.put("damage_cause", damageCause != null ? damageCause.getId() : "UNKNOWN");
+        }
+        if (attackerPlayerRef != null) {
+            triggerArgs.put("attacker_name", attackerPlayerRef.getUsername());
+        }
+        ScriptManager.get().fireTrigger(foundCitizen, "ON_DEATH", triggerArgs, attackerPlayerRef, store);
+        foundCitizen.clearRecentDamageDealers();
+
         foundCitizen.setLastDeathTime(now);
 
         if (plugin.getCitizensManager().getPatrolManager() != null) {
@@ -136,7 +151,7 @@ public class EntityDeathListener extends DeathSystems.OnDeathSystem {
         List<DeathDropItem> eligible = drops.stream()
                 .filter(drop -> drop.getItemId() != null && !drop.getItemId().isEmpty())
                 .filter(drop -> RANDOM.nextFloat() * 100.0f <= drop.getChancePercent())
-                .collect(java.util.stream.Collectors.toList());
+                .collect(Collectors.toList());
 
         if (eligible.isEmpty()) {
             return;
@@ -200,7 +215,7 @@ public class EntityDeathListener extends DeathSystems.OnDeathSystem {
         List<CommandAction> eligible = commands.stream()
                 .filter(cmd -> RANDOM.nextFloat() * 100.0f <= cmd.getChancePercent())
                 .filter(cmd -> attackerPlayerRef != null || !containsPlayerPlaceholder(cmd.getCommand()))
-                .collect(java.util.stream.Collectors.toList());
+                .collect(Collectors.toList());
         if (eligible.isEmpty()) {
             return;
         }
@@ -261,7 +276,7 @@ public class EntityDeathListener extends DeathSystems.OnDeathSystem {
 
         List<CitizenMessage> eligible = messages.stream()
                 .filter(msg -> RANDOM.nextFloat() * 100.0f <= msg.getChancePercent())
-                .collect(java.util.stream.Collectors.toList());
+                .collect(Collectors.toList());
         if (eligible.isEmpty()) {
             return;
         }

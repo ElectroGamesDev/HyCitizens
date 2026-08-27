@@ -1,7 +1,8 @@
 package com.electro.hycitizens.map;
 
 import com.electro.hycitizens.models.CitizenData;
-import com.electro.hycitizens.util.DataAssetPackManager;
+import com.electro.hycitizens.util.SkinUtilities;
+import com.hypixel.hytale.server.core.asset.common.CommonAssetModule;
 
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
@@ -24,23 +25,98 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
 import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collection;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Supplier;
+import java.util.stream.Stream;
+
+import static com.hypixel.hytale.logger.HytaleLogger.getLogger;
 
 public final class CitizenMapMarkerAsset {
     public static final String DEFAULT_MARKER_IMAGE = "hycitizens-pin.png";
-    public static final Path CUSTOM_MARKERS_PATH = DataAssetPackManager.MAP_MARKERS_PATH;
+    public static final String ASSET_PACK_NAME = "electro:HyCitizensData";
+    public static final Path CUSTOM_MARKERS_PATH = Paths.get("mods", "HyCitizensData", "MapMarkers");
+    // public static final Path HEADSHOTS_PATH = Paths.get("mods", "HyCitizensData", "headshots");
+    private static final String ASSET_PATH_PREFIX = "UI/WorldMap/MapMarkers/";
     private static final int ICON_SIZE = 32;
     private static final int NPC_CONTENT_SCALE_PERCENT = 96;
     private static final Set<String> ENSURED_GENERATED_IMAGES = ConcurrentHashMap.newKeySet();
+    private static final Set<String> USER_CUSTOM_MARKERS = ConcurrentHashMap.newKeySet();
 
     private CitizenMapMarkerAsset() {
+    }
+
+    /*
+    // Headshot thumbnail resolution (disabled to prevent HyUI 25 dynamic image slot exhaustion in large citizen lists)
+    @Nonnull
+    public static String resolveCitizenThumbnailPath(@Nonnull CitizenData citizen) {
+        if (citizen.isPlayerModel()) {
+            if (citizen.isUseLiveSkin() && citizen.getSkinUsername() != null && !citizen.getSkinUsername().isBlank()) {
+                return SkinUtilities.getHeadshotRenderUrlForUsername(citizen.getSkinUsername(), 128, 20);
+            }
+            if (citizen.getCachedSkin() != null) {
+                return SkinUtilities.getHeadshotRenderUrl(citizen.getCachedSkin(), 128, 20);
+            }
+            return "https://api.hytl.skin/headshot/electro?size=128&rotation=20";
+        }
+
+        String relativePath = ensureNpcHeadshotFile(citizen.getModelId());
+        return relativePath != null ? relativePath : "";
+    }
+
+    @Nullable
+    public static String ensureNpcHeadshotFile(@Nullable String modelId) {
+        if (modelId == null || modelId.isBlank()) {
+            return null;
+        }
+
+        String safeKey = sanitizeKey(modelId);
+        String fileName = "npc_" + safeKey + ".png";
+        Path localPath = HEADSHOTS_PATH.resolve(fileName);
+        String relativeHyUiPath = "HyCitizensData/headshots/" + fileName;
+
+        if (Files.exists(localPath)) {
+            return relativeHyUiPath;
+        }
+
+        try {
+            Files.createDirectories(HEADSHOTS_PATH);
+            byte[] pngBytes = null;
+            String portraitName = CitizenNpcPortraitResolver.resolvePortraitName(modelId);
+            if (portraitName != null) {
+                byte[] rawBytes = CitizenNpcPortraitResolver.loadPortraitPngByPortraitName(portraitName);
+                if (rawBytes != null && rawBytes.length > 0) {
+                    pngBytes = createNpcPortraitMarkerPng(rawBytes, 64, NPC_CONTENT_SCALE_PERCENT);
+                }
+            }
+            if (pngBytes == null || pngBytes.length == 0) {
+                pngBytes = createGeneratedNpcMarkerPng(modelId, modelId);
+            }
+
+            if (pngBytes != null && pngBytes.length > 0) {
+                Files.write(localPath, pngBytes);
+                return relativeHyUiPath;
+            }
+        } catch (Exception e) {
+            getLogger().atWarning().log("[HyCitizens] Failed to write NPC headshot file: " + e.getMessage());
+        }
+        return null;
+    }
+    */
+
+    @Nonnull
+    public static String resolveCitizenThumbnailPath(@Nonnull CitizenData citizen) {
+        return "";
+    }
+
+    @Nullable
+    public static String ensureNpcHeadshotFile(@Nullable String modelId) {
+        return null;
     }
 
     @Nonnull
@@ -63,19 +139,65 @@ public final class CitizenMapMarkerAsset {
 
     @Nonnull
     public static List<String> listCustomMarkerIcons() {
-        ensureCustomMarkerDirectory();
+        return new ArrayList<>(USER_CUSTOM_MARKERS);
+    }
 
-        List<String> icons = new ArrayList<>();
-        try (var paths = Files.list(CUSTOM_MARKERS_PATH)) {
-            paths.filter(path -> Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS))
-                    .map(path -> path.getFileName().toString())
-                    .filter(name -> name.toLowerCase(Locale.ROOT).endsWith(".png"))
-                    .filter(name -> !name.toLowerCase(Locale.ROOT).startsWith("hycitizens-"))
-                    .sorted(String.CASE_INSENSITIVE_ORDER)
-                    .forEach(icons::add);
-        } catch (IOException ignored) {
+    public static void loadUserCustomMarkers() {
+        try {
+            Files.createDirectories(CUSTOM_MARKERS_PATH);
+        } catch (IOException e) {
+            getLogger().atWarning().log("[HyCitizens] Failed to create custom markers directory: " + e.getMessage());
+            return;
         }
-        return List.copyOf(icons);
+
+        USER_CUSTOM_MARKERS.clear();
+        int loadedCount = 0;
+
+        try (Stream<Path> paths = Files.list(CUSTOM_MARKERS_PATH)) {
+            List<Path> pngFiles = paths
+                    .filter(path -> Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS))
+                    .filter(path -> {
+                        String name = path.getFileName().toString().toLowerCase(Locale.ROOT);
+                        return name.endsWith(".png") && !name.startsWith("hycitizens-");
+                    })
+                    .toList();
+
+            for (Path pngFile : pngFiles) {
+                String fileName = pngFile.getFileName().toString();
+                if (registerUserCustomMarker(fileName, pngFile)) {
+                    USER_CUSTOM_MARKERS.add(fileName);
+                    loadedCount++;
+                }
+            }
+        } catch (IOException e) {
+            getLogger().atWarning().log("[HyCitizens] Failed to scan custom markers directory: " + e.getMessage());
+        }
+
+        if (loadedCount > 0) {
+            getLogger().atInfo().log("[HyCitizens] Loaded " + loadedCount + " custom map marker(s) from " + CUSTOM_MARKERS_PATH);
+        }
+    }
+
+    private static boolean registerUserCustomMarker(@Nonnull String fileName, @Nonnull Path filePath) {
+        try {
+            CommonAssetModule commonAssetModule = CommonAssetModule.get();
+            if (commonAssetModule == null) {
+                getLogger().atWarning().log("[HyCitizens] Cannot register custom marker - CommonAssetModule not available");
+                return false;
+            }
+
+            String assetName = ASSET_PATH_PREFIX + fileName;
+            byte[] pngBytes = Files.readAllBytes(filePath);
+
+            MemoryCommonAsset asset = new MemoryCommonAsset(assetName, pngBytes);
+            commonAssetModule.addCommonAsset(ASSET_PACK_NAME, asset);
+
+            getLogger().atFine().log("[HyCitizens] Registered custom map marker: " + fileName);
+            return true;
+        } catch (Exception e) {
+            getLogger().atWarning().log("[HyCitizens] Failed to register custom marker '" + fileName + "': " + e.getMessage());
+            return false;
+        }
     }
 
     public static void ensureBuiltInMarkerFiles() {
@@ -129,7 +251,7 @@ public final class CitizenMapMarkerAsset {
     }
 
     @Nullable
-    private static String ensureNpcTypeIcon(@Nonnull CitizenData citizen) {
+    public static String ensureNpcTypeIcon(@Nonnull CitizenData citizen) {
         String modelId = citizen.getModelId();
         String portraitName = CitizenNpcPortraitResolver.resolvePortraitName(modelId);
         if (portraitName != null) {
@@ -158,18 +280,12 @@ public final class CitizenMapMarkerAsset {
             return imageName;
         }
 
-        Path imagePath = CUSTOM_MARKERS_PATH.resolve(imageName).normalize();
-        Path basePath = CUSTOM_MARKERS_PATH.toAbsolutePath().normalize();
-        if (!basePath.equals(imagePath.toAbsolutePath().normalize().getParent())) {
-            return null;
-        }
-
         byte[] pngBytes = pngFactory.get();
         if (pngBytes == null || pngBytes.length == 0) {
             return null;
         }
 
-        if (writeMarkerPngIfChanged(imagePath, pngBytes)) {
+        if (registerMarkerAsset(imageName, pngBytes)) {
             ENSURED_GENERATED_IMAGES.add(imageName);
             return imageName;
         }
@@ -183,52 +299,38 @@ public final class CitizenMapMarkerAsset {
             return null;
         }
 
-        Path iconPath = resolveCustomMarkerPath(imageName);
-        if (iconPath == null) {
-            return null;
+        // Check if this custom marker was loaded from the user's MapMarkers folder
+        if (USER_CUSTOM_MARKERS.contains(imageName)) {
+            return imageName;
         }
 
-        return iconPath != null ? imageName : null;
+        return null;
     }
 
-    @Nullable
-    private static Path resolveCustomMarkerPath(@Nullable String customIcon) {
-        String imageName = CitizenData.normalizeMapMarkerCustomIcon(customIcon);
-        if (imageName.isEmpty()) {
-            return null;
-        }
-
-        ensureCustomMarkerDirectory();
-        Path base = CUSTOM_MARKERS_PATH.toAbsolutePath().normalize();
-        Path candidate = base.resolve(imageName).normalize();
-        if (!base.equals(candidate.getParent())) {
-            return null;
-        }
-        if (!Files.isRegularFile(candidate, LinkOption.NOFOLLOW_LINKS)) {
-            return null;
-        }
-        return candidate;
-    }
-
-    private static void ensureCustomMarkerDirectory() {
+    private static boolean registerMarkerAsset(@Nonnull String imageName, @Nonnull byte[] pngBytes) {
         try {
-            Files.createDirectories(CUSTOM_MARKERS_PATH);
-        } catch (IOException ignored) {
-        }
-    }
-
-    private static boolean writeMarkerPngIfChanged(@Nonnull Path imagePath, @Nonnull byte[] pngBytes) {
-        ensureCustomMarkerDirectory();
-        try {
-            if (Files.isRegularFile(imagePath, LinkOption.NOFOLLOW_LINKS)
-                    && Arrays.equals(Files.readAllBytes(imagePath), pngBytes)) {
-                return true;
+            CommonAssetModule commonAssetModule = CommonAssetModule.get();
+            if (commonAssetModule == null) {
+                getLogger().atWarning().log("[HyCitizens] Cannot register marker asset");
+                return false;
             }
-            Files.write(imagePath, pngBytes);
+
+            String assetName = ASSET_PATH_PREFIX + imageName;
+            MemoryCommonAsset asset = new MemoryCommonAsset(assetName, pngBytes);
+            commonAssetModule.addCommonAsset(ASSET_PACK_NAME, asset);
+
+            getLogger().atFine().log("[HyCitizens] Registered map marker asset: " + assetName);
             return true;
-        } catch (IOException e) {
+        } catch (Exception e) {
+            getLogger().atWarning().log("[HyCitizens] Failed to register marker asset '" + imageName + "': " + e.getMessage());
             return false;
         }
+    }
+
+    public static void cleanupGeneratedMarkers() {
+        ENSURED_GENERATED_IMAGES.clear();
+        USER_CUSTOM_MARKERS.clear();
+        getLogger().atInfo().log("[HyCitizens] Cleared map marker image cache");
     }
 
     @Nonnull

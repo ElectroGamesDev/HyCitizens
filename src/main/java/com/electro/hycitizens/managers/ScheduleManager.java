@@ -1,10 +1,12 @@
 package com.electro.hycitizens.managers;
 
+import com.electro.hycitizens.api.scripting.ScriptManager;
 import com.electro.hycitizens.models.*;
 import com.electro.hycitizens.roles.RoleGenerator;
 import com.electro.hycitizens.util.RotationUtil;
 import com.electro.hycitizens.util.ThreadedScheduler;
 import com.hypixel.hytale.component.Ref;
+import com.hypixel.hytale.component.Store;
 import org.joml.Vector3d;
 import org.joml.Vector3f;
 import com.hypixel.hytale.server.core.HytaleServer;
@@ -23,8 +25,10 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
@@ -48,7 +52,7 @@ public class ScheduleManager {
 
     private final CitizensManager citizensManager;
     private final Map<String, ScheduleSession> sessions = new ConcurrentHashMap<>();
-    private final java.util.Set<String> queuedTicks = ConcurrentHashMap.newKeySet();
+    private final Set<String> queuedTicks = ConcurrentHashMap.newKeySet();
     private ThreadedScheduler task = new ThreadedScheduler();
 
     public ScheduleManager(@Nonnull CitizensManager citizensManager) {
@@ -183,6 +187,11 @@ public class ScheduleManager {
         boolean arrived = isCitizenWithinRadius(citizen, targetLocation.getPosition(), activeEntry.getArrivalRadius());
 
         if (!activeEntry.getId().equals(session.activeEntryId) || !targetLocation.getId().equals(session.currentLocationId)) {
+            // Fire ON_SCHEDULE_CHANGE trigger
+            Store<EntityStore> store = world.getEntityStore().getStore();
+            if (store != null)
+                ScriptManager.get().fireTrigger(citizen, "ON_SCHEDULE_CHANGE", Map.of("entry_id", activeEntry.getId()), null, store);
+
             session.arrivalAnimationPlayed = false;
             if (!arrived) {
                 startTravel(citizen, activeEntry, targetLocation, session);
@@ -531,7 +540,7 @@ public class ScheduleManager {
 
         citizen.setCurrentScheduleRuntimeState(ScheduleRuntimeState.ACTIVE);
         citizen.setCurrentScheduleStatusText("Following " + leader.getName()
-                + " @ " + String.format(java.util.Locale.ROOT, "%.1f", entry.getFollowDistance()));
+                + " @ " + String.format(Locale.ROOT, "%.1f", entry.getFollowDistance()));
         return true;
     }
 
@@ -651,7 +660,7 @@ public class ScheduleManager {
             minute = 0;
             hour = Math.min(24, hour + 1);
         }
-        return String.format(java.util.Locale.ROOT, "%02d:%02d", hour, minute);
+        return String.format(Locale.ROOT, "%02d:%02d", hour, minute);
     }
 
     private void updateCitizenLeashPoint(@Nonnull CitizenData citizen, @Nonnull Vector3d position) {
@@ -713,8 +722,12 @@ public class ScheduleManager {
 
         int roleIndex = NPCPlugin.get().getIndex(roleName);
         if (roleIndex == Integer.MIN_VALUE) {
-            getLogger().atWarning().log("Schedule role not registered yet: " + roleName);
-            return;
+            citizensManager.getRoleGenerator().forceRoleGeneration(citizen);
+            roleIndex = NPCPlugin.get().getIndex(roleName);
+            if (roleIndex == Integer.MIN_VALUE) {
+                getLogger().atWarning().log("Schedule role not registered yet: " + roleName);
+                return;
+            }
         }
 
         World world = Universe.get().getWorld(citizen.getWorldUUID());
@@ -722,6 +735,7 @@ public class ScheduleManager {
             return;
         }
 
+        int finalRoleIndex = roleIndex;
         world.execute(() -> {
             NPCEntity npcEntity = npcRef.getStore().getComponent(npcRef, NPCEntity.getComponentType());
             if (npcEntity == null || npcEntity.getRole() == null) {
@@ -735,9 +749,25 @@ public class ScheduleManager {
                         : transformComponent != null
                         ? transformComponent.getPosition()
                         : (citizen.getCurrentPosition() != null ? citizen.getCurrentPosition() : citizen.getPosition());
-                citizensManager.getPatrolManager().ensureMoveTargetNow(citizen, world, markerPosition);
+                citizensManager.getPatrolManager().ensureMoveTargetNow(
+                        citizen,
+                        world,
+                        markerPosition
+                );
             }
-            RoleChangeSystem.requestRoleChange(npcRef, npcEntity.getRole(), roleIndex, true, npcRef.getStore());
+            RoleChangeSystem.requestRoleChange(npcRef, npcEntity.getRole(), finalRoleIndex, true, npcRef.getStore());
+            if (ensureMoveTarget && citizensManager.getPatrolManager() != null) {
+                HytaleServer.SCHEDULED_EXECUTOR.schedule(() -> world.execute(() -> {
+                    Vector3d targetPosition = moveTargetPosition != null
+                            ? moveTargetPosition
+                            : (citizen.getCurrentPosition() != null ? citizen.getCurrentPosition() : citizen.getPosition());
+                    citizensManager.getPatrolManager().ensureMoveTargetNow(
+                            citizen,
+                            world,
+                            targetPosition
+                    );
+                }), 100, TimeUnit.MILLISECONDS);
+            }
             HytaleServer.SCHEDULED_EXECUTOR.schedule(
                     () -> citizensManager.refreshSpawnedCitizenAppearance(citizen),
                     50,
@@ -755,7 +785,7 @@ public class ScheduleManager {
             case FOLLOW_CITIZEN -> {
                 CitizenData leader = citizensManager.getCitizen(entry.getFollowCitizenId());
                 yield leader != null
-                        ? "Following " + leader.getName() + " @ " + String.format(java.util.Locale.ROOT, "%.1f", entry.getFollowDistance())
+                        ? "Following " + leader.getName() + " @ " + String.format(Locale.ROOT, "%.1f", entry.getFollowDistance())
                         : "Following from " + location.getName();
             }
         };

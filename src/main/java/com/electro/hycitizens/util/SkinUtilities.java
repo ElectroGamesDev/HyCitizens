@@ -1,5 +1,16 @@
 package com.electro.hycitizens.util;
 
+import com.electro.hycitizens.map.MemoryCommonAsset;
+import com.google.gson.Gson;
+import com.hypixel.hytale.server.core.asset.common.CommonAssetModule;
+import com.hypixel.hytale.server.core.cosmetics.CosmeticRegistry;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+
+
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.hypixel.hytale.component.Ref;
@@ -52,40 +63,47 @@ public class SkinUtilities {
 
         Map<String, List<CosmeticOptionEntry>> catalogue = new LinkedHashMap<>();
 
-        catalogue.put("bodyCharacteristic", buildEntries(reg.getBodyCharacteristics(), reg));
-        catalogue.put("underwear",          buildEntries(reg.getUnderwear(),            reg));
-        catalogue.put("skinFeature",        buildEntries(reg.getSkinFeatures(),         reg));
-        catalogue.put("face",               buildEntries(reg.getFaces(),                reg));
-        catalogue.put("eyes",               buildEntries(reg.getEyes(),                 reg));
-        catalogue.put("ears",               buildEntries(reg.getEars(),                 reg));
-        catalogue.put("mouth",              buildEntries(reg.getMouths(),               reg));
-        catalogue.put("eyebrows",           buildEntries(reg.getEyebrows(),             reg));
-        catalogue.put("facialHair",         buildEntries(reg.getFacialHairs(),          reg));
-        catalogue.put("haircut",            buildEntries(reg.getHaircuts(),             reg));
-        catalogue.put("pants",              buildEntries(reg.getPants(),                reg));
-        catalogue.put("overpants",          buildEntries(reg.getOverpants(),            reg));
-        catalogue.put("undertop",           buildEntries(reg.getUndertops(),            reg));
-        catalogue.put("overtop",            buildEntries(reg.getOvertops(),             reg));
-        catalogue.put("shoes",              buildEntries(reg.getShoes(),                reg));
-        catalogue.put("gloves",             buildEntries(reg.getGloves(),               reg));
-        catalogue.put("headAccessory",      buildEntries(reg.getHeadAccessories(),      reg));
-        catalogue.put("faceAccessory",      buildEntries(reg.getFaceAccessories(),      reg));
-        catalogue.put("earAccessory",       buildEntries(reg.getEarAccessories(),       reg));
-        catalogue.put("cape",               buildEntries(reg.getCapes(),                reg));
+        catalogue.put("bodyCharacteristic", buildEntries("bodyCharacteristic", reg.getBodyCharacteristics(), reg));
+        catalogue.put("underwear",          buildEntries("underwear",          reg.getUnderwear(),            reg));
+        catalogue.put("skinFeature",        buildEntries("skinFeature",        reg.getSkinFeatures(),         reg));
+        catalogue.put("face",               buildEntries("face",               reg.getFaces(),                reg));
+        catalogue.put("eyes",               buildEntries("eyes",               reg.getEyes(),                 reg));
+        catalogue.put("ears",               buildEntries("ears",               reg.getEars(),                 reg));
+        catalogue.put("mouth",              buildEntries("mouth",              reg.getMouths(),               reg));
+        catalogue.put("eyebrows",           buildEntries("eyebrows",           reg.getEyebrows(),             reg));
+        catalogue.put("facialHair",         buildEntries("facialHair",         reg.getFacialHairs(),          reg));
+        catalogue.put("haircut",            buildEntries("haircut",            reg.getHaircuts(),             reg));
+        catalogue.put("pants",              buildEntries("pants",              reg.getPants(),                reg));
+        catalogue.put("overpants",          buildEntries("overpants",          reg.getOverpants(),            reg));
+        catalogue.put("undertop",           buildEntries("undertop",           reg.getUndertops(),            reg));
+        catalogue.put("overtop",            buildEntries("overtop",            reg.getOvertops(),             reg));
+        catalogue.put("shoes",              buildEntries("shoes",              reg.getShoes(),                reg));
+        catalogue.put("gloves",             buildEntries("gloves",             reg.getGloves(),               reg));
+        catalogue.put("headAccessory",      buildEntries("headAccessory",      reg.getHeadAccessories(),      reg));
+        catalogue.put("faceAccessory",      buildEntries("faceAccessory",      reg.getFaceAccessories(),      reg));
+        catalogue.put("earAccessory",       buildEntries("earAccessory",       reg.getEarAccessories(),       reg));
+        catalogue.put("cape",               buildEntries("cape",               reg.getCapes(),                reg));
 
         return catalogue;
     }
 
     @Nonnull
     private static List<CosmeticOptionEntry> buildEntries(
+            @Nonnull String slotName,
             @Nonnull Map<String, PlayerSkinPart> map,
-            @Nonnull com.hypixel.hytale.server.core.cosmetics.CosmeticRegistry reg) {
+            @Nonnull CosmeticRegistry reg) {
 
         List<CosmeticOptionEntry> entries = new ArrayList<>();
 
         for (PlayerSkinPart part : map.values()) {
             String partId = part.getId();
             List<String> colorOptions = new ArrayList<>();
+
+            if (usesBasePartOnly(slotName)) {
+                colorOptions.add(partId);
+                entries.add(new CosmeticOptionEntry(partId, colorOptions));
+                continue;
+            }
 
             // Collect the base colour pool (gradient set OR empty)
             List<String> gradientColors = new ArrayList<>();
@@ -133,6 +151,12 @@ public class SkinUtilities {
         }
 
         return entries;
+    }
+
+    private static boolean usesBasePartOnly(@Nonnull String slotName) {
+        return slotName.equals("face")
+                || slotName.equals("ears")
+                || slotName.equals("mouth");
     }
 
     @Nonnull
@@ -435,18 +459,318 @@ public class SkinUtilities {
     @Nonnull
     public static PlayerSkin createDefaultSkin() {
         PlayerSkin skin = new PlayerSkin();
-        skin.bodyCharacteristic = "human_male";
-        skin.underwear = "underwear_male";
-        skin.face = "face_a";
-        skin.eyes = "eyes_male";
-        skin.ears = "ears_a";
-        skin.mouth = "mouth_a";
-        skin.haircut = "hair_short_messy";
-        skin.eyebrows = "eyebrows_thick";
-        skin.pants = "pants_shorts_denim";
-        skin.undertop = "shirt_tshirt";
-        skin.shoes = "shoes_sneakers";
+        skin.bodyCharacteristic = "Default.01";
+        skin.underwear = "Suit.Blue";
+        skin.face = "Face_Neutral";
+        skin.eyes = "Plain_Eyes.BrownDark";
+        skin.ears = "Default";
+        skin.mouth = "Mouth_Default";
+        skin.haircut = "Morning.BrownDark";
+        skin.eyebrows = "Medium.BrownDark";
+        skin.pants = "CostumePants.Black";
+        skin.undertop = "Wide_Neck_Shirt.Black";
+        skin.shoes = "BasicShoes_Shiny.Black";
         return skin;
+    }
+
+    @Nonnull
+    public static PlayerSkin sanitizeSkin(@Nullable PlayerSkin skin) {
+        if (skin == null) {
+            return createDefaultSkin();
+        }
+
+        PlayerSkin sanitized = copySkin(skin);
+
+        // Normalize empty/blank strings or "null" strings to null
+        for (String slot : SLOT_NAMES) {
+            String val = getSkinField(sanitized, slot);
+            if (val != null && (val.isBlank() || "null".equalsIgnoreCase(val.trim()))) {
+                setSkinField(sanitized, slot, null);
+            }
+        }
+
+        // Map legacy placeholder names if present from old version configs
+        if ("human_male".equalsIgnoreCase(sanitized.bodyCharacteristic) || "human_female".equalsIgnoreCase(sanitized.bodyCharacteristic)) {
+            sanitized.bodyCharacteristic = "Default.01";
+        }
+        if ("underwear_male".equalsIgnoreCase(sanitized.underwear) || "underwear_female".equalsIgnoreCase(sanitized.underwear)) {
+            sanitized.underwear = "Suit.Blue";
+        }
+        if ("face_a".equalsIgnoreCase(sanitized.face)) {
+            sanitized.face = "Face_Neutral";
+        }
+        if ("eyes_male".equalsIgnoreCase(sanitized.eyes) || "eyes_female".equalsIgnoreCase(sanitized.eyes)) {
+            sanitized.eyes = "Plain_Eyes.BrownDark";
+        }
+        if ("ears_a".equalsIgnoreCase(sanitized.ears)) {
+            sanitized.ears = "Default";
+        }
+        if ("mouth_a".equalsIgnoreCase(sanitized.mouth)) {
+            sanitized.mouth = "Mouth_Default";
+        }
+        if ("hair_short_messy".equalsIgnoreCase(sanitized.haircut)) {
+            sanitized.haircut = "Morning.BrownDark";
+        }
+        if ("eyebrows_thick".equalsIgnoreCase(sanitized.eyebrows)) {
+            sanitized.eyebrows = "Medium.BrownDark";
+        }
+        if ("pants_shorts_denim".equalsIgnoreCase(sanitized.pants)) {
+            sanitized.pants = "CostumePants.Black";
+        }
+        if ("shirt_tshirt".equalsIgnoreCase(sanitized.undertop)) {
+            sanitized.undertop = "Wide_Neck_Shirt.Black";
+        }
+        if ("shoes_sneakers".equalsIgnoreCase(sanitized.shoes)) {
+            sanitized.shoes = "BasicShoes_Shiny.Black";
+        }
+
+        // Ensure required base features are present
+        if (sanitized.bodyCharacteristic == null || sanitized.bodyCharacteristic.isBlank()) {
+            sanitized.bodyCharacteristic = "Default.01";
+        }
+        if (sanitized.underwear == null || sanitized.underwear.isBlank()) {
+            sanitized.underwear = "Suit.Blue";
+        }
+        if (sanitized.face == null || sanitized.face.isBlank()) {
+            sanitized.face = "Face_Neutral";
+        }
+        if (sanitized.eyes == null || sanitized.eyes.isBlank()) {
+            sanitized.eyes = "Plain_Eyes.BrownDark";
+        }
+        if (sanitized.ears == null || sanitized.ears.isBlank()) {
+            sanitized.ears = "Default";
+        }
+        if (sanitized.mouth == null || sanitized.mouth.isBlank()) {
+            sanitized.mouth = "Mouth_Default";
+        }
+
+        // Repair un-suffixed attachment IDs for backwards compatibility with old configs
+        if (sanitized.bodyCharacteristic != null && !sanitized.bodyCharacteristic.contains(".")) {
+            sanitized.bodyCharacteristic += ".01";
+        }
+        if (sanitized.underwear != null && !sanitized.underwear.contains(".")) {
+            sanitized.underwear += ".Blue";
+        }
+        if (sanitized.eyes != null && !sanitized.eyes.contains(".")) {
+            sanitized.eyes += ".BrownDark";
+        }
+        if (sanitized.haircut != null && !sanitized.haircut.contains(".")) {
+            sanitized.haircut += ".BrownDark";
+        }
+        if (sanitized.eyebrows != null && !sanitized.eyebrows.contains(".")) {
+            sanitized.eyebrows += ".BrownDark";
+        }
+        if (sanitized.pants != null && !sanitized.pants.contains(".")) {
+            sanitized.pants += ".Black";
+        }
+        if (sanitized.undertop != null && !sanitized.undertop.contains(".")) {
+            sanitized.undertop += ".Black";
+        }
+        if (sanitized.overtop != null && !sanitized.overtop.contains(".")) {
+            sanitized.overtop += ".Black";
+        }
+        if (sanitized.shoes != null && !sanitized.shoes.contains(".")) {
+            sanitized.shoes += ".Black";
+        }
+        if (sanitized.facialHair != null && !sanitized.facialHair.contains(".")) {
+            sanitized.facialHair += ".BrownDark";
+        }
+
+        CosmeticsModule cosmeticsModule = CosmeticsModule.get();
+        if (cosmeticsModule != null && cosmeticsModule.getRegistry() != null) {
+            CosmeticRegistry registry = cosmeticsModule.getRegistry();
+
+            sanitized.bodyCharacteristic = sanitizeAttachment(sanitized.bodyCharacteristic, registry.getBodyCharacteristics(), registry, "01");
+            if (sanitized.bodyCharacteristic == null) sanitized.bodyCharacteristic = "Default.01";
+
+            sanitized.underwear = sanitizeAttachment(sanitized.underwear, registry.getUnderwear(), registry, "Blue");
+            if (sanitized.underwear == null) sanitized.underwear = "Suit.Blue";
+
+            if (sanitized.face == null || !registry.getFaces().containsKey(sanitized.face)) {
+                sanitized.face = "Face_Neutral";
+            }
+            if (sanitized.ears == null || !registry.getEars().containsKey(sanitized.ears)) {
+                sanitized.ears = "Default";
+            }
+            if (sanitized.mouth == null || !registry.getMouths().containsKey(sanitized.mouth)) {
+                sanitized.mouth = "Mouth_Default";
+            }
+
+            sanitized.eyes = sanitizeAttachment(sanitized.eyes, registry.getEyes(), registry, "BrownDark");
+            if (sanitized.eyes == null) sanitized.eyes = "Plain_Eyes.BrownDark";
+
+            sanitized.headAccessory = sanitizeAttachment(sanitized.headAccessory, registry.getHeadAccessories(), registry, "Black");
+            sanitized.faceAccessory = sanitizeAttachment(sanitized.faceAccessory, registry.getFaceAccessories(), registry, "Black");
+            sanitized.earAccessory = sanitizeAttachment(sanitized.earAccessory, registry.getEarAccessories(), registry, "Default");
+            sanitized.skinFeature = sanitizeAttachment(sanitized.skinFeature, registry.getSkinFeatures(), registry, "01");
+            sanitized.gloves = sanitizeAttachment(sanitized.gloves, registry.getGloves(), registry, "Black");
+            sanitized.cape = sanitizeAttachment(sanitized.cape, registry.getCapes(), registry, "RedDark");
+            sanitized.facialHair = sanitizeAttachment(sanitized.facialHair, registry.getFacialHairs(), registry, "BrownDark");
+            sanitized.eyebrows = sanitizeAttachment(sanitized.eyebrows, registry.getEyebrows(), registry, "BrownDark");
+            sanitized.pants = sanitizeAttachment(sanitized.pants, registry.getPants(), registry, "Black");
+            sanitized.overpants = sanitizeAttachment(sanitized.overpants, registry.getOverpants(), registry, "Default");
+            sanitized.undertop = sanitizeAttachment(sanitized.undertop, registry.getUndertops(), registry, "Black");
+            sanitized.overtop = sanitizeAttachment(sanitized.overtop, registry.getOvertops(), registry, "Black");
+            sanitized.shoes = sanitizeAttachment(sanitized.shoes, registry.getShoes(), registry, "Black");
+            sanitized.haircut = sanitizeHaircutAttachment(sanitized.haircut, sanitized.headAccessory, registry);
+
+            try {
+                cosmeticsModule.validateSkin(sanitized);
+            } catch (Exception e) {
+                // If anything still fails validation, repair or clear optional attachments
+                if (!isValidAttachment(registry.getHeadAccessories(), sanitized.headAccessory, registry)) sanitized.headAccessory = null;
+                if (!isValidAttachment(registry.getFaceAccessories(), sanitized.faceAccessory, registry)) sanitized.faceAccessory = null;
+                if (!isValidAttachment(registry.getEarAccessories(), sanitized.earAccessory, registry)) sanitized.earAccessory = null;
+                if (!isValidAttachment(registry.getSkinFeatures(), sanitized.skinFeature, registry)) sanitized.skinFeature = null;
+                if (!isValidAttachment(registry.getGloves(), sanitized.gloves, registry)) sanitized.gloves = null;
+                if (!isValidAttachment(registry.getCapes(), sanitized.cape, registry)) sanitized.cape = null;
+                if (!isValidAttachment(registry.getFacialHairs(), sanitized.facialHair, registry)) sanitized.facialHair = null;
+                if (!isValidAttachment(registry.getOverpants(), sanitized.overpants, registry)) sanitized.overpants = null;
+                if (!isValidAttachment(registry.getOvertops(), sanitized.overtop, registry)) sanitized.overtop = null;
+
+                try {
+                    cosmeticsModule.validateSkin(sanitized);
+                } catch (Exception fallbackEx) {
+                    sanitized = createDefaultSkin();
+                }
+            }
+        }
+
+        return sanitized;
+    }
+
+    public static boolean isValidAttachment(
+            @Nonnull Map<String, PlayerSkinPart> map,
+            @Nullable String id,
+            @Nonnull CosmeticRegistry registry) {
+        if (id == null) return true;
+
+        String[] idParts = id.split("\\.", -1);
+        PlayerSkinPart skinPart = map.get(idParts[0]);
+        if (skinPart == null) return false;
+
+        String variantId = idParts.length > 2 && !idParts[2].isEmpty() ? idParts[2] : null;
+        if (skinPart.getVariants() != null && !skinPart.getVariants().isEmpty()) {
+            if (variantId == null || !skinPart.getVariants().containsKey(variantId)) {
+                return false;
+            }
+        }
+
+        String textureId = idParts.length > 1 && !idParts[1].isEmpty() ? idParts[1] : null;
+        if (textureId == null) {
+            return true;
+        }
+
+        if (skinPart.getGradientSet() != null) {
+            PlayerSkinGradientSet gradSet = (PlayerSkinGradientSet) registry.getGradientSets().get(skinPart.getGradientSet());
+            if (gradSet != null && gradSet.getGradients() != null && gradSet.getGradients().containsKey(textureId)) {
+                return true;
+            }
+        }
+
+        if (skinPart.getVariants() != null && variantId != null && skinPart.getVariants().containsKey(variantId)) {
+            PlayerSkinPart.Variant variant = skinPart.getVariants().get(variantId);
+            return variant.getTextures() != null && variant.getTextures().containsKey(textureId);
+        } else if (skinPart.getTextures() != null) {
+            return skinPart.getTextures().containsKey(textureId);
+        }
+
+        return false;
+    }
+
+    @Nonnull
+    private static String sanitizeHaircutAttachment(@Nullable String rawHaircut, @Nullable String headAccessory, @Nonnull CosmeticRegistry registry) {
+        if (rawHaircut == null || rawHaircut.isBlank() || "null".equalsIgnoreCase(rawHaircut.trim())) {
+            return "Morning.BrownDark";
+        }
+        String sanitized = sanitizeAttachment(rawHaircut, registry.getHaircuts(), registry, "BrownDark");
+        return sanitized != null ? sanitized : "Morning.BrownDark";
+    }
+
+    @Nonnull
+    public static List<String> getValidColorsForPart(@Nonnull PlayerSkinPart part, @Nonnull CosmeticRegistry registry) {
+        return getValidColorsForPartAndVariant(part, null, registry);
+    }
+
+    @Nonnull
+    public static List<String> getValidColorsForPartAndVariant(
+            @Nonnull PlayerSkinPart part,
+            @Nullable String variantId,
+            @Nonnull CosmeticRegistry registry) {
+        List<String> colors = new ArrayList<>();
+        if (part.getGradientSet() != null) {
+            PlayerSkinGradientSet gradSet = (PlayerSkinGradientSet) registry.getGradientSets().get(part.getGradientSet());
+            if (gradSet != null && gradSet.getGradients() != null) {
+                colors.addAll(gradSet.getGradients().keySet());
+            }
+        }
+        if (variantId != null && part.getVariants() != null && part.getVariants().containsKey(variantId)) {
+            PlayerSkinPart.Variant variant = part.getVariants().get(variantId);
+            if (variant != null && variant.getTextures() != null) {
+                colors.addAll(variant.getTextures().keySet());
+            }
+        } else if (part.getTextures() != null) {
+            colors.addAll(part.getTextures().keySet());
+        } else if (part.getVariants() != null) {
+            for (PlayerSkinPart.Variant v : part.getVariants().values()) {
+                if (v.getTextures() != null) {
+                    colors.addAll(v.getTextures().keySet());
+                }
+            }
+        }
+        return colors;
+    }
+
+    @Nullable
+    public static String sanitizeAttachment(
+            @Nullable String rawValue,
+            @Nonnull Map<String, PlayerSkinPart> registryMap,
+            @Nonnull CosmeticRegistry registry,
+            @Nonnull String fallbackColor) {
+
+        if (rawValue == null || rawValue.isBlank() || "null".equalsIgnoreCase(rawValue.trim())) {
+            return null;
+        }
+
+        String[] parts = rawValue.split("\\.", -1);
+        String partId = parts[0];
+
+        PlayerSkinPart part = registryMap.get(partId);
+        if (part == null) {
+            return null;
+        }
+
+        String requestedTexture = parts.length > 1 && !parts[1].isBlank() ? parts[1] : null;
+        String requestedVariant = parts.length > 2 && !parts[2].isBlank() ? parts[2] : null;
+
+        boolean hasVariants = part.getVariants() != null && !part.getVariants().isEmpty();
+        String resolvedVariant = null;
+
+        if (hasVariants) {
+            if (requestedVariant != null && part.getVariants().containsKey(requestedVariant)) {
+                resolvedVariant = requestedVariant;
+            } else {
+                resolvedVariant = part.getVariants().keySet().iterator().next();
+            }
+        }
+
+        List<String> validColors = getValidColorsForPartAndVariant(part, resolvedVariant, registry);
+        if (validColors.isEmpty()) {
+            return resolvedVariant != null ? (partId + "." + fallbackColor + "." + resolvedVariant) : partId;
+        }
+
+        String resolvedTexture;
+        if (requestedTexture != null && validColors.contains(requestedTexture)) {
+            resolvedTexture = requestedTexture;
+        } else if (validColors.contains(fallbackColor)) {
+            resolvedTexture = fallbackColor;
+        } else {
+            resolvedTexture = validColors.get(0);
+        }
+
+        return resolvedVariant != null
+                ? (partId + "." + resolvedTexture + "." + resolvedVariant)
+                : (partId + "." + resolvedTexture);
     }
 
     public static boolean isValidSkin(@Nullable PlayerSkin skin) {
@@ -454,8 +778,13 @@ public class SkinUtilities {
             return false;
         }
 
+        CosmeticsModule cosmeticsModule = CosmeticsModule.get();
+        if (cosmeticsModule == null) {
+            return true;
+        }
+
         try {
-            CosmeticsModule.get().validateSkin(skin);
+            cosmeticsModule.validateSkin(skin);
             return true;
         } catch (Exception e) {
             return false;
@@ -465,11 +794,14 @@ public class SkinUtilities {
     public static boolean trySetSkinField(@Nonnull PlayerSkin skin, @Nonnull String slotName, @Nullable String value) {
         PlayerSkin candidate = copySkin(skin);
         setSkinField(candidate, slotName, value);
-        if (!isValidSkin(candidate)) {
+        PlayerSkin sanitized = sanitizeSkin(candidate);
+        if (!isValidSkin(sanitized)) {
             return false;
         }
 
-        setSkinField(skin, slotName, value);
+        for (String slot : SLOT_NAMES) {
+            setSkinField(skin, slot, getSkinField(sanitized, slot));
+        }
         return true;
     }
 
@@ -599,4 +931,129 @@ public class SkinUtilities {
             default -> slotName;
         };
     }
+
+    @Nonnull
+    public static String getHeadshotRenderUrl(@Nonnull PlayerSkin skin, int size, int rotation) {
+        JsonObject json = new JsonObject();
+        json.addProperty("bodyCharacteristic", skin.bodyCharacteristic != null ? skin.bodyCharacteristic : "human_male");
+        if (skin.underwear != null) json.addProperty("underwear", skin.underwear);
+        if (skin.face != null) json.addProperty("face", skin.face);
+        if (skin.eyes != null) json.addProperty("eyes", skin.eyes);
+        if (skin.ears != null) json.addProperty("ears", skin.ears);
+        if (skin.mouth != null) json.addProperty("mouth", skin.mouth);
+        if (skin.facialHair != null) json.addProperty("facialHair", skin.facialHair);
+        if (skin.haircut != null) json.addProperty("haircut", skin.haircut);
+        if (skin.eyebrows != null) json.addProperty("eyebrows", skin.eyebrows);
+        if (skin.pants != null) json.addProperty("pants", skin.pants);
+        if (skin.overpants != null) json.addProperty("overpants", skin.overpants);
+        if (skin.undertop != null) json.addProperty("undertop", skin.undertop);
+        if (skin.overtop != null) json.addProperty("overtop", skin.overtop);
+        if (skin.shoes != null) json.addProperty("shoes", skin.shoes);
+        if (skin.headAccessory != null) json.addProperty("headAccessory", skin.headAccessory);
+        if (skin.faceAccessory != null) json.addProperty("faceAccessory", skin.faceAccessory);
+        if (skin.earAccessory != null) json.addProperty("earAccessory", skin.earAccessory);
+        if (skin.skinFeature != null) json.addProperty("skinFeature", skin.skinFeature);
+        if (skin.gloves != null) json.addProperty("gloves", skin.gloves);
+        if (skin.cape != null) json.addProperty("cape", skin.cape);
+
+        String jsonString = new Gson().toJson(json);
+        String base64Token = Base64.getUrlEncoder().withoutPadding().encodeToString(jsonString.getBytes(StandardCharsets.UTF_8));
+
+        return "https://api.hytl.skin/character/render?token=" + base64Token 
+                + "&size=" + size 
+                + "&rotation=" + rotation;
+    }
+
+    @Nonnull
+    public static String getHeadshotRenderUrlForUsername(@Nonnull String username, int size, int rotation) {
+        String cleanUser = username.trim();
+        return "https://api.hytl.skin/headshot/" + cleanUser 
+                + "?size=" + size 
+                + "&rotation=" + rotation;
+    }
+
+    @Nonnull
+    public static CompletableFuture<String> cacheHeadshotAndGetUrl(@Nonnull String npcId, @Nonnull PlayerSkin skin) {
+        String skinJson = new Gson().toJson(skin);
+        String hash = String.format("%08x", skinJson.hashCode());
+        String fileName = npcId + "_" + hash + ".png";
+        
+        String assetPathRelative = "Common/UI/custom/headshots/" + fileName;
+        Path localDiskPath = Paths.get("mods", "HyCitizensData", "Common", "UI", "custom", "headshots", fileName);
+        String relativeUrl = "HyCitizensData/Common/UI/custom/headshots/" + fileName;
+
+        if (Files.exists(localDiskPath)) {
+            CommonAssetModule commonAssetModule = CommonAssetModule.get();
+            if (commonAssetModule != null) {
+                try {
+                    byte[] bytes = Files.readAllBytes(localDiskPath);
+                    MemoryCommonAsset asset = new MemoryCommonAsset(assetPathRelative, bytes);
+                    commonAssetModule.addCommonAsset("electro:HyCitizensData", asset);
+                } catch (IOException ignored) {}
+            }
+            return CompletableFuture.completedFuture(relativeUrl);
+        }
+
+        String renderUrl = getHeadshotRenderUrl(skin, 250, 20);
+        HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create(renderUrl))
+                .header("User-Agent", "Hytale-Plugin-HyCitizens/1.0")
+                .timeout(Duration.ofSeconds(8))
+                .GET()
+                .build();
+
+        return httpClient.sendAsync(request, HttpResponse.BodyHandlers.ofByteArray())
+                .thenApply(response -> {
+                    if (response.statusCode() == 200 && response.body() != null && response.body().length > 0) {
+                        try {
+                            Files.createDirectories(localDiskPath.getParent());
+                            Files.write(localDiskPath, response.body());
+                            
+                            CommonAssetModule commonAssetModule = CommonAssetModule.get();
+                            if (commonAssetModule != null) {
+                                MemoryCommonAsset asset = new MemoryCommonAsset(assetPathRelative, response.body());
+                                commonAssetModule.addCommonAsset("electro:HyCitizensData", asset);
+                            }
+                            return relativeUrl;
+                        } catch (Exception e) {
+                            getLogger().atWarning().log("[HyCitizens] Failed to save headshot to disk: " + e.getMessage());
+                        }
+                    } else {
+                        getLogger().atWarning().log("[HyCitizens] Failed to download NPC headshot (status code " + response.statusCode() + ") - falling back to official portrait or default.");
+                    }
+                    return "";
+                })
+                .exceptionally(ex -> {
+                    getLogger().atWarning().log("[HyCitizens] Headshot download exception: " + ex.getMessage());
+                    return "";
+                });
+    }
+
+    @Nullable
+    public static String getHeadshotUrlSync(@Nonnull String npcId, @Nonnull PlayerSkin skin) {
+        String skinJson = new Gson().toJson(skin);
+        String hash = String.format("%08x", skinJson.hashCode());
+        String fileName = npcId + "_" + hash + ".png";
+
+        String assetPathRelative = "Common/UI/custom/headshots/" + fileName;
+        Path localDiskPath = Paths.get("mods", "HyCitizensData", "Common", "UI", "custom", "headshots", fileName);
+        String relativeUrl = "HyCitizensData/Common/UI/custom/headshots/" + fileName;
+
+        if (Files.exists(localDiskPath)) {
+            CommonAssetModule commonAssetModule = CommonAssetModule.get();
+            if (commonAssetModule != null) {
+                try {
+                    byte[] bytes = Files.readAllBytes(localDiskPath);
+                    MemoryCommonAsset asset = new MemoryCommonAsset(assetPathRelative, bytes);
+                    commonAssetModule.addCommonAsset("electro:HyCitizensData", asset);
+                } catch (IOException ignored) {}
+            }
+            return relativeUrl;
+        }
+
+        // Trigger background download/cache for future renders
+        cacheHeadshotAndGetUrl(npcId, skin);
+        return null;
+    }
 }
+

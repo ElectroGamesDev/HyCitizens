@@ -5,6 +5,7 @@ import au.ellie.hyui.html.TemplateProcessor;
 import com.electro.hycitizens.HyCitizensPlugin;
 import com.electro.hycitizens.models.CitizenData;
 import com.electro.hycitizens.util.SkinUtilities;
+import com.electro.hycitizens.util.HtmlUtils;
 import com.electro.hycitizens.util.SkinUtilities.CosmeticOptionEntry;
 import com.hypixel.hytale.common.util.RandomUtil;
 import com.hypixel.hytale.component.Store;
@@ -72,7 +73,7 @@ public class SkinCustomizerUI {
         CustomizerState state = sessionStates.get(playerId);
         if (state == null || state.citizen != citizen) {
             PlayerSkin current = citizen.getCachedSkin();
-            if (current == null) current = SkinUtilities.createDefaultSkin();
+            current = SkinUtilities.sanitizeSkin(current);
             state = new CustomizerState(citizen, SkinUtilities.copySkin(current), SkinUtilities.copySkin(current));
             sessionStates.put(playerId, state);
         }
@@ -85,10 +86,14 @@ public class SkinCustomizerUI {
     }
 
     private void buildAndOpen(PlayerRef playerRef, Store<EntityStore> store, CustomizerState state) {
-        String html = buildHTML(state);
+        CitizensUI.LeftPanelContext ctx = plugin.getCitizensUI().prepareLeftPanelContext(playerRef, "", state.citizen.getGroup(), state.citizen);
+        TemplateProcessor template = plugin.getCitizensUI().createBaseTemplate();
+        String rightPanelHtml = buildHTML(state);
+        String html = template.process(getStyles() + plugin.getCitizensUI().wrapSideBySideHtml(template, ctx, rightPanelHtml));
         PageBuilder page = PageBuilder.pageForPlayer(playerRef)
                 .withLifetime(CustomPageLifetime.CanDismiss)
-                .fromHtml(html);
+                .fromHtml(HtmlUtils.sanitizeHtmlForHyUI(html));
+        plugin.getCitizensUI().setupMainEventListeners(page, playerRef, store, CitizensUI.Tab.MANAGE, ctx.unifiedList(), ctx.searchQuery(), ctx.normalizedViewingGroup(), state.citizen);
         setupListeners(page, playerRef, store, state);
         page.open(store);
     }
@@ -116,9 +121,9 @@ public class SkinCustomizerUI {
         String currentDisplay  = formatCosmeticValue(currentValue);
         String slotDisplayName = SkinUtilities.slotDisplayName(state.selectedSlot);
 
-        return new TemplateProcessor().process(getStyles() + """
-                <div class="page-overlay">
-                    <div class="main-container decorated-container" style="anchor-width: 980; anchor-height: 900;">
+        return """
+                    <!-- RIGHT PANEL: SKIN CUSTOMIZER -->
+                    <div class="main-container decorated-container" style="anchor-width: 900; anchor-height: 900;">
 
                         <div class="header container-title">
                             <div class="header-content">
@@ -127,7 +132,7 @@ public class SkinCustomizerUI {
                             </div>
                         </div>
 
-                        <div class="body">
+                        <div class="body" data-hyui-scrollbar-style='"Common.ui" "DefaultScrollbarStyle"' style="layout-mode: TopScrolling; flex-weight: 1;">
                             <div class="editor-row">
 
                                 <div class="cat-sidebar">
@@ -185,7 +190,7 @@ public class SkinCustomizerUI {
                             </div>
                         </div>
 
-                        <div class="footer">
+                        <div class="footer" style="layout: center; flex-weight: 0; padding: 26 16 26 16; border-top: 1 solid #1a293c; anchor-width: 100%%; vertical-align: center;">
                             <button id="randomize-all-btn" class="secondary-button" style="anchor-width: 160; anchor-height: 40;">Randomize</button>
                             <div style="flex-weight: 1;"></div>
                             <button id="cancel-btn" class="secondary-button" style="anchor-width: 130; anchor-height: 40;">Cancel</button>
@@ -194,7 +199,6 @@ public class SkinCustomizerUI {
                         </div>
 
                     </div>
-                </div>
                 """.formatted(
                 "Editing " + escapeHtml(state.citizen.getName()),
                 categorySidebar,
@@ -203,7 +207,7 @@ public class SkinCustomizerUI {
                 slotTabs,
                 partGrid,
                 colorStrip
-        ));
+        );
     }
 
     private String buildCategorySidebar(CustomizerState state) {
@@ -508,17 +512,13 @@ public class SkinCustomizerUI {
 
         // Done
         page.addEventListener("done-btn", CustomUIEventBindingType.Activating, event -> {
-            if (!SkinUtilities.isValidSkin(state.workingSkin)) {
-                playerRef.sendMessage(Message.raw("Skin customization contains an invalid cosmetic option and was not saved.").color(Color.RED));
-                return;
-            }
-
-            state.citizen.setCachedSkin(SkinUtilities.copySkin(state.workingSkin));
+            PlayerSkin sanitized = SkinUtilities.sanitizeSkin(state.workingSkin);
+            state.citizen.setCachedSkin(SkinUtilities.copySkin(sanitized));
             state.citizen.setUseLiveSkin(false);
             state.citizen.setSkinUsername("custom_" + UUID.randomUUID().toString().substring(0, 8));
             state.citizen.setLastSkinUpdate(System.currentTimeMillis());
             plugin.getCitizensManager().saveCitizen(state.citizen);
-            plugin.getCitizensManager().applySkinPreview(state.citizen, state.workingSkin);
+            plugin.getCitizensManager().applySkinPreview(state.citizen, sanitized);
             playerRef.sendMessage(Message.raw("Skin customization saved!").color(Color.GREEN));
             clearState(playerRef);
             plugin.getCitizensUI().openEditCitizenGUI(playerRef, store, state.citizen);

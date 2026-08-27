@@ -1,7 +1,10 @@
 package com.electro.hycitizens.models;
 
+import com.electro.hycitizens.api.scripting.ScriptBlock;
 import com.electro.hycitizens.roles.RoleGenerator;
+import com.electro.hycitizens.util.RotationUtil;
 import com.hypixel.hytale.component.Ref;
+import com.hypixel.hytale.math.vector.Rotation3f;
 import org.joml.Vector3d;
 import org.joml.Vector3f;
 import com.hypixel.hytale.protocol.Direction;
@@ -12,6 +15,7 @@ import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -46,7 +50,8 @@ public class CitizenData {
     private String modelId;
     private Vector3d position;
     private Vector3f rotation;
-    private Vector3d currentPosition;
+    private volatile Vector3d currentPosition;
+    private volatile Rotation3f currentRotation;
     private float scale;
     private String requiredPermission;
     private String noPermissionMessage;
@@ -54,8 +59,13 @@ public class CitizenData {
     private List<CommandAction> commandActions;
     private UUID spawnedUUID;
     private List<UUID> hologramLineUuids = new ArrayList<>();
-    private Ref<EntityStore> npcRef;
+    private transient boolean wasInCombat = false;
+
+    // Entity References
+    private transient Ref<EntityStore> npcRef;
     public final Map<UUID, Direction> lastLookDirections = new ConcurrentHashMap<>();
+    public final Map<UUID, Direction> lastBodyDirections = new ConcurrentHashMap<>();
+    public final Map<UUID, Boolean> bodyTurningStates = new ConcurrentHashMap<>();
     private transient Map<UUID, ScheduledFuture<?>> pendingLookResetTasks = new ConcurrentHashMap<>();
     public final Map<UUID, Direction> lastNametagLookDirections = new ConcurrentHashMap<>();
     private transient Map<UUID, ScheduledFuture<?>> pendingNametagLookResetTasks = new ConcurrentHashMap<>();
@@ -68,6 +78,7 @@ public class CitizenData {
     private String nametagModelId = "";
     private float nametagModelScale = 1.0f;
     private boolean rotateNametagTowardsPlayer = true;
+    private transient String cachedCustomNametagAssetId = null;
     private boolean fKeyInteractionEnabled;
     private boolean forceFKeyInteractionText;
     private boolean mapMarkerEnabled = false;
@@ -105,13 +116,17 @@ public class CitizenData {
     private transient Map<UUID, Integer> sequentialDeathCommandIndex = new ConcurrentHashMap<>();
     private transient Map<UUID, Boolean> playersInProximity = new ConcurrentHashMap<>();
     private transient Map<String, Long> lastTimedAnimationPlay = new ConcurrentHashMap<>();
-    private transient Map<String, java.util.concurrent.ScheduledFuture<?>> animationStopTasks = new ConcurrentHashMap<>();
+    private transient Map<String, ScheduledFuture<?>> animationStopTasks = new ConcurrentHashMap<>();
     private boolean firstInteractionEnabled = false;
     private List<CommandAction> firstInteractionCommandActions = new ArrayList<>();
     private MessagesConfig firstInteractionMessagesConfig = new MessagesConfig();
     private String firstInteractionCommandSelectionMode = "ALL";
     private String postFirstInteractionBehavior = "NORMAL";
     private boolean runNormalOnFirstInteraction = false;
+
+    // Scripting-related fields
+    private List<ScriptBlock> scripts = new ArrayList<>();
+    private Map<String, Object> scriptVariables = new ConcurrentHashMap<>();
     private Set<UUID> playersWhoCompletedFirstInteraction = ConcurrentHashMap.newKeySet();
     private transient Map<UUID, Integer> sequentialFirstInteractionMessageIndex = new ConcurrentHashMap<>();
     private transient Map<UUID, Integer> sequentialFirstInteractionCommandIndex = new ConcurrentHashMap<>();
@@ -136,6 +151,15 @@ public class CitizenData {
     private transient boolean awaitingRespawn = false;
     private long respawnReadyAtMillis = 0L;
     private transient long lastDeathTime = 0;
+
+    // Advanced respawn fields
+    private boolean customRespawnSettingsEnabled = false;
+    private float customRespawnDelaySeconds = 300.0f;
+    private boolean requireNoPlayersInRadiusForRespawn = true;
+    private float respawnPlayerCheckRadius = 10.0f;
+
+    // Damage tracking for FOREACH_DAMAGE_DEALER
+    private transient Map<UUID, Double> recentDamageDealers = new ConcurrentHashMap<>();
 
     // Group field
     private String group = "";
@@ -166,6 +190,7 @@ public class CitizenData {
     private float dayFlavorAnimationLengthMin = 3.0f;
     private float dayFlavorAnimationLengthMax = 5.0f;
     private String attitudeGroup = "Empty";
+    private FactionConfig factionConfig = new FactionConfig();
     private String nameTranslationKey = "Citizen";
     private boolean breathesInWater = false;
 
@@ -193,6 +218,8 @@ public class CitizenData {
     private List<String> combatMessageTargetGroups = new ArrayList<>();
     private List<String> flockArray = new ArrayList<>();
     private List<String> disableDamageGroups = new ArrayList<>(List.of("Self"));
+    private String interactDialogueId;
+    private String interactDialogueTrigger = "BOTH";
 
     public CitizenData(@Nonnull String id, @Nonnull String name, @Nonnull String modelId, @Nonnull UUID worldUUID,
                        @Nonnull Vector3d position, @Nonnull Vector3f rotation, float scale, @Nullable UUID npcUUID,
@@ -207,6 +234,7 @@ public class CitizenData {
         this.position = position;
         this.rotation = rotation;
         this.currentPosition = position;
+        this.currentRotation = rotation != null ? RotationUtil.toRotation(rotation) : new Rotation3f();
         this.scale = sanitizeModelScale(scale);
         this.requiredPermission = requiredPermission;
         this.noPermissionMessage = noPermissionMessage;
@@ -251,6 +279,20 @@ public class CitizenData {
 
     public void setName(@Nonnull String name) {
         this.name = name;
+        clearCustomNametagCache();
+    }
+
+    @Nullable
+    public String getCachedCustomNametagAssetId() {
+        return cachedCustomNametagAssetId;
+    }
+
+    public void setCachedCustomNametagAssetId(@Nullable String assetId) {
+        this.cachedCustomNametagAssetId = assetId;
+    }
+
+    public void clearCustomNametagCache() {
+        this.cachedCustomNametagAssetId = null;
     }
 
     @Nonnull
@@ -289,13 +331,22 @@ public class CitizenData {
         this.rotation = rotation;
     }
 
-    public void setCurrentPosition (@Nonnull Vector3d currentPosition) {
+    public void setCurrentPosition(@Nullable Vector3d currentPosition) {
         this.currentPosition = currentPosition;
     }
 
-    @Nonnull
+    @Nullable
     public Vector3d getCurrentPosition() {
         return currentPosition;
+    }
+
+    public void setCurrentRotation(@Nullable Rotation3f currentRotation) {
+        this.currentRotation = currentRotation;
+    }
+
+    @Nullable
+    public Rotation3f getCurrentRotation() {
+        return currentRotation;
     }
 
     public float getScale() {
@@ -404,6 +455,9 @@ public class CitizenData {
             this.useLiveSkin = false;
         }
     }
+
+    public boolean wasInCombat() { return wasInCombat; }
+    public void setWasInCombat(boolean wasInCombat) { this.wasInCombat = wasInCombat; }
 
     public Ref<EntityStore> getNpcRef() {
         return npcRef;
@@ -637,7 +691,7 @@ public class CitizenData {
             normalized = normalized.substring(slash + 1);
         }
 
-        if (!normalized.toLowerCase(java.util.Locale.ROOT).endsWith(".png")) {
+        if (!normalized.toLowerCase(Locale.ROOT).endsWith(".png")) {
             return "";
         }
         return normalized.replaceAll("[\\r\\n]+", "").trim();
@@ -649,7 +703,7 @@ public class CitizenData {
             return MAP_MARKER_TYPE_PIN;
         }
 
-        String normalized = type.trim().toUpperCase(java.util.Locale.ROOT).replace('-', '_').replace(' ', '_');
+        String normalized = type.trim().toUpperCase(Locale.ROOT).replace('-', '_').replace(' ', '_');
         if (normalized.equals("MONEY_BAG")) {
             return MAP_MARKER_TYPE_MONEY_SYMBOL;
         }
@@ -682,6 +736,30 @@ public class CitizenData {
 
     public void setAnimationBehaviors(@Nonnull List<AnimationBehavior> animationBehaviors) {
         this.animationBehaviors = new ArrayList<>(animationBehaviors);
+    }
+
+    @Nonnull
+    public List<ScriptBlock> getScripts() {
+        if (scripts == null) {
+            scripts = new ArrayList<>();
+        }
+        return scripts;
+    }
+
+    public void setScripts(@Nonnull List<ScriptBlock> scripts) {
+        this.scripts = new ArrayList<>(scripts);
+    }
+
+    @Nonnull
+    public Map<String, Object> getScriptVariables() {
+        if (scriptVariables == null) {
+            scriptVariables = new ConcurrentHashMap<>();
+        }
+        return scriptVariables;
+    }
+
+    public void setScriptVariables(@Nonnull Map<String, Object> scriptVariables) {
+        this.scriptVariables = new ConcurrentHashMap<>(scriptVariables);
     }
 
     @Nonnull
@@ -771,7 +849,7 @@ public class CitizenData {
     }
 
     @Nonnull
-    public Map<String, java.util.concurrent.ScheduledFuture<?>> getAnimationStopTasks() {
+    public Map<String, ScheduledFuture<?>> getAnimationStopTasks() {
         return animationStopTasks;
     }
 
@@ -958,6 +1036,25 @@ public class CitizenData {
         this.lastDeathTime = lastDeathTime;
     }
 
+    // Advanced respawn fields
+    public boolean isCustomRespawnSettingsEnabled() { return customRespawnSettingsEnabled; }
+    public void setCustomRespawnSettingsEnabled(boolean customRespawnSettingsEnabled) { this.customRespawnSettingsEnabled = customRespawnSettingsEnabled; }
+    public float getCustomRespawnDelaySeconds() { return customRespawnDelaySeconds; }
+    public void setCustomRespawnDelaySeconds(float customRespawnDelaySeconds) { this.customRespawnDelaySeconds = customRespawnDelaySeconds; }
+    public boolean isRequireNoPlayersInRadiusForRespawn() { return requireNoPlayersInRadiusForRespawn; }
+    public void setRequireNoPlayersInRadiusForRespawn(boolean requireNoPlayersInRadiusForRespawn) { this.requireNoPlayersInRadiusForRespawn = requireNoPlayersInRadiusForRespawn; }
+    public float getRespawnPlayerCheckRadius() { return respawnPlayerCheckRadius; }
+    public void setRespawnPlayerCheckRadius(float respawnPlayerCheckRadius) { this.respawnPlayerCheckRadius = respawnPlayerCheckRadius; }
+
+    // Damage tracking
+    public Map<UUID, Double> getRecentDamageDealers() { return recentDamageDealers; }
+    public void addDamageDealer(UUID playerUuid, double amount) {
+        recentDamageDealers.merge(playerUuid, amount, Double::sum);
+    }
+    public void clearRecentDamageDealers() {
+        recentDamageDealers.clear();
+    }
+
     @Nonnull
     public String getGroup() {
         return group;
@@ -1133,6 +1230,10 @@ public class CitizenData {
     public void setAttitudeGroup(@Nonnull String v) { this.attitudeGroup = v; }
 
     @Nonnull
+    public FactionConfig getFactionConfig() { return factionConfig; }
+    public void setFactionConfig(@Nonnull FactionConfig factionConfig) { this.factionConfig = factionConfig; }
+
+    @Nonnull
     public String getNameTranslationKey() { return nameTranslationKey; }
     public void setNameTranslationKey(@Nonnull String v) { this.nameTranslationKey = v; }
 
@@ -1188,4 +1289,31 @@ public class CitizenData {
     @Nonnull
     public List<String> getDisableDamageGroups() { return disableDamageGroups; }
     public void setDisableDamageGroups(@Nonnull List<String> v) { this.disableDamageGroups = new ArrayList<>(v); }
+
+    @Nullable
+    public String getInteractDialogueId() { return interactDialogueId; }
+    public void setInteractDialogueId(@Nullable String interactDialogueId) { this.interactDialogueId = interactDialogueId; }
+
+    @Nonnull
+    public String getInteractDialogueTrigger() {
+        return switch (interactDialogueTrigger != null ? interactDialogueTrigger.toUpperCase(Locale.ROOT) : "BOTH") {
+            case "LEFT_CLICK" -> "LEFT_CLICK";
+            case "F_KEY" -> "F_KEY";
+            default -> "BOTH";
+        };
+    }
+
+    public void setInteractDialogueTrigger(@Nullable String interactDialogueTrigger) {
+        this.interactDialogueTrigger = switch (interactDialogueTrigger != null
+                ? interactDialogueTrigger.toUpperCase(Locale.ROOT) : "BOTH") {
+            case "LEFT_CLICK" -> "LEFT_CLICK";
+            case "F_KEY" -> "F_KEY";
+            default -> "BOTH";
+        };
+    }
+
+    public boolean isInteractDialogueTriggeredBy(@Nonnull String interactionSource) {
+        String trigger = getInteractDialogueTrigger();
+        return "BOTH".equals(trigger) || trigger.equalsIgnoreCase(interactionSource);
+    }
 }

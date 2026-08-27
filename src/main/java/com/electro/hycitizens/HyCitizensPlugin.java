@@ -1,5 +1,7 @@
 package com.electro.hycitizens;
 
+import com.electro.hycitizens.managers.DialogueManager;
+
 import com.electro.hycitizens.actions.BuilderActionInteract;
 import com.electro.hycitizens.commands.CitizensCommand;
 import com.electro.hycitizens.components.CitizenNpcIdentityComponent;
@@ -10,11 +12,15 @@ import com.electro.hycitizens.map.CitizenMapMarkerAsset;
 import com.electro.hycitizens.map.CitizenMapMarkerProvider;
 import com.electro.hycitizens.managers.CitizensManager;
 import com.electro.hycitizens.models.CitizenData;
+import com.electro.hycitizens.nametag.CustomNametagAssetManager;
 import com.electro.hycitizens.ui.CitizensUI;
 import com.electro.hycitizens.ui.SkinCustomizerUI;
+import com.electro.hycitizens.ui.ScriptingUI;
 import com.electro.hycitizens.util.ConfigManager;
 import com.electro.hycitizens.util.DataAssetPackManager;
+import com.electro.hycitizens.util.GeneratedAssetReloader;
 import com.electro.hycitizens.util.UpdateChecker;
+import com.electro.hycitizens.map.CitizenMapMarkerAsset;
 import com.hypixel.hytale.component.ComponentType;
 import com.hypixel.hytale.event.EventPriority;
 import com.hypixel.hytale.server.core.HytaleServer;
@@ -36,6 +42,8 @@ import java.util.Map;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.concurrent.TimeUnit;
+import com.electro.hycitizens.api.scripting.ScriptManager;
+import com.electro.hycitizens.api.scripting.VariableManager;
 
 public class HyCitizensPlugin extends JavaPlugin {
     private static HyCitizensPlugin instance;
@@ -43,6 +51,7 @@ public class HyCitizensPlugin extends JavaPlugin {
     private CitizensManager citizensManager;
     private CitizensUI citizensUI;
     private SkinCustomizerUI skinCustomizerUI;
+    private ScriptingUI scriptingUI;
     private Path generatedRolesPath;
     private ComponentType<EntityStore, CitizenNpcIdentityComponent> citizenNpcIdentityComponent;
     private ComponentType<EntityStore, CitizenNametagComponent> citizenNametagComponent;
@@ -71,9 +80,13 @@ public class HyCitizensPlugin extends JavaPlugin {
             return;
         }
 
+        // Load map marker assets
         CitizenMapMarkerAsset.ensureBuiltInMarkerFiles();
-        // TEMPORARY WORKAROUND: some persisted NPCs reload with generic roles, so we persist the owning
-        // citizen id directly on the NPC entity to make rebind and nametag recovery deterministic.
+        CitizenMapMarkerAsset.loadUserCustomMarkers();
+
+        // Initialize custom nametag system
+        CustomNametagAssetManager.initialize();
+
         this.citizenNpcIdentityComponent = this.getEntityStoreRegistry().registerComponent(
                 CitizenNpcIdentityComponent.class,
                 "HCNPCID",
@@ -85,12 +98,6 @@ public class HyCitizensPlugin extends JavaPlugin {
                 CitizenNametagComponent.CODEC
         );
 
-        this.citizensManager = new CitizensManager(this);
-        CitizenMapMarkerAsset.ensureMarkerFilesForCitizens(citizensManager.getAllCitizens());
-        this.citizenMapMarkerProvider = new CitizenMapMarkerProvider(this);
-        this.citizensUI = new CitizensUI(this);
-        this.skinCustomizerUI = new SkinCustomizerUI(this);
-
         // Register commands
         getCommandRegistry().registerCommand(new CitizensCommand(this));
 
@@ -98,8 +105,22 @@ public class HyCitizensPlugin extends JavaPlugin {
         this.chunkPreLoadListener = new ChunkPreLoadListener(this);
         this.connectionListener = new PlayerConnectionListener(this);
 
+        this.citizensManager = new CitizensManager(this);
+        CitizenMapMarkerAsset.ensureMarkerFilesForCitizens(citizensManager.getAllCitizens());
+        this.citizenMapMarkerProvider = new CitizenMapMarkerProvider(this);
+        this.citizensUI = new CitizensUI(this);
+        this.skinCustomizerUI = new SkinCustomizerUI(this);
+        this.scriptingUI = new ScriptingUI(this);
+
         // Register event listeners
         registerEventListeners();
+
+        // Initialize scripting engine
+        ScriptManager.get().init();
+        VariableManager.get().init();
+
+        // Initialize dialogue manager
+        DialogueManager.get().init();
 
         this.interactionHandler = new PlayerInteractionHandler();
         this.interactionHandler.register();
@@ -114,6 +135,12 @@ public class HyCitizensPlugin extends JavaPlugin {
             return;
         }
 
+        if (Universe.get() != null) {
+            for (World world : Universe.get().getWorlds().values()) {
+                registerCitizenMapMarkerProvider(world);
+            }
+        }
+
         UpdateChecker.checkAsync();
 
         // Regenerate all roles
@@ -124,6 +151,21 @@ public class HyCitizensPlugin extends JavaPlugin {
 
     @Override
     protected void shutdown() {
+        DialogueManager.get().shutdown();
+        // Shutdown scripting engine
+        VariableManager.get().shutdown();
+        ScriptManager.get().shutdown();
+
+        if (citizensManager != null) {
+            if (citizensManager.getRoleGenerator() != null) {
+                citizensManager.getRoleGenerator().cleanup();
+            }
+            citizensManager.shutdown();
+        }
+
+        GeneratedAssetReloader.cleanup();
+        CitizenMapMarkerAsset.cleanupGeneratedMarkers();
+
         if (interactionHandler != null) {
             interactionHandler.unregister();
         }
@@ -134,10 +176,6 @@ public class HyCitizensPlugin extends JavaPlugin {
 
         if (chunkPreLoadListener != null) {
             chunkPreLoadListener.shutdown();
-        }
-
-        if (citizensManager != null) {
-            citizensManager.shutdown();
         }
     }
 
@@ -202,6 +240,10 @@ public class HyCitizensPlugin extends JavaPlugin {
 
     public CitizensUI getCitizensUI() {
         return citizensUI;
+    }
+
+    public ScriptingUI getScriptingUI() {
+        return scriptingUI;
     }
 
     public SkinCustomizerUI getSkinCustomizerUI() {

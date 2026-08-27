@@ -1,6 +1,11 @@
 package com.electro.hycitizens.listeners;
 
 import com.electro.hycitizens.HyCitizensPlugin;
+import com.electro.hycitizens.api.scripting.ScriptManager;
+import com.electro.hycitizens.api.scripting.VariableManager;
+import com.electro.hycitizens.managers.DialogEditorManager;
+import com.electro.hycitizens.managers.DialogueManager;
+import com.electro.hycitizens.managers.ScriptEditorManager;
 import com.electro.hycitizens.util.UpdateChecker;
 import com.hypixel.hytale.component.Ref;
 import com.hypixel.hytale.server.core.HytaleServer;
@@ -15,12 +20,10 @@ import com.hypixel.hytale.server.core.universe.world.storage.EntityStore;
 
 import javax.annotation.Nonnull;
 
-import java.awt.*;
+import java.awt.Color;
 import java.util.UUID;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
-
-import static com.hypixel.hytale.logger.HytaleLogger.getLogger;
 
 public class PlayerConnectionListener {
     private final HyCitizensPlugin plugin;
@@ -37,7 +40,7 @@ public class PlayerConnectionListener {
         // We need to wait until the player is fully loaded into a world
         final long startTimeMs = System.currentTimeMillis();
 
-        final ScheduledFuture<?>[] futureRef = new java.util.concurrent.ScheduledFuture<?>[1];
+        final ScheduledFuture<?>[] futureRef = new ScheduledFuture<?>[1];
 
         futureRef[0] = HytaleServer.SCHEDULED_EXECUTOR.scheduleAtFixedRate(() -> {
             if (playerRef == null)
@@ -78,6 +81,9 @@ public class PlayerConnectionListener {
                 if (futureRef[0] != null) {
                     futureRef[0].cancel(false);
                 }
+
+                // Trigger player connect script hooks
+                ScriptManager.get().handlePlayerConnect(playerRef);
 
                 if (!playerRef.hasPermission("hycitizens.admin")) {
                     return;
@@ -132,7 +138,14 @@ public class PlayerConnectionListener {
     }
 
     public void onPlayerDisconnect(@Nonnull PlayerDisconnectEvent event) {
-        UUID playerUuid = event.getPlayerRef().getUuid();
+        PlayerRef playerRef = event.getPlayerRef();
+        UUID playerUuid = playerRef.getUuid();
         plugin.getCitizensManager().clearPlayerRuntimeState(playerUuid);
+        DialogueManager.get().endDialogueSession(playerRef, "DISCONNECT");
+        DialogueManager.get().unloadPlayerState(playerUuid);
+        ScriptManager.get().handlePlayerDisconnect(playerRef);
+        VariableManager.get().unloadPlayer(playerUuid);
+        DialogEditorManager.get().revokeSessions(playerUuid);
+        ScriptEditorManager.get().revokeSessions(playerUuid);
     }
 }

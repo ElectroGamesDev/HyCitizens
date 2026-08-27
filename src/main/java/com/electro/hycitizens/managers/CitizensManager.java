@@ -1,6 +1,7 @@
 package com.electro.hycitizens.managers;
 
 import com.electro.hycitizens.HyCitizensPlugin;
+import com.electro.hycitizens.api.scripting.ScriptManager;
 import com.electro.hycitizens.components.CitizenNpcIdentityComponent;
 import com.electro.hycitizens.components.CitizenNametagComponent;
 import com.electro.hycitizens.events.CitizenAddedEvent;
@@ -12,6 +13,7 @@ import com.electro.hycitizens.events.CitizenInteractListener;
 import com.electro.hycitizens.events.CitizenRemovedEvent;
 import com.electro.hycitizens.events.CitizenRemovedListener;
 import com.electro.hycitizens.models.*;
+import com.electro.hycitizens.nametag.CustomNametagAssetManager;
 import com.electro.hycitizens.roles.RoleGenerator;
 import com.electro.hycitizens.util.ConfigManager;
 import com.electro.hycitizens.util.RotationUtil;
@@ -20,6 +22,7 @@ import com.electro.hycitizens.util.ThreadedScheduler;
 import com.hypixel.hytale.component.*;
 import com.hypixel.hytale.component.query.Query;
 import com.hypixel.hytale.math.util.ChunkUtil;
+import com.hypixel.hytale.math.vector.Rotation3f;
 import org.joml.Vector3d;
 import org.joml.Vector3f;
 import com.hypixel.hytale.protocol.*;
@@ -33,6 +36,9 @@ import com.hypixel.hytale.server.core.entity.UUIDComponent;
 import com.hypixel.hytale.server.core.entity.entities.ProjectileComponent;
 import com.hypixel.hytale.server.core.entity.nameplate.Nameplate;
 import com.hypixel.hytale.server.core.inventory.ItemStack;
+import com.hypixel.hytale.server.core.inventory.InventoryComponent;
+import com.hypixel.hytale.server.npc.role.support.StateSupport;
+import com.hypixel.hytale.server.npc.role.support.CombatSupport;
 import com.hypixel.hytale.server.core.modules.entity.component.*;
 import com.hypixel.hytale.server.core.modules.entity.player.PlayerSkinComponent;
 import com.hypixel.hytale.server.core.modules.entity.tracker.NetworkId;
@@ -61,6 +67,10 @@ import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
+import com.electro.hycitizens.api.scripting.ScriptBlock;
+import com.google.gson.Gson;
+import com.google.gson.reflect.TypeToken;
+import java.lang.reflect.Type;
 import static com.hypixel.hytale.logger.HytaleLogger.getLogger;
 
 public class CitizensManager {
@@ -76,7 +86,15 @@ public class CitizensManager {
     private static final double WANDER_PROGRESS_DISTANCE_SQUARED = 0.64;
     private static final long NPC_SPAWN_RETRY_INTERVAL_MS = 50L;
     private static final int MAX_PENDING_NPC_SPAWN_RETRIES = 120;
+    private static final int MAX_GENERATED_ROLE_RETRY_ATTEMPTS = 5;
     private static final long DEFERRED_CITIZEN_SAVE_DELAY_MS = 1_000L;
+    private static final float MIN_BODY_TURN_RATE = (float) Math.toRadians(120.0);
+    private static final float MAX_BODY_TURN_RATE = (float) Math.toRadians(600.0);
+    private static final float HEAD_TURN_RATE = (float) Math.toRadians(360.0);
+    private static final float MAX_HEAD_YAW = (float) Math.toRadians(75.0);
+    private static final float BODY_ROTATE_THRESHOLD = (float) Math.toRadians(45.0);
+    private static final float BODY_ALIGN_THRESHOLD = (float) Math.toRadians(15.0);
+    private static final float ROTATION_PACKET_THRESHOLD = 0.008f;
 
     private static final class PendingHologramRemoval {
         private final long chunkIndex;
@@ -113,12 +131,14 @@ public class CitizensManager {
     private final HyCitizensPlugin plugin;
     private final ConfigManager config;
     private final Map<String, CitizenData> citizens;
+    private final Map<String, FactionConfig> factionConfigs = new ConcurrentHashMap<>();
     private final List<CitizenAddedListener> addedListeners = new ArrayList<>();
     private final List<CitizenRemovedListener> removedListeners = new ArrayList<>();
     private final List<CitizenInteractListener> interactListeners = new ArrayList<>();
     private final List<CitizenDeathListener> deathListeners = new ArrayList<>();
     private ThreadedScheduler skinUpdateTask = new ThreadedScheduler();
     private ThreadedScheduler rotateTask = new ThreadedScheduler();
+    private long lastRotateTickTime = System.currentTimeMillis();
     private ThreadedScheduler nametagMoveTask = new ThreadedScheduler();
     private ThreadedScheduler animationTask = new ThreadedScheduler();
     private ThreadedScheduler healthRegenTask = new ThreadedScheduler();
@@ -138,6 +158,7 @@ public class CitizensManager {
     private final Map<String, FollowSession> standaloneFollowSessions = new ConcurrentHashMap<>();
     private final Map<String, WanderRecoveryState> wanderRecoveryStates = new ConcurrentHashMap<>();
     private final Map<String, ScheduledFuture<?>> pendingNpcSpawnRetryTasks = new ConcurrentHashMap<>();
+    private final Set<String> pendingGeneratedRoleRetries = ConcurrentHashMap.newKeySet();
     private final Map<String, ScheduledFuture<?>> pendingRespawnTasks = new ConcurrentHashMap<>();
     private final Map<String, ScheduledFuture<?>> pendingTemporaryNametagRecoveryTasks = new ConcurrentHashMap<>();
     private final Set<String> pendingDeferredCitizenSaves = ConcurrentHashMap.newKeySet();
@@ -153,6 +174,7 @@ public class CitizensManager {
         this.citizens = new ConcurrentHashMap<>();
         this.roleGenerator = new RoleGenerator(plugin.getGeneratedRolesPath());
 
+        loadFactionConfigs();
         loadAllCitizens();
         startSkinUpdateScheduler();
         startRotateScheduler();
@@ -161,7 +183,6 @@ public class CitizensManager {
         startAnimationScheduler();
         startHealthRegenScheduler();
         startNametagMoveScheduler();
-        startPositionSaveScheduler();
         this.patrolManager = new PatrolManager(plugin.getConfigManager(), this);
         startFollowCitizenScheduler();
         this.scheduleManager = new ScheduleManager(this);
@@ -192,6 +213,14 @@ public class CitizensManager {
 
     private void startRotateScheduler() {
         rotateTask.scheduleAtFixedRate("citizens-rotate", () -> {
+            long now = System.currentTimeMillis();
+            float dt = (now - lastRotateTickTime) / 1000f;
+            lastRotateTickTime = now;
+            if (dt <= 0f || dt > 1.0f) {
+                dt = 0.060f; // fallback to 60ms
+            }
+            final float finalDt = dt;
+
             // Group citizens by world
             Map<UUID, List<CitizenData>> snapshot;
 
@@ -247,10 +276,11 @@ public class CitizensManager {
 
                             boolean shouldRotateCitizen = withinLookDistance
                                     && citizen.getRotateTowardsPlayer()
-                                    && citizen.getMovementBehavior().getType().equals("IDLE");
+                                    && citizen.getMovementBehavior().getType().equals("IDLE")
+                                    && citizen.getCurrentScheduleRuntimeState() == ScheduleRuntimeState.INACTIVE;
                             if (shouldRotateCitizen) {
                                 cancelPendingLookReset(citizen, playerRef.getUuid());
-                                rotateCitizenToPlayer(citizen, playerRef);
+                                rotateCitizenToPlayer(citizen, playerRef, finalDt);
                             } else {
                                 scheduleLookResetIfNeeded(citizen, playerRef.getUuid());
                             }
@@ -304,14 +334,18 @@ public class CitizensManager {
                         }
 
                         Vector3d npcPosition = npcTransformComponent.getPosition();
+                        Rotation3f npcRotation = npcTransformComponent.getRotation();
 
                         long chunkIndex = ChunkUtil.indexChunkFromBlock(npcPosition.x, npcPosition.z);
                         WorldChunk chunk = world.getChunkIfLoaded(chunkIndex);
                         if (chunk == null)
                             continue;
 
-                        // Track the NPC's actual position
+                        // Track the NPC's actual position and rotation
                         citizen.setCurrentPosition(new Vector3d(npcPosition));
+                        if (npcRotation != null) {
+                            citizen.setCurrentRotation(npcRotation);
+                        }
 
                         if (citizen.getMovementBehavior().getType().equals("IDLE")) {
                             continue;
@@ -490,6 +524,9 @@ public class CitizensManager {
                         npcRef.getStore().getComponent(npcRef, TransformComponent.getComponentType());
                 if (transformComponent != null && transformComponent.getPosition() != null) {
                     citizen.setCurrentPosition(new Vector3d(transformComponent.getPosition()));
+                    if (transformComponent.getRotation() != null) {
+                        citizen.setCurrentRotation(transformComponent.getRotation());
+                    }
                 }
 
                 despawnCitizenHologram(citizen);
@@ -513,15 +550,17 @@ public class CitizensManager {
 
     @Nullable
     private Ref<EntityStore> findExistingCitizenNpcRef(@Nonnull Store<EntityStore> store, @Nonnull CitizenData citizen) {
+        List<Ref<EntityStore>> refs = findExistingCitizenNpcRefs(store, citizen);
+        return refs.isEmpty() ? null : refs.get(0);
+    }
+
+    @Nonnull
+    private List<Ref<EntityStore>> findExistingCitizenNpcRefs(@Nonnull Store<EntityStore> store, @Nonnull CitizenData citizen) {
         String rolePrefix = "HyCitizens_" + citizen.getId() + "_";
         Query<EntityStore> query = NPCEntity.getComponentType();
-        Ref<EntityStore>[] foundRef = new Ref[] { null };
+        List<Ref<EntityStore>> foundRefs = Collections.synchronizedList(new ArrayList<>());
 
         store.forEachEntityParallel(query, (index, archetypeChunk, cb) -> {
-            if (foundRef[0] != null && foundRef[0].isValid()) {
-                return;
-            }
-
             NPCEntity npc = archetypeChunk.getComponent(index, NPCEntity.getComponentType());
             if (npc == null || npc.getRole() == null) {
                 return;
@@ -537,7 +576,7 @@ public class CitizensManager {
             if (identityComponent != null && citizen.getId().equals(identityComponent.getCitizenId())) {
                 Ref<EntityStore> ref = archetypeChunk.getReferenceTo(index);
                 if (ref != null && ref.isValid()) {
-                    foundRef[0] = ref;
+                    foundRefs.add(ref);
                 }
                 return;
             }
@@ -545,7 +584,7 @@ public class CitizensManager {
                     && citizen.getSpawnedUUID().equals(uuidComponent.getUuid())) {
                 Ref<EntityStore> ref = archetypeChunk.getReferenceTo(index);
                 if (ref != null && ref.isValid()) {
-                    foundRef[0] = ref;
+                    foundRefs.add(ref);
                 }
                 return;
             }
@@ -560,28 +599,75 @@ public class CitizensManager {
                 return;
             }
 
-            foundRef[0] = ref;
+            foundRefs.add(ref);
         });
 
-        return foundRef[0] != null && foundRef[0].isValid() ? foundRef[0] : null;
+        foundRefs.removeIf(ref -> ref == null || !ref.isValid());
+        foundRefs.sort(Comparator.comparingInt(ref -> getCitizenNpcRefPriority(ref, citizen)));
+        return foundRefs;
     }
 
-    // Todo: move position saving to chunk unload event when it becomes available
-    private void startPositionSaveScheduler() {
-        positionSaveTask = HytaleServer.SCHEDULED_EXECUTOR.scheduleAtFixedRate(() -> {
-            config.beginBatch();
-            try {
-                for (CitizenData citizen : citizens.values()) {
-                    if (citizen.getSpawnedUUID() == null || citizen.getNpcRef() == null || !citizen.getNpcRef().isValid())
-                        continue;
+    private int getCitizenNpcRefPriority(@Nonnull Ref<EntityStore> ref, @Nonnull CitizenData citizen) {
+        UUIDComponent uuidComponent = ref.getStore().getComponent(ref, UUIDComponent.getComponentType());
+        if (uuidComponent != null && citizen.getSpawnedUUID() != null
+                && citizen.getSpawnedUUID().equals(uuidComponent.getUuid())) {
+            return 0;
+        }
 
-                    String basePath = "citizens." + citizen.getId();
-                    config.setVector3d(basePath + ".current-position", citizen.getCurrentPosition());
-                }
-            } finally {
-                config.endBatch();
+        CitizenNpcIdentityComponent identityComponent =
+                ref.getStore().getComponent(ref, CitizenNpcIdentityComponent.getComponentType());
+        if (identityComponent != null && citizen.getId().equals(identityComponent.getCitizenId())) {
+            return 1;
+        }
+
+        return 2;
+    }
+
+    private void removeDuplicateCitizenNpcRefs(@Nonnull World world,
+                                               @Nonnull CitizenData citizen,
+                                               @Nonnull Ref<EntityStore> keepRef) {
+        List<Ref<EntityStore>> refs = findExistingCitizenNpcRefs(world.getEntityStore().getStore(), citizen);
+        UUIDComponent keepUuidComponent = keepRef.getStore().getComponent(keepRef, UUIDComponent.getComponentType());
+        UUID keepUuid = keepUuidComponent != null ? keepUuidComponent.getUuid() : null;
+        for (Ref<EntityStore> ref : refs) {
+            if (ref == null || !ref.isValid() || ref.equals(keepRef)) {
+                continue;
             }
-        }, 5, 5, TimeUnit.SECONDS);
+            try {
+                UUIDComponent uuidComponent = ref.getStore().getComponent(ref, UUIDComponent.getComponentType());
+                UUID duplicateUuid = uuidComponent != null ? uuidComponent.getUuid() : null;
+                if (keepUuid != null && keepUuid.equals(duplicateUuid)) {
+                    continue;
+                }
+                if (duplicateUuid != null) {
+                    pendingImmediateNpcDespawns.add(duplicateUuid);
+                }
+                try {
+                    world.getEntityStore().getStore().removeEntity(ref, RemoveReason.REMOVE);
+                } finally {
+                    if (duplicateUuid != null) {
+                        pendingImmediateNpcDespawns.remove(duplicateUuid);
+                    }
+                }
+            } catch (Exception ignored) {
+            }
+        }
+    }
+
+    // Position saving is now handled on shutdown and during normal citizen saves
+    private void saveAllCurrentPositions() {
+        config.beginBatch();
+        try {
+            for (CitizenData citizen : citizens.values()) {
+                if (citizen.getSpawnedUUID() == null || citizen.getNpcRef() == null || !citizen.getNpcRef().isValid())
+                    continue;
+
+                String basePath = "citizens." + citizen.getId();
+                config.setVector3d(basePath + ".current-position", citizen.getCurrentPosition());
+            }
+        } finally {
+            config.endBatch();
+        }
     }
 
     private void startFollowCitizenScheduler() {
@@ -589,8 +675,9 @@ public class CitizensManager {
             for (CitizenData citizen : citizens.values()) {
                 try {
                     tickStandaloneFollowCitizen(citizen);
+                    tickCitizenState(citizen);
                 } catch (Exception e) {
-                    getLogger().atWarning().log("Standalone follow tick error for citizen " + citizen.getId() + ": " + e.getMessage());
+                    getLogger().atWarning().log("Tick error for citizen " + citizen.getId() + ": " + e.getMessage());
                 }
             }
         }, FOLLOW_TICK_INTERVAL_MS, FOLLOW_TICK_INTERVAL_MS, TimeUnit.MILLISECONDS);
@@ -665,6 +752,11 @@ public class CitizensManager {
                     float nextHealth = Math.min(maxHealth, currentHealth + citizen.getHealthRegenAmount());
                     setHealthValueClamped(statMap, nextHealth);
                     citizen.setLastHealthRegenAt(System.currentTimeMillis());
+
+                    // Fire ON_HEALTH_THRESHOLD trigger
+                    Store<EntityStore> store = world.getEntityStore().getStore();
+                    if (store != null)
+                        ScriptManager.get().fireTrigger(citizen, "ON_HEALTH_THRESHOLD", null, null, store);
                 });
             }
         }, 1, 1, TimeUnit.SECONDS);
@@ -681,9 +773,6 @@ public class CitizensManager {
         movementUnstickTask.stop();
         npcRefReconcileTask.stop();
 
-        if (positionSaveTask != null && !positionSaveTask.isCancelled()) {
-            positionSaveTask.cancel(false);
-        }
         pendingRespawnTasks.values().forEach(task -> task.cancel(false));
         pendingRespawnTasks.clear();
 
@@ -695,12 +784,18 @@ public class CitizensManager {
             scheduleManager.shutdown();
         }
 
+        // Save all current positions before shutdown
+        getLogger().atInfo().log("Saving citizen positions before shutdown...");
+        saveAllCurrentPositions();
+        getLogger().atInfo().log("Citizen positions saved.");
+
         for (ScheduledFuture<?> pendingRetry : pendingNpcSpawnRetryTasks.values()) {
             if (pendingRetry != null && !pendingRetry.isCancelled()) {
                 pendingRetry.cancel(false);
             }
         }
         pendingNpcSpawnRetryTasks.clear();
+        pendingGeneratedRoleRetries.clear();
         for (ScheduledFuture<?> pendingRecovery : pendingTemporaryNametagRecoveryTasks.values()) {
             if (pendingRecovery != null && !pendingRecovery.isCancelled()) {
                 pendingRecovery.cancel(false);
@@ -752,6 +847,252 @@ public class CitizensManager {
         }
 
         cleanupUnusedGroups();
+    }
+
+    private void loadFactionConfigs() {
+        factionConfigs.clear();
+        for (String key : config.getKeys("factions")) {
+            String basePath = "factions." + key;
+            FactionConfig factionConfig = new FactionConfig();
+            factionConfig.setFactionId(config.getString(basePath + ".id", key));
+            List<String> hostileGroups = config.getStringList(basePath + ".hostile-groups");
+            if (hostileGroups != null) {
+                factionConfig.setHostileGroups(hostileGroups);
+            }
+            List<String> neutralGroups = config.getStringList(basePath + ".neutral-groups");
+            if (neutralGroups != null) {
+                factionConfig.setNeutralGroups(neutralGroups);
+            }
+            List<String> passiveGroups = config.getStringList(basePath + ".passive-groups");
+            if (passiveGroups == null) {
+                passiveGroups = config.getStringList(basePath + ".ignore-groups");
+            }
+            if (passiveGroups != null) {
+                factionConfig.setPassiveGroups(passiveGroups);
+            }
+
+            if (!factionConfig.getFactionId().isEmpty()) {
+                factionConfigs.put(factionConfig.getFactionId(), factionConfig);
+            }
+        }
+    }
+
+    private void saveFactionConfig(@Nonnull FactionConfig factionConfig) {
+        if (factionConfig.getFactionId().isEmpty()) {
+            return;
+        }
+
+        config.beginBatch();
+        try {
+            String basePath = "factions." + factionConfig.getFactionId();
+            config.set(basePath + ".id", factionConfig.getFactionId());
+            config.setStringList(basePath + ".hostile-groups", factionConfig.getHostileGroups());
+            config.setStringList(basePath + ".neutral-groups", factionConfig.getNeutralGroups());
+            config.setStringList(basePath + ".passive-groups", factionConfig.getPassiveGroups());
+            config.setStringList(basePath + ".ignore-groups", null);
+        } finally {
+            config.endBatch();
+        }
+    }
+
+    public void saveFactionDefinition(@Nonnull FactionConfig factionConfig) {
+        if (factionConfig.getFactionId().isEmpty()) {
+            return;
+        }
+
+        FactionConfig saved = new FactionConfig();
+        saved.copyFrom(factionConfig);
+        factionConfigs.put(saved.getFactionId(), saved);
+        saveFactionConfig(saved);
+        refreshCitizensUsingFaction(saved.getFactionId());
+    }
+
+    public void deleteFactionDefinition(@Nonnull String factionId) {
+        String sanitized = FactionConfig.sanitizeFactionId(factionId);
+        if (sanitized.isEmpty()) {
+            return;
+        }
+
+        FactionConfig existing = factionConfigs.remove(sanitized);
+        if (existing == null) {
+            return;
+        }
+
+        config.beginBatch();
+        try {
+            config.set("factions." + sanitized, null);
+        } finally {
+            config.endBatch();
+        }
+
+        String generatedGroupId = existing.getGeneratedAttitudeGroupId();
+        for (FactionConfig faction : factionConfigs.values()) {
+            boolean updated = false;
+            if (removeGroupIgnoreCase(faction.getHostileGroups(), generatedGroupId)) updated = true;
+            if (removeGroupIgnoreCase(faction.getNeutralGroups(), generatedGroupId)) updated = true;
+            if (removeGroupIgnoreCase(faction.getPassiveGroups(), generatedGroupId)) updated = true;
+            if (updated) saveFactionConfig(faction);
+        }
+
+        for (CitizenData citizen : citizens.values()) {
+            boolean updated = false;
+            if (sanitized.equalsIgnoreCase(citizen.getFactionConfig().getFactionId())) {
+                citizen.setFactionConfig(new FactionConfig());
+                updated = true;
+            }
+            if (generatedGroupId.equalsIgnoreCase(citizen.getAttitudeGroup())) {
+                citizen.setAttitudeGroup(null);
+                updated = true;
+            }
+            if (updated) saveCitizen(citizen, true);
+        }
+    }
+
+    private boolean removeGroupIgnoreCase(@Nonnull List<String> list, @Nonnull String group) {
+        boolean removed = false;
+        Iterator<String> it = list.iterator();
+        while (it.hasNext()) {
+            if (it.next().equalsIgnoreCase(group)) {
+                it.remove();
+                removed = true;
+            }
+        }
+        return removed;
+    }
+
+    public void renameFactionDefinition(@Nonnull String oldFactionId, @Nonnull FactionConfig newConfig) {
+        String oldSanitized = FactionConfig.sanitizeFactionId(oldFactionId);
+        String newSanitized = newConfig.getFactionId();
+
+        if (oldSanitized.isEmpty() || oldSanitized.equalsIgnoreCase(newSanitized)) {
+            saveFactionDefinition(newConfig);
+            return;
+        }
+
+        FactionConfig oldConfig = factionConfigs.get(oldSanitized);
+        if (oldConfig == null) {
+            saveFactionDefinition(newConfig);
+            return;
+        }
+
+        String oldGeneratedGroupId = oldConfig.getGeneratedAttitudeGroupId();
+        
+        saveFactionDefinition(newConfig);
+
+        String newGeneratedGroupId = newConfig.getGeneratedAttitudeGroupId();
+
+        for (FactionConfig faction : factionConfigs.values()) {
+            if (faction.getFactionId().equalsIgnoreCase(newSanitized)) continue;
+            boolean updated = false;
+            if (renameGroupIgnoreCase(faction.getHostileGroups(), oldGeneratedGroupId, newGeneratedGroupId)) updated = true;
+            if (renameGroupIgnoreCase(faction.getNeutralGroups(), oldGeneratedGroupId, newGeneratedGroupId)) updated = true;
+            if (renameGroupIgnoreCase(faction.getPassiveGroups(), oldGeneratedGroupId, newGeneratedGroupId)) updated = true;
+            if (updated) saveFactionConfig(faction);
+        }
+
+        for (CitizenData citizen : citizens.values()) {
+            boolean updated = false;
+            if (oldSanitized.equalsIgnoreCase(citizen.getFactionConfig().getFactionId())) {
+                citizen.setFactionConfig(newConfig);
+                updated = true;
+            }
+            if (oldGeneratedGroupId.equalsIgnoreCase(citizen.getAttitudeGroup())) {
+                citizen.setAttitudeGroup(newGeneratedGroupId);
+                updated = true;
+            }
+            if (updated) saveCitizen(citizen, true);
+        }
+
+        factionConfigs.remove(oldSanitized);
+        config.beginBatch();
+        try {
+            config.set("factions." + oldSanitized, null);
+        } finally {
+            config.endBatch();
+        }
+    }
+
+    private boolean renameGroupIgnoreCase(@Nonnull List<String> list, @Nonnull String oldGroup, @Nonnull String newGroup) {
+        boolean renamed = false;
+        for (int i = 0; i < list.size(); i++) {
+            if (list.get(i).equalsIgnoreCase(oldGroup)) {
+                list.set(i, newGroup);
+                renamed = true;
+            }
+        }
+        return renamed;
+    }
+
+    private void refreshCitizensUsingFaction(@Nonnull String factionId) {
+        for (CitizenData citizen : citizens.values()) {
+            if (!factionId.equalsIgnoreCase(citizen.getFactionConfig().getFactionId())) {
+                continue;
+            }
+
+            roleGenerator.forceRoleGeneration(citizen);
+            if (citizen.getNpcRef() == null || !citizen.getNpcRef().isValid()) {
+                continue;
+            }
+
+            HytaleServer.SCHEDULED_EXECUTOR.schedule(() -> {
+                if (!factionId.equalsIgnoreCase(citizen.getFactionConfig().getFactionId())) {
+                    return;
+                }
+                if (isCitizenSpawning(citizen.getId())) {
+                    return;
+                }
+                Ref<EntityStore> npcRef = citizen.getNpcRef();
+                if (npcRef == null || !npcRef.isValid()) {
+                    return;
+                }
+                updateSpawnedCitizen(citizen, false);
+            }, 250, TimeUnit.MILLISECONDS);
+        }
+    }
+
+    @Nonnull
+    public FactionConfig getFactionConfig(@Nullable String factionId) {
+        String sanitized = FactionConfig.sanitizeFactionId(factionId);
+        if (sanitized.isEmpty()) {
+            return new FactionConfig();
+        }
+
+        FactionConfig existing = factionConfigs.get(sanitized);
+        if (existing != null) {
+            FactionConfig copy = new FactionConfig();
+            copy.copyFrom(existing);
+            return copy;
+        }
+
+        FactionConfig created = new FactionConfig();
+        created.setFactionId(sanitized);
+        return created;
+    }
+
+    @Nonnull
+    public List<FactionConfig> getAllFactionConfigs() {
+        return factionConfigs.values().stream()
+                .map(factionConfig -> {
+                    FactionConfig copy = new FactionConfig();
+                    copy.copyFrom(factionConfig);
+                    return copy;
+                })
+                .sorted(Comparator.comparing(FactionConfig::getFactionId, String.CASE_INSENSITIVE_ORDER))
+                .collect(Collectors.toList());
+    }
+
+    private void migrateCitizenFactionRelationships(@Nonnull FactionConfig citizenFactionConfig) {
+        if (citizenFactionConfig.getFactionId().isEmpty() || !citizenFactionConfig.hasRelationships()) {
+            return;
+        }
+
+        FactionConfig existing = factionConfigs.get(citizenFactionConfig.getFactionId());
+        if (existing == null || !existing.hasRelationships()) {
+            FactionConfig migrated = new FactionConfig();
+            migrated.copyFrom(citizenFactionConfig);
+            factionConfigs.put(migrated.getFactionId(), migrated);
+            saveFactionConfig(migrated);
+        }
     }
 
     @Nullable
@@ -1086,7 +1427,12 @@ public class CitizensManager {
 
         // Load combat config
         CombatConfig combatConfig = new CombatConfig();
-        combatConfig.setAttackType(config.getString(basePath + ".combat.attack-type", "Root_NPC_Attack_Melee"));
+        String attackType = config.getString(basePath + ".combat.attack-type", RoleGenerator.DEFAULT_ATTACK_INTERACTION);
+        combatConfig.setAttackType(attackType);
+        Object manualAttackType = config.get(basePath + ".combat.attack-type-manual");
+        combatConfig.setAttackTypeManuallySet(manualAttackType instanceof Boolean
+                ? (Boolean) manualAttackType
+                : !RoleGenerator.DEFAULT_ATTACK_INTERACTION.equals(attackType));
         combatConfig.setAttackDistance(config.getFloat(basePath + ".combat.attack-distance", 2.0f));
         combatConfig.setChaseSpeed(config.getFloat(basePath + ".combat.chase-speed", 0.67f));
         combatConfig.setCombatBehaviorDistance(config.getFloat(basePath + ".combat.combat-behavior-distance", 5.0f));
@@ -1119,6 +1465,13 @@ public class CitizensManager {
         combatConfig.setCombatMovingRelativeSpeed(config.getFloat(basePath + ".combat.combat-moving-speed", 0.6f));
         combatConfig.setCombatBackwardsRelativeSpeed(config.getFloat(basePath + ".combat.combat-backwards-speed", 0.3f));
         combatConfig.setUseCombatActionEvaluator(config.getBoolean(basePath + ".combat.use-combat-action-evaluator", false));
+        Object manualCombatStyle = config.get(basePath + ".combat.style-manual");
+        combatConfig.setCombatStyleManuallySet(manualCombatStyle instanceof Boolean
+                ? (Boolean) manualCombatStyle
+                : hasLegacyCustomCombatStyle(combatConfig));
+        if (!combatConfig.isCombatStyleManuallySet()) {
+            RoleGenerator.applyAutoCombatStyle(combatConfig, modelId);
+        }
         citizenData.setCombatConfig(combatConfig);
 
         // Load detection config
@@ -1157,6 +1510,22 @@ public class CitizensManager {
         citizenData.setDayFlavorAnimationLengthMin(config.getFloat(basePath + ".day-flavor-anim-length-min", 3.0f));
         citizenData.setDayFlavorAnimationLengthMax(config.getFloat(basePath + ".day-flavor-anim-length-max", 5.0f));
         citizenData.setAttitudeGroup(config.getString(basePath + ".attitude-group", "Empty"));
+        FactionConfig factionConfig = new FactionConfig();
+        factionConfig.setFactionId(config.getString(basePath + ".faction.id", ""));
+        List<String> factionHostileGroups = config.getStringList(basePath + ".faction.hostile-groups");
+        if (factionHostileGroups != null) factionConfig.setHostileGroups(factionHostileGroups);
+        List<String> factionNeutralGroups = config.getStringList(basePath + ".faction.neutral-groups");
+        if (factionNeutralGroups != null) factionConfig.setNeutralGroups(factionNeutralGroups);
+        List<String> factionPassiveGroups = config.getStringList(basePath + ".faction.passive-groups");
+        if (factionPassiveGroups == null) {
+            factionPassiveGroups = config.getStringList(basePath + ".faction.ignore-groups");
+        }
+        if (factionPassiveGroups != null) factionConfig.setPassiveGroups(factionPassiveGroups);
+        migrateCitizenFactionRelationships(factionConfig);
+        FactionConfig assignedFaction = new FactionConfig();
+        assignedFaction.setFactionId(factionConfig.getFactionId());
+        factionConfig = assignedFaction;
+        citizenData.setFactionConfig(factionConfig);
         citizenData.setNameTranslationKey(config.getString(basePath + ".name-translation-key", "Citizen"));
         citizenData.setBreathesInWater(config.getBoolean(basePath + ".breathes-in-water", false));
         citizenData.setLeashMinPlayerDistance(config.getFloat(basePath + ".leash-min-player-distance", 4.0f));
@@ -1183,6 +1552,35 @@ public class CitizensManager {
         if (flockArr != null) citizenData.setFlockArray(flockArr);
         List<String> disableDmgGroups = config.getStringList(basePath + ".disable-damage-groups");
         if (disableDmgGroups != null) citizenData.setDisableDamageGroups(disableDmgGroups);
+
+        // Load scripts and scriptVariables
+        String scriptsJson = config.getString(basePath + ".scripts");
+        if (scriptsJson != null && !scriptsJson.isEmpty()) {
+            try {
+                Type listType = new TypeToken<List<ScriptBlock>>(){}.getType();
+                List<ScriptBlock> scripts = new Gson().fromJson(scriptsJson, listType);
+                if (scripts != null) {
+                    citizenData.setScripts(scripts);
+                }
+            } catch (Exception e) {
+                getLogger().atWarning().log("Failed to load scripts for citizen " + name + ": " + e.getMessage());
+            }
+        }
+        String varsJson = config.getString(basePath + ".scriptVariables");
+        if (varsJson != null && !varsJson.isEmpty()) {
+            try {
+                Type mapType = new TypeToken<Map<String, Object>>(){}.getType();
+                Map<String, Object> vars = new Gson().fromJson(varsJson, mapType);
+                if (vars != null) {
+                    citizenData.setScriptVariables(vars);
+                }
+            } catch (Exception e) {
+                getLogger().atWarning().log("Failed to load scriptVariables for citizen " + name + ": " + e.getMessage());
+            }
+        }
+
+        citizenData.setInteractDialogueId(config.getString(basePath + ".interact-dialogue-id", null));
+        citizenData.setInteractDialogueTrigger(config.getString(basePath + ".interact-dialogue-trigger", "BOTH"));
 
         return citizenData;
     }
@@ -1554,6 +1952,8 @@ public class CitizensManager {
             // Save combat config
             CombatConfig combat = citizen.getCombatConfig();
             config.set(basePath + ".combat.attack-type", combat.getAttackType());
+            config.set(basePath + ".combat.attack-type-manual", combat.isAttackTypeManuallySet());
+            config.set(basePath + ".combat.style-manual", combat.isCombatStyleManuallySet());
             config.set(basePath + ".combat.attack-distance", combat.getAttackDistance());
             config.set(basePath + ".combat.chase-speed", combat.getChaseSpeed());
             config.set(basePath + ".combat.combat-behavior-distance", combat.getCombatBehaviorDistance());
@@ -1621,6 +2021,13 @@ public class CitizensManager {
             config.set(basePath + ".day-flavor-anim-length-min", citizen.getDayFlavorAnimationLengthMin());
             config.set(basePath + ".day-flavor-anim-length-max", citizen.getDayFlavorAnimationLengthMax());
             config.set(basePath + ".attitude-group", citizen.getAttitudeGroup());
+            FactionConfig factionConfig = citizen.getFactionConfig();
+            config.set(basePath + ".faction.id", factionConfig.getFactionId());
+            config.set(basePath + ".faction.enabled", null);
+            config.setStringList(basePath + ".faction.hostile-groups", null);
+            config.setStringList(basePath + ".faction.neutral-groups", null);
+            config.setStringList(basePath + ".faction.passive-groups", null);
+            config.setStringList(basePath + ".faction.ignore-groups", null);
             config.set(basePath + ".name-translation-key", citizen.getNameTranslationKey());
             config.set(basePath + ".breathes-in-water", citizen.isBreathesInWater());
             config.set(basePath + ".leash-min-player-distance", citizen.getLeashMinPlayerDistance());
@@ -1642,6 +2049,12 @@ public class CitizensManager {
             config.setStringList(basePath + ".combat-message-target-groups", citizen.getCombatMessageTargetGroups());
             config.setStringList(basePath + ".flock-array", citizen.getFlockArray());
             config.setStringList(basePath + ".disable-damage-groups", citizen.getDisableDamageGroups());
+
+            // Save scripts and scriptVariables
+            config.set(basePath + ".scripts", new Gson().toJson(citizen.getScripts()));
+            config.set(basePath + ".scriptVariables", new Gson().toJson(citizen.getScriptVariables()));
+            config.set(basePath + ".interact-dialogue-id", citizen.getInteractDialogueId());
+            config.set(basePath + ".interact-dialogue-trigger", citizen.getInteractDialogueTrigger());
 
             boolean npcSpawned = citizen.getNpcRef() != null && citizen.getNpcRef().isValid();
 
@@ -1679,6 +2092,7 @@ public class CitizensManager {
 
     public void addCitizen(@Nonnull CitizenData citizen, boolean save) {
         citizen.setCreatedAt(System.currentTimeMillis());
+        autoResolveAttackTypeIfNotManual(citizen);
 
         citizens.put(citizen.getId(), citizen);
         fireCitizenAddedEvent(new CitizenAddedEvent(citizen));
@@ -1718,7 +2132,7 @@ public class CitizensManager {
     }
 
     public void updateCitizenNPCItems(CitizenData citizen) {
-        if (citizen.getSpawnedUUID() == null || citizen.getNpcRef() == null) {
+        if (citizen.getSpawnedUUID() == null || citizen.getNpcRef() == null || !citizen.getNpcRef().isValid()) {
             return;
         }
 
@@ -1742,53 +2156,49 @@ public class CitizensManager {
         }
 
 
+        Ref<EntityStore> npcRef = citizen.getNpcRef();
+        Store<EntityStore> store = npcRef.getStore();
+
         // Item in hand
-        if (citizen.getNpcHand() == null) {
-            npcEntity.getInventory().getHotbar().setItemStackForSlot((short) 0, null);
-        }
-        else {
-            npcEntity.getInventory().getHotbar().setItemStackForSlot((short) 0, new ItemStack(citizen.getNpcHand()));
-        }
-
-        // Item in offhand
-        // Todo: Re-add
-//        if (citizen.getNpcOffHand() == null) {
-//            npcEntity.getInventory().getUtility().setItemStackForSlot((short) 0, null);
-//        }
-//        else {
-//            npcEntity.getInventory().getUtility().setItemStackForSlot((short) 0, new ItemStack(citizen.getNpcOffHand()));
-//        }
-
-        // Set helmet
-        if (citizen.getNpcHelmet() == null) {
-            npcEntity.getInventory().getArmor().setItemStackForSlot((short) 0, null);
-        }
-        else {
-            npcEntity.getInventory().getArmor().setItemStackForSlot((short) 0, new ItemStack(citizen.getNpcHelmet()));
+        InventoryComponent.Hotbar hotbar = store.getComponent(npcRef, InventoryComponent.Hotbar.getComponentType());
+        if (hotbar != null) {
+            if (citizen.getNpcHand() == null) {
+                hotbar.getInventory().setItemStackForSlot((short) 0, null);
+            } else {
+                hotbar.getInventory().setItemStackForSlot((short) 0, new ItemStack(citizen.getNpcHand()));
+            }
         }
 
-        // Set chest
-        if (citizen.getNpcChest() == null) {
-            npcEntity.getInventory().getArmor().setItemStackForSlot((short) 1, null);
-        }
-        else {
-            npcEntity.getInventory().getArmor().setItemStackForSlot((short) 1, new ItemStack(citizen.getNpcChest()));
-        }
+        // Armor
+        InventoryComponent.Armor armor = store.getComponent(npcRef, InventoryComponent.Armor.getComponentType());
+        if (armor != null) {
+            // Set helmet
+            if (citizen.getNpcHelmet() == null) {
+                armor.getInventory().setItemStackForSlot((short) 0, null);
+            } else {
+                armor.getInventory().setItemStackForSlot((short) 0, new ItemStack(citizen.getNpcHelmet()));
+            }
 
-        // Set gloves
-        if (citizen.getNpcGloves() == null) {
-            npcEntity.getInventory().getArmor().setItemStackForSlot((short) 2, null);
-        }
-        else {
-            npcEntity.getInventory().getArmor().setItemStackForSlot((short) 2, new ItemStack(citizen.getNpcGloves()));
-        }
+            // Set chest
+            if (citizen.getNpcChest() == null) {
+                armor.getInventory().setItemStackForSlot((short) 1, null);
+            } else {
+                armor.getInventory().setItemStackForSlot((short) 1, new ItemStack(citizen.getNpcChest()));
+            }
 
-        // Set leggings
-        if (citizen.getNpcLeggings() == null) {
-            npcEntity.getInventory().getArmor().setItemStackForSlot((short) 3, null);
-        }
-        else {
-            npcEntity.getInventory().getArmor().setItemStackForSlot((short) 3, new ItemStack(citizen.getNpcLeggings()));
+            // Set gloves
+            if (citizen.getNpcGloves() == null) {
+                armor.getInventory().setItemStackForSlot((short) 2, null);
+            } else {
+                armor.getInventory().setItemStackForSlot((short) 2, new ItemStack(citizen.getNpcGloves()));
+            }
+
+            // Set leggings
+            if (citizen.getNpcLeggings() == null) {
+                armor.getInventory().setItemStackForSlot((short) 3, null);
+            } else {
+                armor.getInventory().setItemStackForSlot((short) 3, new ItemStack(citizen.getNpcLeggings()));
+            }
         }
 
         EntityStatMap finalStatMap = statMap;
@@ -1821,6 +2231,7 @@ public class CitizensManager {
             scheduleManager.clearCitizen(citizenId);
         }
         roleGenerator.deleteRoleFile(citizenId);
+        ScriptManager.get().cleanupCitizen(citizenId);
 
         if (citizen == null) {
             return;
@@ -1837,6 +2248,7 @@ public class CitizensManager {
         despawnCitizenHologram(citizen);
     }
     public void spawnCitizen(CitizenData citizen, boolean save) {
+        citizen.clearRecentDamageDealers();
         if (citizen.isAwaitingRespawn()) {
             return;
         }
@@ -1928,6 +2340,9 @@ public class CitizensManager {
                 resolvedRef.getStore().getComponent(resolvedRef, TransformComponent.getComponentType());
         if (transformComponent != null && transformComponent.getPosition() != null) {
             citizen.setCurrentPosition(new Vector3d(transformComponent.getPosition()));
+            if (transformComponent.getRotation() != null) {
+                citizen.setCurrentRotation(transformComponent.getRotation());
+            }
         }
 
         World world = Universe.get().getWorld(citizen.getWorldUUID());
@@ -1978,6 +2393,11 @@ public class CitizensManager {
         if (uuidComponent != null) {
             citizen.setSpawnedUUID(uuidComponent.getUuid());
         }
+
+        World world = Universe.get().getWorld(citizen.getWorldUUID());
+        if (world != null) {
+            removeDuplicateCitizenNpcRefs(world, citizen, ref);
+        }
     }
 
     public void clearCitizenEntityRef(@Nonnull CitizenData citizen) {
@@ -2010,10 +2430,76 @@ public class CitizensManager {
                 return;
             }
 
-            world.execute(() -> spawnCitizen(citizen, true));
+            // Check custom respawn settings
+            if (citizen.isCustomRespawnSettingsEnabled() && citizen.isRequireNoPlayersInRadiusForRespawn()) {
+                scheduleRespawnWithPlayerCheck(citizen, world);
+            } else {
+                world.execute(() -> {
+                    spawnCitizen(citizen, true);
+
+                    // Fire ON_RESPAWN trigger
+                    Store<EntityStore> store = world.getEntityStore().getStore();
+                    if (store != null)
+                        ScriptManager.get().fireTrigger(citizen, "ON_RESPAWN", null, null, store);
+                });
+            }
         }, clampedDelayMs, TimeUnit.MILLISECONDS);
 
         pendingRespawnTasks.put(citizen.getId(), task);
+    }
+
+    private void scheduleRespawnWithPlayerCheck(@Nonnull CitizenData citizen, @Nonnull World world) {
+        float radius = citizen.getRespawnPlayerCheckRadius();
+        Vector3d spawnPos = citizen.getPosition();
+
+        Runnable checkAndSpawn = new Runnable() {
+            @Override
+            public void run() {
+                if (getCitizen(citizen.getId()) == null) {
+                    pendingRespawnTasks.remove(citizen.getId());
+                    return;
+                }
+
+                world.execute(() -> {
+                    if (getCitizen(citizen.getId()) == null) {
+                        pendingRespawnTasks.remove(citizen.getId());
+                        return;
+                    }
+
+                    Store<EntityStore> store = world.getEntityStore().getStore();
+                    if (store == null) return;
+
+                    // Check if any player is within the radius
+                    boolean playerNearby = false;
+                    for (PlayerRef playerRef : world.getPlayerRefs()) {
+                        Ref<EntityStore> ref = playerRef.getReference();
+                        if (ref != null && ref.isValid()) {
+                            TransformComponent playerTransform = ref.getStore().getComponent(ref, TransformComponent.getComponentType());
+                            if (playerTransform != null) {
+                                double distance = playerTransform.getPosition().distance(spawnPos);
+                                if (distance <= radius) {
+                                    playerNearby = true;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+
+                    if (!playerNearby) {
+                        pendingRespawnTasks.remove(citizen.getId());
+                        spawnCitizen(citizen, true);
+                        ScriptManager.get().fireTrigger(citizen, "ON_RESPAWN", null, null, store);
+                    } else {
+                        // Reschedule check in 5 seconds
+                        ScheduledFuture<?> future = HytaleServer.SCHEDULED_EXECUTOR.schedule(this, 5, TimeUnit.SECONDS);
+                        pendingRespawnTasks.put(citizen.getId(), future);
+                    }
+                });
+            }
+        };
+
+        ScheduledFuture<?> initialFuture = HytaleServer.SCHEDULED_EXECUTOR.schedule(checkAndSpawn, 0, TimeUnit.MILLISECONDS);
+        pendingRespawnTasks.put(citizen.getId(), initialFuture);
     }
 
     private void scheduleLoadedRespawns() {
@@ -2072,7 +2558,15 @@ public class CitizensManager {
                 continue;
             }
 
-            world.execute(() -> updateSpawnedCitizen(citizen, save));
+            world.execute(() -> {
+                updateSpawnedCitizen(citizen, save);
+
+                // Fire ON_RESPAWN trigger
+                Store<EntityStore> store = world.getEntityStore().getStore();
+                if (store != null)
+                    ScriptManager.get().fireTrigger(citizen, "ON_RESPAWN", null, null, store);
+            });
+
             queuedRespawns++;
         }
 
@@ -2151,15 +2645,72 @@ public class CitizensManager {
 
         String movementType = citizen.getMovementBehavior().getType();
         return "PATROL".equals(movementType)
+                || "FOLLOW_PLAYER".equals(movementType)
                 || ("FOLLOW_CITIZEN".equals(movementType) && !citizen.getFollowCitizenId().trim().isEmpty());
+    }
+
+    public void updateCitizenRoleImmediately(@Nonnull CitizenData citizen) {
+        Ref<EntityStore> npcRef = citizen.getNpcRef();
+        if (npcRef == null || !npcRef.isValid()) {
+            return;
+        }
+
+        roleGenerator.generateRoleIfChanged(citizen);
+        String roleName = roleGenerator.getRoleName(citizen);
+
+        int roleIndex = NPCPlugin.get().getIndex(roleName);
+        if (roleIndex == Integer.MIN_VALUE) {
+            roleGenerator.forceRoleGeneration(citizen);
+            roleIndex = NPCPlugin.get().getIndex(roleName);
+            if (roleIndex == Integer.MIN_VALUE) {
+                getLogger().atWarning().log("Role not registered yet: " + roleName);
+                return;
+            }
+        }
+
+        int finalRoleIndex = roleIndex;
+        World world = Universe.get().getWorld(citizen.getWorldUUID());
+        if (world == null) {
+            return;
+        }
+
+        world.execute(() -> {
+            NPCEntity npcEntity = npcRef.getStore().getComponent(npcRef, NPCEntity.getComponentType());
+            if (npcEntity == null || npcEntity.getRole() == null) {
+                return;
+            }
+
+            boolean needsMoveTarget = usesMarkerDrivenRole(citizen);
+            Vector3d initialPosition = citizen.getCurrentPosition() != null ? citizen.getCurrentPosition() : citizen.getPosition();
+
+            if (needsMoveTarget && patrolManager != null) {
+                patrolManager.ensureMoveTargetNow(citizen, world, initialPosition);
+            }
+
+            RoleChangeSystem.requestRoleChange(npcRef, npcEntity.getRole(), finalRoleIndex, true, npcRef.getStore());
+            
+            if (needsMoveTarget && patrolManager != null) {
+                HytaleServer.SCHEDULED_EXECUTOR.schedule(() -> world.execute(() -> {
+                    if (citizen.getNpcRef() != null && citizen.getNpcRef().isValid()) {
+                        patrolManager.ensureMoveTargetNow(
+                                citizen,
+                                world,
+                                initialPosition
+                        );
+                    }
+                }), 100, TimeUnit.MILLISECONDS);
+            }
+
+            HytaleServer.SCHEDULED_EXECUTOR.schedule(
+                    () -> refreshSpawnedCitizenAppearance(citizen),
+                    50,
+                    TimeUnit.MILLISECONDS
+            );
+        });
     }
 
     @Nonnull
     private String resolveSpawnRoleName(@Nonnull CitizenData citizen) {
-        if (!usesMarkerDrivenRole(citizen)) {
-            return resolveRoleName(citizen);
-        }
-
         roleGenerator.generateRoleIfChanged(citizen);
         String safeRoleName = citizen.getScheduleConfig().isEnabled()
                 ? roleGenerator.getScheduleFallbackIdleRoleName(citizen)
@@ -2173,10 +2724,6 @@ public class CitizensManager {
     }
 
     private void promoteCitizenToDesiredRoleIfNeeded(@Nonnull CitizenData citizen) {
-        if (!usesMarkerDrivenRole(citizen)) {
-            return;
-        }
-
         Ref<EntityStore> npcRef = citizen.getNpcRef();
         if (npcRef == null || !npcRef.isValid()) {
             return;
@@ -2375,6 +2922,23 @@ public class CitizensManager {
         );
 
         if (npc == null) {
+            String fallbackRole = roleGenerator.getFallbackRoleName(citizen);
+            int fallbackIndex = NPCPlugin.get().getIndex(fallbackRole);
+            if (fallbackIndex != Integer.MIN_VALUE && !fallbackRole.equals(roleName)) {
+                getLogger().atWarning().log("Spawn failed with role '" + roleName + "', retrying with fallback role '" + fallbackRole + "' for citizen '" + citizen.getId() + "'");
+                npc = NPCPlugin.get().spawnEntity(
+                        world.getEntityStore().getStore(),
+                        fallbackIndex,
+                        citizen.getPosition(),
+                        RotationUtil.toRotation(citizen.getRotation()),
+                        spawnModel,
+                        (npcComponent, holder, store) -> npcComponent.setInitialModelScale(scale),
+                        null
+                );
+            }
+        }
+
+        if (npc == null) {
             citizensCurrentlySpawning.remove(citizen.getId());
             return;
         }
@@ -2422,6 +2986,7 @@ public class CitizensManager {
         if (scheduleManager != null) {
             scheduleManager.refreshCitizen(citizen);
         }
+        ScriptManager.get().fireTrigger(citizen, "ON_SPAWN", new HashMap<>(), null, store);
         citizensCurrentlySpawning.remove(citizen.getId());
     }
 
@@ -2431,28 +2996,31 @@ public class CitizensManager {
         }
 
         PlayerSkin skinToUse = determineSkin(citizen);
-
-        float scale = Math.max((float)0.01, citizen.getScale());
-        Model playerModel;
-
-        if (skinToUse != null && !SkinUtilities.isValidSkin(skinToUse)) {
-            getLogger().atWarning().log("Citizen '" + citizen.getId() + "' has an invalid cached skin. Using the default skin for this spawn.");
+        if (skinToUse == null) {
             skinToUse = SkinUtilities.createDefaultSkin();
+        } else {
+            skinToUse = SkinUtilities.sanitizeSkin(skinToUse);
         }
 
-        if (skinToUse != null) {
+        float scale = Math.max((float)0.01, citizen.getScale());
+        Model playerModel = null;
+
+        try {
+            playerModel = CosmeticsModule.get().createModel(skinToUse, scale);
+        } catch (Exception e) {
+            getLogger().atWarning().log("Failed to create player skin model for citizen '" + citizen.getId() + "': " + e.getMessage());
+        }
+
+        if (playerModel == null) {
+            skinToUse = SkinUtilities.createDefaultSkin();
             try {
                 playerModel = CosmeticsModule.get().createModel(skinToUse, scale);
-            } catch (Exception e) {
-                getLogger().atWarning().log("Failed to create player skin model for citizen '" + citizen.getId() + "': " + e.getMessage());
-                skinToUse = SkinUtilities.createDefaultSkin();
-                try {
-                    playerModel = CosmeticsModule.get().createModel(skinToUse, scale);
-                } catch (Exception fallbackError) {
-                    playerModel = null;
-                }
+            } catch (Exception fallbackError) {
+                playerModel = null;
             }
-        } else {
+        }
+
+        if (playerModel == null) {
             Map<String, String> randomAttachmentIds = new HashMap<>();
             playerModel = new Model.ModelReference("Player", scale, randomAttachmentIds).toModel();
         }
@@ -2485,6 +3053,23 @@ public class CitizensManager {
                 null,
                 null
         );
+
+        if (npc == null) {
+            String fallbackRole = roleGenerator.getFallbackRoleName(citizen);
+            int fallbackIndex = NPCPlugin.get().getIndex(fallbackRole);
+            if (fallbackIndex != Integer.MIN_VALUE && !fallbackRole.equals(roleName)) {
+                getLogger().atWarning().log("Spawn failed with role '" + roleName + "', retrying with fallback role '" + fallbackRole + "' for citizen '" + citizen.getId() + "'");
+                npc = NPCPlugin.get().spawnEntity(
+                        world.getEntityStore().getStore(),
+                        fallbackIndex,
+                        citizen.getPosition(),
+                        RotationUtil.toRotation(citizen.getRotation()),
+                        playerModel,
+                        null,
+                        null
+                );
+            }
+        }
 
         if (npc == null) {
             citizensCurrentlySpawning.remove(citizen.getId());
@@ -2536,6 +3121,7 @@ public class CitizensManager {
         if (scheduleManager != null) {
             scheduleManager.refreshCitizen(citizen);
         }
+        ScriptManager.get().fireTrigger(citizen, "ON_SPAWN", new HashMap<>(), null, store);
         citizensCurrentlySpawning.remove(citizen.getId());
     }
 
@@ -2594,6 +3180,12 @@ public class CitizensManager {
     }
 
     public boolean hasFKeyActions(@Nonnull CitizenData citizen) {
+        if (citizen.getInteractDialogueId() != null
+                && !citizen.getInteractDialogueId().isEmpty()
+                && citizen.isInteractDialogueTriggeredBy("F_KEY")) {
+            return true;
+        }
+
         for (CommandAction cmd : citizen.getCommandActions()) {
             String trigger = cmd.getInteractionTrigger();
             if (trigger == null || "BOTH".equals(trigger) || "F_KEY".equals(trigger)) {
@@ -2623,6 +3215,25 @@ public class CitizensManager {
                 }
             }
         }
+
+        if (citizen.getScripts() != null) {
+            for (ScriptBlock script : citizen.getScripts()) {
+                if (script.isEnabled() && (script.matchesTrigger("ON_INTERACT") || script.matchesTrigger("ON_FIRST_INTERACT"))) {
+                    Map<String, Object> params = script.getTriggerParameters();
+                    if (params != null && params.containsKey("source")) {
+                        Object src = params.get("source");
+                        if (src != null) {
+                            String srcStr = src.toString();
+                            if (!srcStr.isEmpty() && !srcStr.equalsIgnoreCase("F_KEY") && !srcStr.equalsIgnoreCase("BOTH")) {
+                                continue;
+                            }
+                        }
+                    }
+                    return true;
+                }
+            }
+        }
+
         return false;
     }
 
@@ -2666,7 +3277,7 @@ public class CitizensManager {
     @Nonnull
     private Vector3d getBaseHologramPosition(@Nonnull CitizenData citizen) {
         double scale = Math.max(0.01, citizen.getScale() + citizen.getNametagOffset());
-        double baseOffset = 1.65;
+        double baseOffset = 2.05;
         double extraPerScale = 0.40;
         double yOffset = baseOffset * scale + (scale - 1.0) * extraPerScale;
         Vector3d anchorPosition = getNametagAnchorPosition(citizen);
@@ -2717,20 +3328,63 @@ public class CitizensManager {
 
     @Nullable
     private ModelAsset getNametagModelAsset(@Nonnull CitizenData citizen) {
-        if (!citizen.isModelNametagEnabled()) {
-            return null;
+        String customAssetId = citizen.getCachedCustomNametagAssetId();
+        if (customAssetId == null && shouldUseCustomFormattedNametag(citizen)) {
+            List<String> lines = getNonEmptyNametagLines(citizen);
+            customAssetId = CustomNametagAssetManager.getOrGenerateAssetIdForLines(lines);
+            citizen.setCachedCustomNametagAssetId(customAssetId);
         }
 
-        String modelId = citizen.getNametagModelId().trim();
-        if (modelId.isEmpty()) {
-            return null;
+        if (customAssetId != null) {
+            ModelAsset customAsset = ModelAsset.getAssetMap().getAsset(customAssetId);
+            if (customAsset == null) {
+                getLogger().atFine().log("[HyCitizens] Custom nametag ModelAsset not yet loaded: " + customAssetId);
+                CustomNametagAssetManager.registerReloadCallback(customAssetId, () -> {
+                    refreshCitizenNametags(citizen.getId());
+                });
+            }
+            return customAsset;
         }
 
-        return ModelAsset.getAssetMap().getAsset(modelId);
+        if (citizen.isModelNametagEnabled()) {
+            String modelId = citizen.getNametagModelId().trim();
+            if (!modelId.isEmpty()) {
+                return ModelAsset.getAssetMap().getAsset(modelId);
+            }
+        }
+        return null;
+    }
+
+    private void refreshCitizenNametags(@Nonnull String citizenId) {
+        CitizenData citizen = getCitizen(citizenId);
+        if (citizen == null) {
+            return;
+        }
+
+        getLogger().atInfo().log("[HyCitizens] Refreshing nametags after hot-reload for citizen: " + citizen.getName());
+        scheduleTemporaryNametagRecovery(citizen, false);
     }
 
     private boolean shouldUseModelNametag(@Nonnull CitizenData citizen) {
-        return !citizen.isHideNametag() && getNametagModelAsset(citizen) != null;
+        if (citizen.isHideNametag()) {
+            return false;
+        }
+
+        ModelAsset asset = getNametagModelAsset(citizen);
+        return asset != null;
+    }
+
+    private boolean shouldUseCustomFormattedNametag(@Nonnull CitizenData citizen) {
+        if (citizen.isHideNametag()) {
+            return false;
+        }
+        List<String> lines = getNonEmptyNametagLines(citizen);
+        for (String line : lines) {
+            if (CustomNametagAssetManager.hasFormatCodes(line)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private int getDesiredNametagEntityCount(@Nonnull CitizenData citizen) {
@@ -2738,7 +3392,7 @@ public class CitizensManager {
             return 0;
         }
 
-        if (shouldUseModelNametag(citizen)) {
+        if (shouldUseModelNametag(citizen) || shouldUseCustomFormattedNametag(citizen)) {
             return 1;
         }
 
@@ -2791,6 +3445,61 @@ public class CitizensManager {
     }
 
     @Nullable
+    private ModelAsset getCustomLineNametagModelAsset(@Nonnull String lineText) {
+        if (!CustomNametagAssetManager.hasFormatCodes(lineText)) {
+            return null;
+        }
+
+        String assetId = CustomNametagAssetManager.getOrGenerateAssetId(lineText);
+        if (assetId == null) {
+            return null;
+        }
+
+        return ModelAsset.getAssetMap().getAsset(assetId);
+    }
+
+    private boolean shouldUseCustomLineNametag(@Nullable String lineText) {
+        if (lineText == null || lineText.isEmpty()) {
+            return false;
+        }
+        return getCustomLineNametagModelAsset(lineText) != null;
+    }
+
+    @Nullable
+    private Holder<EntityStore> createNametagEntityHolderWithLines(@Nonnull World world, @Nonnull CitizenData citizen, int lineIndex,
+                                                                   @Nonnull Vector3d linePos, @Nonnull Vector3f rotation,
+                                                                   @Nonnull List<String> lines) {
+        Holder<EntityStore> holder = EntityStore.REGISTRY.newHolder();
+
+        holder.putComponent(TransformComponent.getComponentType(), new TransformComponent(linePos, RotationUtil.toRotation(rotation)));
+        holder.putComponent(HeadRotation.getComponentType(), new HeadRotation(RotationUtil.toRotation(rotation)));
+        holder.ensureComponent(UUIDComponent.getComponentType());
+
+        holder.addComponent(
+                NetworkId.getComponentType(),
+                new NetworkId(world.getEntityStore().getStore().getExternalData().takeNextNetworkId())
+        );
+        holder.addComponent(CitizenNametagComponent.getComponentType(),
+                new CitizenNametagComponent(citizen.getId(), lineIndex));
+
+        ModelAsset nametagModelAsset = getNametagModelAsset(citizen);
+        if (nametagModelAsset == null) {
+            return null;
+        }
+
+        float scale = Math.max(0.01f, citizen.getNametagModelScale() * 0.125f);
+        Model model = withSafeAnimationSetMap(Model.createStaticScaledModel(nametagModelAsset, scale));
+        if (model == null) {
+            return null;
+        }
+
+        holder.addComponent(PropComponent.getComponentType(), PropComponent.get());
+        holder.addComponent(ModelComponent.getComponentType(), new ModelComponent(model));
+        holder.addComponent(PersistentModel.getComponentType(), new PersistentModel(new Model.ModelReference(nametagModelAsset.getId(), scale, null, true)));
+
+        return holder;
+    }
+
     private Holder<EntityStore> createNametagEntityHolder(@Nonnull World world, @Nonnull CitizenData citizen, int lineIndex,
                                                           @Nonnull Vector3d linePos, @Nonnull Vector3f rotation,
                                                           @Nullable String lineText) {
@@ -2807,9 +3516,29 @@ public class CitizensManager {
         holder.addComponent(CitizenNametagComponent.getComponentType(),
                 new CitizenNametagComponent(citizen.getId(), lineIndex));
 
-        if (shouldUseModelNametag(citizen)) {
+        boolean useModelForThisLine = shouldUseModelNametag(citizen);
+        boolean useCustomFormattedNametag = shouldUseCustomLineNametag(lineText);
+
+        if (useCustomFormattedNametag) {
+            ModelAsset nametagModelAsset = getCustomLineNametagModelAsset(lineText);
+            if (nametagModelAsset == null) {
+                return null;
+            }
+
+            float scale = Math.max(0.01f, citizen.getNametagModelScale() * 0.125f);
+            Model model = withSafeAnimationSetMap(Model.createStaticScaledModel(nametagModelAsset, scale));
+            if (model == null) {
+                return null;
+            }
+
+            holder.addComponent(PropComponent.getComponentType(), PropComponent.get());
+            holder.addComponent(ModelComponent.getComponentType(), new ModelComponent(model));
+            holder.addComponent(PersistentModel.getComponentType(),
+                    new PersistentModel(new Model.ModelReference(nametagModelAsset.getId(), scale, null, true)));
+        } else if (useModelForThisLine) {
             Model model = createNametagModel(citizen);
             Model.ModelReference modelReference = createNametagModelReference(citizen);
+
             if (model == null) {
                 return null;
             }
@@ -2828,7 +3557,11 @@ public class CitizensManager {
                     return null;
                 }
             }
-            holder.addComponent(Nameplate.getComponentType(), new Nameplate(lineText == null ? "" : lineText));
+            String displayText = lineText == null ? "" : lineText;
+            if (CustomNametagAssetManager.hasFormatCodes(displayText)) {
+                displayText = CustomNametagAssetManager.stripFormatCodes(displayText);
+            }
+            holder.addComponent(Nameplate.getComponentType(), new Nameplate(displayText));
         }
 
         return holder;
@@ -2850,8 +3583,36 @@ public class CitizensManager {
 
         if (shouldUseModelNametag(citizen)) {
             applyModelNametagDisplay(entity.getStore(), entity, citizen);
+        } else if (shouldUseCustomLineNametag(lineText)) {
+            ModelAsset nametagModelAsset = getCustomLineNametagModelAsset(lineText);
+            if (nametagModelAsset != null) {
+                float scale = Math.max(0.01f, citizen.getNametagModelScale());
+                Model model = withSafeAnimationSetMap(Model.createStaticScaledModel(nametagModelAsset, scale));
+                if (model != null) {
+                    entity.getStore().removeComponentIfExists(entity, Nameplate.getComponentType());
+                    entity.getStore().putComponent(entity, ModelComponent.getComponentType(), new ModelComponent(model));
+                    entity.getStore().putComponent(entity, PersistentModel.getComponentType(),
+                            new PersistentModel(new Model.ModelReference(nametagModelAsset.getId(), scale, null, true)));
+                } else {
+                    String displayText = lineText == null ? "" : lineText;
+                    if (CustomNametagAssetManager.hasFormatCodes(displayText)) {
+                        displayText = CustomNametagAssetManager.stripFormatCodes(displayText);
+                    }
+                    applyTextNametagDisplay(entity.getStore(), entity, displayText);
+                }
+            } else {
+                String displayText = lineText == null ? "" : lineText;
+                if (CustomNametagAssetManager.hasFormatCodes(displayText)) {
+                    displayText = CustomNametagAssetManager.stripFormatCodes(displayText);
+                }
+                applyTextNametagDisplay(entity.getStore(), entity, displayText);
+            }
         } else {
-            applyTextNametagDisplay(entity.getStore(), entity, lineText == null ? "" : lineText);
+            String displayText = lineText == null ? "" : lineText;
+            if (CustomNametagAssetManager.hasFormatCodes(displayText)) {
+                displayText = CustomNametagAssetManager.stripFormatCodes(displayText);
+            }
+            applyTextNametagDisplay(entity.getStore(), entity, displayText);
         }
     }
 
@@ -2923,18 +3684,23 @@ public class CitizensManager {
     }
 
     private void applyPlayerModelAppearance(@Nonnull Ref<EntityStore> npcRef, @Nonnull CitizenData citizen, @Nonnull PlayerSkin skin) {
-        if (!SkinUtilities.isValidSkin(skin)) {
-            getLogger().atWarning().log("Skipped invalid skin while restoring appearance for citizen '" + citizen.getId() + "'.");
-            return;
-        }
+        PlayerSkin sanitizedSkin = SkinUtilities.sanitizeSkin(skin);
 
         float scale = Math.max(0.01f, citizen.getScale());
-        Model newModel;
+        Model newModel = null;
         try {
-            newModel = CosmeticsModule.get().createModel(skin, scale);
+            newModel = CosmeticsModule.get().createModel(sanitizedSkin, scale);
         } catch (Exception e) {
             getLogger().atWarning().log("Failed to create skin model while restoring appearance for citizen '" + citizen.getId() + "': " + e.getMessage());
-            return;
+        }
+        if (newModel == null) {
+            try {
+                PlayerSkin defaultSkin = SkinUtilities.createDefaultSkin();
+                newModel = CosmeticsModule.get().createModel(defaultSkin, scale);
+                sanitizedSkin = defaultSkin;
+            } catch (Exception e) {
+                getLogger().atWarning().log("Failed to create fallback skin model for citizen '" + citizen.getId() + "': " + e.getMessage());
+            }
         }
         if (newModel == null) {
             getLogger().atWarning().log("Failed to create skin model while restoring appearance for citizen '" + citizen.getId() + "'.");
@@ -2942,7 +3708,7 @@ public class CitizensManager {
         }
         newModel = withSafeAnimationSetMap(newModel);
 
-        npcRef.getStore().putComponent(npcRef, PlayerSkinComponent.getComponentType(), new PlayerSkinComponent(skin));
+        npcRef.getStore().putComponent(npcRef, PlayerSkinComponent.getComponentType(), new PlayerSkinComponent(sanitizedSkin));
         npcRef.getStore().putComponent(npcRef, ModelComponent.getComponentType(), new ModelComponent(newModel));
 
         PersistentModel persistentModel = npcRef.getStore().getComponent(npcRef, PersistentModel.getComponentType());
@@ -3047,24 +3813,29 @@ public class CitizensManager {
     }
 
     public void applySkinPreview(CitizenData citizen, PlayerSkin skin) {
-        if (!SkinUtilities.isValidSkin(skin)) {
-            getLogger().atWarning().log("Skipped invalid skin preview for citizen '" + citizen.getId() + "'.");
-            return;
-        }
-
         if (citizen.getSpawnedUUID() != null) {
             World world = Universe.get().getWorld(citizen.getWorldUUID());
             if (world != null) {
                 Ref<EntityStore> npcRef = world.getEntityRef(citizen.getSpawnedUUID());
                 if (npcRef != null && npcRef.isValid()) {
                     world.execute(() -> {
+                        PlayerSkin sanitizedSkin = SkinUtilities.sanitizeSkin(skin);
                         float scale = Math.max((float) 0.01, citizen.getScale());
-                        Model newModel;
+                        Model newModel = null;
                         try {
-                            newModel = CosmeticsModule.get().createModel(skin, scale);
+                            newModel = CosmeticsModule.get().createModel(sanitizedSkin, scale);
                         } catch (Exception e) {
                             getLogger().atWarning().log("Failed to create skin model while previewing skin for citizen '" + citizen.getId() + "': " + e.getMessage());
-                            return;
+                        }
+
+                        if (newModel == null) {
+                            try {
+                                PlayerSkin defaultSkin = SkinUtilities.createDefaultSkin();
+                                newModel = CosmeticsModule.get().createModel(defaultSkin, scale);
+                                sanitizedSkin = defaultSkin;
+                            } catch (Exception e) {
+                                getLogger().atWarning().log("Failed to create fallback skin model for preview on citizen '" + citizen.getId() + "': " + e.getMessage());
+                            }
                         }
 
                         if (newModel == null) {
@@ -3073,7 +3844,7 @@ public class CitizensManager {
                         }
                         newModel = withSafeAnimationSetMap(newModel);
 
-                        PlayerSkinComponent skinComponent = new PlayerSkinComponent(skin);
+                        PlayerSkinComponent skinComponent = new PlayerSkinComponent(sanitizedSkin);
                         npcRef.getStore().putComponent(npcRef, PlayerSkinComponent.getComponentType(), skinComponent);
                         ModelComponent modelComponent = new ModelComponent(newModel);
                         npcRef.getStore().putComponent(npcRef, ModelComponent.getComponentType(), modelComponent);
@@ -3205,10 +3976,11 @@ public class CitizensManager {
                     List<Holder<EntityStore>> holders = new ArrayList<>(desiredEntityCount);
                     List<UUID> spawnedUuids = new ArrayList<>(desiredEntityCount);
 
-                    for (int i = 0; i < desiredEntityCount; ++i) {
-                        String lineText = i < nametagLines.size() ? nametagLines.get(i) : null;
-                        Vector3d linePos = getHologramLinePosition(baseHologramPos, desiredEntityCount, i);
-                        Holder<EntityStore> holder = createNametagEntityHolder(world, citizen, i, linePos, hologramRot, lineText);
+                    boolean useCustomFormatted = shouldUseCustomFormattedNametag(citizen);
+
+                    if (useCustomFormatted && desiredEntityCount == 1) {
+                        Vector3d linePos = getHologramLinePosition(baseHologramPos, 1, 0);
+                        Holder<EntityStore> holder = createNametagEntityHolderWithLines(world, citizen, 0, linePos, hologramRot, nametagLines);
                         if (holder == null) {
                             queued[0] = false;
                             return;
@@ -3219,6 +3991,22 @@ public class CitizensManager {
                             spawnedUuids.add(hologramUUIDComponent.getUuid());
                         }
                         holders.add(holder);
+                    } else {
+                        for (int i = 0; i < desiredEntityCount; ++i) {
+                            String lineText = i < nametagLines.size() ? nametagLines.get(i) : null;
+                            Vector3d linePos = getHologramLinePosition(baseHologramPos, desiredEntityCount, i);
+                            Holder<EntityStore> holder = createNametagEntityHolder(world, citizen, i, linePos, hologramRot, lineText);
+                            if (holder == null) {
+                                queued[0] = false;
+                                return;
+                            }
+
+                            UUIDComponent hologramUUIDComponent = holder.getComponent(UUIDComponent.getComponentType());
+                            if (hologramUUIDComponent != null) {
+                                spawnedUuids.add(hologramUUIDComponent.getUuid());
+                            }
+                            holders.add(holder);
+                        }
                     }
 
                     if (holders.size() != desiredEntityCount || spawnedUuids.size() != desiredEntityCount) {
@@ -3262,6 +4050,8 @@ public class CitizensManager {
         if (world == null) {
             return;
         }
+
+        ScriptManager.get().fireTrigger(citizen, "ON_DESPAWN", new HashMap<>(), null, world.getEntityStore().getStore());
 
         boolean despawned = false;
         Ref<EntityStore> npcRef = citizen.getNpcRef();
@@ -3632,13 +4422,19 @@ public class CitizensManager {
                 Ref<EntityStore> firstEntity = world.getEntityRef(existingUuids.get(0));
                 if (firstEntity != null && firstEntity.isValid()) {
                     boolean entityIsModelHost = firstEntity.getStore().getComponent(firstEntity, PropComponent.getComponentType()) != null;
-                    boolean shouldUseModelHost = shouldUseModelNametag(citizen);
+                    boolean shouldUseModelHost = shouldUseModelNametag(citizen) || shouldUseCustomFormattedNametag(citizen);
                     if (entityIsModelHost != shouldUseModelHost) {
                         despawnCitizenHologram(citizen);
                         spawnCitizenHologram(citizen, save, deferSave);
                         return;
                     }
                 }
+            }
+
+            if (shouldUseCustomFormattedNametag(citizen)) {
+                despawnCitizenHologram(citizen);
+                spawnCitizenHologram(citizen, save, deferSave);
+                return;
             }
 
             // Update existing lines
@@ -3851,7 +4647,7 @@ public class CitizensManager {
         return true;
     }
 
-    public void rotateCitizenToPlayer(CitizenData citizen, PlayerRef playerRef) {
+    public void rotateCitizenToPlayer(CitizenData citizen, PlayerRef playerRef, float dt) {
         if (!isPlayerRefValid(playerRef)) {
             return;
         }
@@ -3871,39 +4667,103 @@ public class CitizensManager {
                 return;
             }
 
-            // Calculate rotation to look at player
+            // Calculate target rotation to look at player
             Vector3d entityPos = npcTransformComponent.getPosition();
             Vector3d playerPos = new Vector3d(playerRef.getTransform().getPosition());
 
             double dx = playerPos.x - entityPos.x;
             double dz = playerPos.z - entityPos.z;
 
-            // Flip the direction 180 degrees
-            float yaw = (float) (Math.atan2(dx, dz) + Math.PI);
+            // Flip the direction 180 degrees to get proper face-to-face yaw
+            float targetYaw = (float) (Math.atan2(dx, dz) + Math.PI);
 
             double dy = playerPos.y - entityPos.y;
             double horizontalDistance = Math.sqrt(dx * dx + dz * dz);
-            float pitch = (float) Math.atan2(dy, horizontalDistance);
+            float targetPitch = (float) Math.atan2(dy, horizontalDistance);
 
-            // Create directions
-            Direction lookDirection = new Direction(yaw, pitch, 0f);
-            Direction bodyDirection = new Direction(yaw, 0, 0f);
-
-            // Don't rotate if the player barely moved
             UUID playerUUID = playerRef.getUuid();
             Direction lastLook = citizen.lastLookDirections.get(playerUUID);
-            if (lastLook != null) {
-                float yawThreshold = 0.02f;
-                float pitchThreshold = 0.02f;
-                float yawDiff = Math.abs(lookDirection.yaw - lastLook.yaw);
-                float pitchDiff = Math.abs(lookDirection.pitch - lastLook.pitch);
+            Direction lastBody = citizen.lastBodyDirections.get(playerUUID);
 
-                if (yawDiff < yawThreshold && pitchDiff < pitchThreshold) {
-                    return;
+            // If no previous state exists, initialize with the current world entity rotation
+            if (lastLook == null || lastBody == null) {
+                Vector3f baseRotation = RotationUtil.toVector3f(npcTransformComponent.getRotation());
+                if (lastLook == null) {
+                    lastLook = toPacketDirection(baseRotation, true);
+                }
+                if (lastBody == null) {
+                    lastBody = toPacketDirection(baseRotation, false);
                 }
             }
 
+            float bodyDiff = turnAngle(lastBody.yaw, targetYaw);
+            boolean wasTurning = citizen.bodyTurningStates.getOrDefault(playerUUID, false);
+            boolean shouldTurn = wasTurning;
+            if (!wasTurning) {
+                if (Math.abs(bodyDiff) > BODY_ROTATE_THRESHOLD) {
+                    shouldTurn = true;
+                }
+            } else {
+                if (Math.abs(bodyDiff) > BODY_ALIGN_THRESHOLD) {
+                    shouldTurn = true;
+                } else {
+                    shouldTurn = false;
+                }
+            }
+            citizen.bodyTurningStates.put(playerUUID, shouldTurn);
+
+            float bodyYaw;
+            if (shouldTurn) {
+                // Calculate dynamic speed based on quadratic interpolation between MIN_BODY_TURN_RATE and MAX_BODY_TURN_RATE
+                float absDiff = Math.abs(bodyDiff);
+                float fraction = (absDiff - BODY_ALIGN_THRESHOLD) / ((float) Math.PI - BODY_ALIGN_THRESHOLD);
+                fraction = Math.max(0.0f, Math.min(1.0f, fraction));
+                float curveFraction = fraction * fraction; // quadratic ease-in scaling
+                float currentBodyTurnRate = MIN_BODY_TURN_RATE + curveFraction * (MAX_BODY_TURN_RATE - MIN_BODY_TURN_RATE);
+
+                float maxBodyStep = currentBodyTurnRate * dt;
+                if (absDiff <= maxBodyStep) {
+                    bodyYaw = targetYaw;
+                } else {
+                    bodyYaw = lastBody.yaw + Math.copySign(maxBodyStep, bodyDiff);
+                }
+            } else {
+                bodyYaw = lastBody.yaw;
+            }
+
+
+            float headDiff = turnAngle(lastLook.yaw, targetYaw);
+            float maxHeadStep = HEAD_TURN_RATE * dt;
+            float headYaw;
+            if (Math.abs(headDiff) <= maxHeadStep) {
+                headYaw = targetYaw;
+            } else {
+                headYaw = lastLook.yaw + Math.copySign(maxHeadStep, headDiff);
+            }
+
+
+            float relativeHeadYaw = turnAngle(bodyYaw, headYaw);
+            if (relativeHeadYaw > MAX_HEAD_YAW) {
+                headYaw = bodyYaw + MAX_HEAD_YAW;
+            } else if (relativeHeadYaw < -MAX_HEAD_YAW) {
+                headYaw = bodyYaw - MAX_HEAD_YAW;
+            }
+
+            Direction lookDirection = new Direction(headYaw, targetPitch, 0f);
+            Direction bodyDirection = new Direction(bodyYaw, 0f, 0f);
+
+            float headYawDiff = Math.abs(lookDirection.yaw - lastLook.yaw);
+            float headPitchDiff = Math.abs(lookDirection.pitch - lastLook.pitch);
+            float bodyYawDiff = Math.abs(bodyDirection.yaw - lastBody.yaw);
+
+            if (headYawDiff < ROTATION_PACKET_THRESHOLD && 
+                headPitchDiff < ROTATION_PACKET_THRESHOLD && 
+                bodyYawDiff < ROTATION_PACKET_THRESHOLD) {
+                return;
+            }
+
             citizen.lastLookDirections.put(playerUUID, lookDirection);
+            citizen.lastBodyDirections.put(playerUUID, bodyDirection);
 
             sendRotationUpdate(citizenNetworkId, playerRef, lookDirection, bodyDirection);
         }
@@ -3913,6 +4773,8 @@ public class CitizensManager {
         for (CitizenData citizen : citizens.values()) {
             cancelPendingLookReset(citizen, playerUuid);
             citizen.lastLookDirections.remove(playerUuid);
+            citizen.lastBodyDirections.remove(playerUuid);
+            citizen.bodyTurningStates.remove(playerUuid);
             cancelPendingNametagLookReset(citizen, playerUuid);
             citizen.lastNametagLookDirections.remove(playerUuid);
             citizen.getSequentialMessageIndex().remove(playerUuid);
@@ -4005,6 +4867,8 @@ public class CitizensManager {
                 sendRotationUpdate(citizenNetworkId, playerRef, baseLookDirection, baseBodyDirection);
 
                 citizen.lastLookDirections.remove(playerUuid);
+                citizen.lastBodyDirections.remove(playerUuid);
+                citizen.bodyTurningStates.remove(playerUuid);
                 clearPendingLookResetState(citizen, playerUuid, expectedTask);
             } catch (Exception e) {
                 clearPendingLookResetState(citizen, playerUuid, expectedTask);
@@ -4087,7 +4951,10 @@ public class CitizensManager {
             return false;
         }
 
-        if (!shouldUseModelNametag(citizen) || !citizen.isRotateNametagTowardsPlayer()) {
+        boolean hasModelNametag = shouldUseModelNametag(citizen) ||
+                                  shouldUseCustomFormattedNametag(citizen) ||
+                                  citizen.getCachedCustomNametagAssetId() != null;
+        if (!hasModelNametag || !citizen.isRotateNametagTowardsPlayer()) {
             return false;
         }
 
@@ -4128,6 +4995,10 @@ public class CitizensManager {
         float yaw = rotation.y;
         float pitch = includePitch ? rotation.x : 0.0f;
         return new Direction(yaw, pitch, rotation.z);
+    }
+
+    private static float turnAngle(float from, float to) {
+        return (float) Math.atan2(Math.sin(to - from), Math.cos(to - from));
     }
 
     private void sendRotationUpdate(@Nonnull NetworkId citizenNetworkId, @Nonnull PlayerRef playerRef,
@@ -4175,24 +5046,26 @@ public class CitizensManager {
         Vector3d entityPos = nametagTransform.getPosition();
         Vector3d playerPos = new Vector3d(playerRef.getTransform().getPosition());
 
+        // Add offset for player head
+        playerPos.y += 1.8;
+
         double dx = playerPos.x - entityPos.x;
         double dz = playerPos.z - entityPos.z;
         float yaw = (float) (Math.atan2(dx, dz) + Math.PI);
 
-//        double dy = playerPos.y - entityPos.y;
-//        double horizontalDistance = Math.sqrt(dx * dx + dz * dz);
-//        float pitch = (float) Math.atan2(dy, horizontalDistance);
+        double dy = playerPos.y - entityPos.y;
+        double horizontalDistance = Math.sqrt(dx * dx + dz * dz);
+        float pitch = (float) Math.atan2(dy, horizontalDistance);
 
-        Direction lookDirection = new Direction(yaw, 0f, 0f);
-        Direction bodyDirection = new Direction(yaw, 0f, 0f);
+        Direction lookDirection = new Direction(yaw, pitch, 0f);
+        Direction bodyDirection = new Direction(yaw, pitch, 0f);
 
         UUID playerUuid = playerRef.getUuid();
         Direction lastLook = citizen.lastNametagLookDirections.get(playerUuid);
         if (lastLook != null) {
             float yawDiff = Math.abs(lookDirection.yaw - lastLook.yaw);
-//            float pitchDiff = Math.abs(lookDirection.pitch - lastLook.pitch);
-//            if (yawDiff < 0.02f && pitchDiff < 0.02f) {
-            if (yawDiff < 0.02f) {
+            float pitchDiff = Math.abs(lookDirection.pitch - lastLook.pitch);
+            if (yawDiff < 0.02f && pitchDiff < 0.02f) {
                 return;
             }
         }
@@ -4525,6 +5398,12 @@ public class CitizensManager {
             return generatedRoleName;
         }
 
+        roleGenerator.forceRoleGeneration(citizen);
+        roleIndex = NPCPlugin.get().getIndex(generatedRoleName);
+        if (roleIndex != Integer.MIN_VALUE) {
+            return generatedRoleName;
+        }
+
         // Fall back to static role if not yet registered
         String fallbackName = roleGenerator.getFallbackRoleName(citizen);
         getLogger().atInfo().log("Generated role '" + generatedRoleName + "' not yet registered, using fallback '" + fallbackName + "'. Will retry applying generated role in 5 seconds.");
@@ -4536,49 +5415,83 @@ public class CitizensManager {
     }
 
     private void scheduleRoleRetry(@Nonnull CitizenData citizen, @Nonnull String generatedRoleName) {
+        String retryKey = citizen.getId() + ":" + generatedRoleName;
+        if (!pendingGeneratedRoleRetries.add(retryKey)) {
+            return;
+        }
+        scheduleRoleRetry(citizen, generatedRoleName, 1, retryKey);
+    }
+
+    private void scheduleRoleRetry(@Nonnull CitizenData citizen,
+                                   @Nonnull String generatedRoleName,
+                                   int attempt,
+                                   @Nonnull String retryKey) {
         UUID expectedNpcUuid = citizen.getSpawnedUUID();
         HytaleServer.SCHEDULED_EXECUTOR.schedule(() -> {
             try {
+                roleGenerator.forceRoleGeneration(citizen);
                 int roleIndex = NPCPlugin.get().getIndex(generatedRoleName);
                 if (roleIndex == Integer.MIN_VALUE) {
-                    getLogger().atWarning().log("Generated role '" + generatedRoleName + "' still not registered after retry. Role may have failed to generate.");
+                    if (attempt < MAX_GENERATED_ROLE_RETRY_ATTEMPTS) {
+                        scheduleRoleRetry(citizen, generatedRoleName, attempt + 1, retryKey);
+                    } else {
+                        getLogger().atWarning().log("Generated role '" + generatedRoleName + "' still not registered after " + attempt + " retries. Role may have failed to generate.");
+                        pendingGeneratedRoleRetries.remove(retryKey);
+                    }
                     return;
                 }
 
-                if (expectedNpcUuid == null || !expectedNpcUuid.equals(citizen.getSpawnedUUID())) {
+                if (expectedNpcUuid != null && !expectedNpcUuid.equals(citizen.getSpawnedUUID())) {
+                    pendingGeneratedRoleRetries.remove(retryKey);
                     return;
                 }
 
                 if (isCitizenSpawning(citizen.getId())) {
+                    if (attempt < MAX_GENERATED_ROLE_RETRY_ATTEMPTS) {
+                        scheduleRoleRetry(citizen, generatedRoleName, attempt + 1, retryKey);
+                    } else {
+                        pendingGeneratedRoleRetries.remove(retryKey);
+                    }
                     return;
                 }
 
                 Ref<EntityStore> npcRef = citizen.getNpcRef();
                 if (npcRef == null || !npcRef.isValid()) {
-                    getLogger().atWarning().log("Cannot apply role '" + generatedRoleName + "': NPC ref is no longer valid.");
+                    if (attempt < MAX_GENERATED_ROLE_RETRY_ATTEMPTS) {
+                        scheduleRoleRetry(citizen, generatedRoleName, attempt + 1, retryKey);
+                    } else {
+                        getLogger().atWarning().log("Cannot apply role '" + generatedRoleName + "': NPC ref is no longer valid.");
+                        pendingGeneratedRoleRetries.remove(retryKey);
+                    }
                     return;
                 }
 
                 World world = Universe.get().getWorld(citizen.getWorldUUID());
                 if (world == null) {
+                    pendingGeneratedRoleRetries.remove(retryKey);
                     return;
                 }
 
                 world.execute(() -> {
-                    if (expectedNpcUuid == null || !expectedNpcUuid.equals(citizen.getSpawnedUUID())) {
-                        return;
-                    }
+                    try {
+                        if (expectedNpcUuid != null && !expectedNpcUuid.equals(citizen.getSpawnedUUID())) {
+                            return;
+                        }
 
-                    Ref<EntityStore> currentRef = citizen.getNpcRef();
-                    if (currentRef == null || !currentRef.isValid()) {
-                        return;
-                    }
+                        Ref<EntityStore> currentRef = citizen.getNpcRef();
+                        if (currentRef == null || !currentRef.isValid()) {
+                            return;
+                        }
 
-                    updateSpawnedCitizenNPC(citizen, false);
-                    getLogger().atInfo().log("Successfully applied generated role '" + generatedRoleName + "' to citizen '" + citizen.getName() + "'.");
+                        updateSpawnedCitizenNPC(citizen, false);
+                        getLogger().atInfo().log("Successfully applied generated role '" + generatedRoleName + "' to citizen '" + citizen.getName() + "'.");
+                    } finally {
+                        pendingGeneratedRoleRetries.remove(retryKey);
+                    }
                 });
             } catch (Exception e) {
                 getLogger().atWarning().log("Error during role retry for '" + generatedRoleName + "': " + e.getMessage());
+                pendingGeneratedRoleRetries.remove(retryKey);
             }
         }, 5, TimeUnit.SECONDS);
     }
@@ -4619,20 +5532,83 @@ public class CitizensManager {
         }
 
         try {
-            NPCEntity npcEntity = npcRef.getStore().getComponent(npcRef, NPCEntity.getComponentType());
-            if (npcEntity == null || npcEntity.getRole() == null || npcEntity.getRole().getStateSupport() == null) {
+            StateSupport stateSupport = npcRef.getStore().getComponent(npcRef, StateSupport.getComponentType());
+            if (stateSupport == null) {
                 return null;
             }
 
-            return npcEntity.getRole().getStateSupport().getStateName();
+            return stateSupport.getStateName();
         } catch (Exception e) {
             return null;
         }
     }
 
-    public void autoResolveAttackType(@Nonnull CitizenData citizen) {
+    private static boolean hasLegacyCustomCombatStyle(@Nonnull CombatConfig combatConfig) {
+        CombatConfig defaults = new CombatConfig();
+        return !sameFloat(combatConfig.getAttackDistance(), defaults.getAttackDistance())
+                || !sameFloat(combatConfig.getChaseSpeed(), defaults.getChaseSpeed())
+                || !sameFloat(combatConfig.getCombatBehaviorDistance(), defaults.getCombatBehaviorDistance())
+                || combatConfig.getCombatStrafeWeight() != defaults.getCombatStrafeWeight()
+                || combatConfig.getCombatDirectWeight() != defaults.getCombatDirectWeight()
+                || combatConfig.isBackOffAfterAttack() != defaults.isBackOffAfterAttack()
+                || !sameFloat(combatConfig.getBackOffDistance(), defaults.getBackOffDistance())
+                || !sameFloat(combatConfig.getDesiredAttackDistanceMin(), defaults.getDesiredAttackDistanceMin())
+                || !sameFloat(combatConfig.getDesiredAttackDistanceMax(), defaults.getDesiredAttackDistanceMax())
+                || !sameFloat(combatConfig.getAttackPauseMin(), defaults.getAttackPauseMin())
+                || !sameFloat(combatConfig.getAttackPauseMax(), defaults.getAttackPauseMax())
+                || !sameFloat(combatConfig.getCombatRelativeTurnSpeed(), defaults.getCombatRelativeTurnSpeed())
+                || combatConfig.getCombatAlwaysMovingWeight() != defaults.getCombatAlwaysMovingWeight()
+                || !sameFloat(combatConfig.getCombatStrafingDurationMin(), defaults.getCombatStrafingDurationMin())
+                || !sameFloat(combatConfig.getCombatStrafingDurationMax(), defaults.getCombatStrafingDurationMax())
+                || !sameFloat(combatConfig.getCombatStrafingFrequencyMin(), defaults.getCombatStrafingFrequencyMin())
+                || !sameFloat(combatConfig.getCombatStrafingFrequencyMax(), defaults.getCombatStrafingFrequencyMax())
+                || !sameFloat(combatConfig.getCombatAttackPreDelayMin(), defaults.getCombatAttackPreDelayMin())
+                || !sameFloat(combatConfig.getCombatAttackPreDelayMax(), defaults.getCombatAttackPreDelayMax())
+                || !sameFloat(combatConfig.getCombatAttackPostDelayMin(), defaults.getCombatAttackPostDelayMin())
+                || !sameFloat(combatConfig.getCombatAttackPostDelayMax(), defaults.getCombatAttackPostDelayMax())
+                || !sameFloat(combatConfig.getBackOffDurationMin(), defaults.getBackOffDurationMin())
+                || !sameFloat(combatConfig.getBackOffDurationMax(), defaults.getBackOffDurationMax())
+                || !Objects.equals(combatConfig.getBlockAbility(), defaults.getBlockAbility())
+                || combatConfig.getBlockProbability() != defaults.getBlockProbability()
+                || !sameFloat(combatConfig.getCombatFleeIfTooCloseDistance(), defaults.getCombatFleeIfTooCloseDistance())
+                || !sameFloat(combatConfig.getTargetSwitchTimerMin(), defaults.getTargetSwitchTimerMin())
+                || !sameFloat(combatConfig.getTargetSwitchTimerMax(), defaults.getTargetSwitchTimerMax())
+                || !sameFloat(combatConfig.getTargetRange(), defaults.getTargetRange())
+                || !sameFloat(combatConfig.getCombatMovingRelativeSpeed(), defaults.getCombatMovingRelativeSpeed())
+                || !sameFloat(combatConfig.getCombatBackwardsRelativeSpeed(), defaults.getCombatBackwardsRelativeSpeed())
+                || combatConfig.isUseCombatActionEvaluator() != defaults.isUseCombatActionEvaluator();
+    }
+
+    private static boolean sameFloat(float first, float second) {
+        return Math.abs(first - second) < 0.0001f;
+    }
+
+    public boolean autoResolveAttackType(@Nonnull CitizenData citizen) {
         String resolved = RoleGenerator.resolveAttackInteraction(citizen.getModelId());
         citizen.getCombatConfig().setAttackType(resolved);
+        citizen.getCombatConfig().setAttackTypeManuallySet(false);
+        RoleGenerator.applyAutoCombatStyle(citizen.getCombatConfig(), citizen.getModelId());
+        citizen.getCombatConfig().setCombatStyleManuallySet(false);
+        return true;
+    }
+
+    public boolean autoResolveAttackTypeIfNotManual(@Nonnull CitizenData citizen) {
+        CombatConfig combatConfig = citizen.getCombatConfig();
+        boolean changed = false;
+        if (!combatConfig.isAttackTypeManuallySet()) {
+            String resolved = RoleGenerator.resolveAttackInteraction(citizen.getModelId());
+            combatConfig.setAttackType(resolved);
+            combatConfig.setAttackTypeManuallySet(false);
+            changed = true;
+        }
+
+        if (!combatConfig.isCombatStyleManuallySet()) {
+            RoleGenerator.applyAutoCombatStyle(combatConfig, citizen.getModelId());
+            combatConfig.setCombatStyleManuallySet(false);
+            changed = true;
+        }
+
+        return changed;
     }
 
     public void forceAttackEntity(@Nonnull CitizenData citizen, @Nonnull String attackInteractionId) {
@@ -4643,11 +5619,8 @@ public class CitizensManager {
 
         world.execute(() -> {
             try {
-                NPCEntity npcEntity = citizen.getNpcRef().getStore().getComponent(
-                        citizen.getNpcRef(), NPCEntity.getComponentType());
-                if (npcEntity == null || npcEntity.getRole() == null) return;
-
-                var combatSupport = npcEntity.getRole().getCombatSupport();
+                CombatSupport combatSupport = citizen.getNpcRef().getStore().getComponent(
+                        citizen.getNpcRef(), CombatSupport.getComponentType());
                 if (combatSupport == null) return;
 
                 combatSupport.clearAttackOverrides();
@@ -4738,16 +5711,30 @@ public class CitizensManager {
     public void fireCitizenDeathEvent(CitizenDeathEvent event) {
         for (CitizenDeathListener listener : deathListeners) {
             listener.onCitizenDeath(event);
+
             if (event.isCancelled()) {
                 break;
+            }
+            else {
+                // Handled in EntityDeathListener
+//                // Trigger "ON_DEATH" for scripts
+//                World world = Universe.get().getWorld(event.getCitizen().getWorldUUID());
+//                if (world != null) {
+//                    world.execute(() -> {
+//                        Store<EntityStore> store = world.getEntityStore().getStore();
+//                        if (store != null)
+//                            ScriptManager.get().fireTrigger(event.getCitizen(), "ON_DEATH", null, event.getKiller(), store);
+//                    });
+//                }
             }
         }
     }
 
-//    public void reload() {
-//        config.reload();
-//        loadAllCitizens();
-//    }
+    public void reload() {
+        config.reload();
+        loadAllCitizens();
+        loadFactionConfigs();
+    }
 
     private void saveGroups() {
         List<String> groupList = new ArrayList<>(groups);
@@ -4942,6 +5929,18 @@ public class CitizensManager {
         return citizens.values().stream()
                 .filter(c -> targetGroup.equals(normalizeGroupName(c.getGroup())))
                 .collect(Collectors.toList());
+    }
+
+    private void tickCitizenState(@Nonnull CitizenData citizen) {
+        boolean isNowInCombat = isCitizenInCombat(citizen);
+        if (isNowInCombat != citizen.wasInCombat()) {
+            citizen.setWasInCombat(isNowInCombat);
+            if (isNowInCombat) {
+                ScriptManager.get().fireTrigger(citizen, "ON_COMBAT_START", new HashMap<>(), null, null);
+            } else {
+                ScriptManager.get().fireTrigger(citizen, "ON_COMBAT_END", new HashMap<>(), null, null);
+            }
+        }
     }
 
     private void tickStandaloneFollowCitizen(@Nonnull CitizenData citizen) {
@@ -5208,6 +6207,9 @@ public class CitizensManager {
             }
 
             citizen.setCurrentPosition(new Vector3d(targetPosition.x, targetPosition.y, targetPosition.z));
+            if (targetRotation != null) {
+                citizen.setCurrentRotation(RotationUtil.toRotation(targetRotation));
+            }
         });
     }
 

@@ -19,6 +19,7 @@ import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
 import java.awt.*;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -29,6 +30,12 @@ import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
+import com.electro.hycitizens.api.scripting.ScriptBlock;
+import com.electro.hycitizens.api.scripting.ScriptContext;
+import com.electro.hycitizens.api.scripting.ScriptManager;
+import com.electro.hycitizens.managers.DialogueManager;
+import com.hypixel.hytale.server.core.universe.Universe;
+import com.hypixel.hytale.server.core.universe.world.World;
 
 public class CitizenInteraction {
 
@@ -252,6 +259,13 @@ public class CitizenInteraction {
     }
 
     public static boolean hasConfiguredInteraction(@Nonnull CitizenData citizen, @Nonnull String interactionSource) {
+        if ((citizen.getInteractDialogueId() != null
+                && !citizen.getInteractDialogueId().isEmpty()
+                && citizen.isInteractDialogueTriggeredBy(interactionSource))
+                || DialogueManager.get().hasActiveDialogueForNpc(citizen.getId())) {
+            return true;
+        }
+
         if (hasMatchingCommand(citizen.getCommandActions(), interactionSource)) {
             return true;
         }
@@ -260,12 +274,39 @@ public class CitizenInteraction {
             return true;
         }
 
-        return citizen.isFirstInteractionEnabled()
+        if (citizen.isFirstInteractionEnabled()
                 && (hasMatchingCommand(citizen.getFirstInteractionCommandActions(), interactionSource)
-                || hasMatchingMessage(citizen.getFirstInteractionMessagesConfig(), interactionSource));
+                || hasMatchingMessage(citizen.getFirstInteractionMessagesConfig(), interactionSource))) {
+            return true;
+        }
+
+        if (citizen.getScripts() != null) {
+            for (ScriptBlock script : citizen.getScripts()) {
+                if (script.isEnabled() && (script.matchesTrigger("ON_INTERACT") || script.matchesTrigger("ON_FIRST_INTERACT"))) {
+                    Map<String, Object> params = script.getTriggerParameters();
+                    if (params != null && params.containsKey("source")) {
+                        Object src = params.get("source");
+                        if (src != null) {
+                            String srcStr = src.toString();
+                            if (!srcStr.isEmpty() && !srcStr.equalsIgnoreCase(interactionSource) && !srcStr.equalsIgnoreCase("BOTH")) {
+                                continue;
+                            }
+                        }
+                    }
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 
     static public void handleInteraction(@Nonnull CitizenData citizen, @Nonnull PlayerRef playerRef, @Nonnull String interactionSource) {
+        Ref<EntityStore> ref = playerRef.getReference();
+        if (ref == null || !ref.isValid()) {
+            return;
+        }
+
         // Interact event must be called before configured and combat check.
         CitizenInteractEvent interactEvent = new CitizenInteractEvent(citizen, playerRef);
         HyCitizensPlugin.get().getCitizensManager().fireCitizenInteractEvent(interactEvent);
@@ -273,20 +314,8 @@ public class CitizenInteraction {
         if (interactEvent.isCancelled())
             return;
 
-        if (!hasConfiguredInteraction(citizen, interactionSource)) {
-            return;
-        }
-
         if (HyCitizensPlugin.get().getCitizensManager().isCitizenInCombat(citizen)) {
             playerRef.sendMessage(Message.raw("This citizen is busy in combat.").color(Color.RED));
-            return;
-        }
-
-        Ref<EntityStore> ref = playerRef.getReference();
-
-        Player player = ref.getStore().getComponent(ref, Player.getComponentType());
-        if (player == null) {
-            playerRef.sendMessage(Message.raw("An error occurred").color(Color.RED));
             return;
         }
 
@@ -295,7 +324,7 @@ public class CitizenInteraction {
             if (!playerRef.hasPermission(citizen.getRequiredPermission())) {
                 String permissionMessage = citizen.getNoPermissionMessage();
 
-                if (permissionMessage.isEmpty()) {
+                if (permissionMessage == null || permissionMessage.isEmpty()) {
                     permissionMessage = "You do not have permissions";
                 }
 
@@ -304,9 +333,40 @@ public class CitizenInteraction {
             }
         }
 
+        // Check for interact dialogue (static pointer or dynamic override/profile)
+        String interactDiagId = citizen.getInteractDialogueId();
+        boolean hasStaticDialog = interactDiagId != null && !interactDiagId.isEmpty() && citizen.isInteractDialogueTriggeredBy(interactionSource);
+        boolean hasDynamicDialog = DialogueManager.get().hasActiveDialogueForNpc(citizen.getId());
+
+        if (hasStaticDialog || hasDynamicDialog) {
+            World world = Universe.get().getWorld(playerRef.getWorldUuid());
+            ScriptContext scriptContext = new ScriptContext(
+                    citizen,
+                    playerRef,
+                    world,
+                    playerRef.getReference().getStore(),
+                    "ON_INTERACT",
+                    null
+            );
+            if (DialogueManager.get().resolveAndStart(playerRef, citizen.getId(), interactDiagId, scriptContext)) {
+                return;
+            }
+        }
+
+        if (!hasConfiguredInteraction(citizen, interactionSource)) {
+            return;
+        }
+
+        Player player = ref.getStore().getComponent(ref, Player.getComponentType());
+        if (player == null) {
+            playerRef.sendMessage(Message.raw("An error occurred").color(Color.RED));
+            return;
+        }
+
         // Trigger ON_INTERACT animations
         HyCitizensPlugin.get().getCitizensManager().triggerAnimations(citizen, "ON_INTERACT");
         UUID playerUUID = playerRef.getUuid();
+        boolean isFirst = citizen.isFirstInteractionEnabled() && !citizen.getPlayersWhoCompletedFirstInteraction().contains(playerUUID);
         boolean runNormalBehavior = true;
 
         if (citizen.isFirstInteractionEnabled()) {
@@ -351,6 +411,14 @@ public class CitizenInteraction {
                     citizen.getSequentialCommandIndex()
             );
         }
+
+        // Fire scripting triggers
+        Map<String, Object> triggerArgs = new HashMap<>();
+        triggerArgs.put("interaction_source", interactionSource);
+        if (isFirst) {
+            ScriptManager.get().fireTrigger(citizen, "ON_FIRST_INTERACT", triggerArgs, playerRef, playerRef.getReference().getStore());
+        }
+        ScriptManager.get().fireTrigger(citizen, "ON_INTERACT", triggerArgs, playerRef, playerRef.getReference().getStore());
     }
 
     private static boolean hasMatchingCommand(@Nonnull List<CommandAction> commands, @Nonnull String interactionSource) {
@@ -451,8 +519,7 @@ public class CitizenInteraction {
         return RANDOM.nextFloat() * 100.0f <= message.getChancePercent();
     }
 
-    private static void sendMessages(@Nonnull PlayerRef playerRef, @Nonnull CitizenData citizen,
-                                     @Nonnull List<CitizenMessage> messages) {
+    private static void sendMessages(@Nonnull PlayerRef playerRef, @Nonnull CitizenData citizen, @Nonnull List<CitizenMessage> messages) {
         CompletableFuture<Void> chain = CompletableFuture.completedFuture(null);
 
         for (CitizenMessage cm : messages) {
@@ -478,8 +545,7 @@ public class CitizenInteraction {
         }
     }
 
-    private static void runCommands(@Nonnull PlayerRef playerRef, @Nonnull CitizenData citizen,
-                                    @Nonnull Player player, @Nonnull List<CommandAction> commands) {
+    private static void runCommands(@Nonnull PlayerRef playerRef, @Nonnull CitizenData citizen, @Nonnull Player player, @Nonnull List<CommandAction> commands) {
         CompletableFuture<Void> chain = CompletableFuture.completedFuture(null);
 
         for (CommandAction commandAction : commands) {
@@ -510,8 +576,7 @@ public class CitizenInteraction {
         }
     }
 
-    private static String replacePlaceholders(@Nonnull String text, @Nonnull PlayerRef playerRef,
-                                              @Nonnull CitizenData citizen) {
+    private static String replacePlaceholders(@Nonnull String text, @Nonnull PlayerRef playerRef, @Nonnull CitizenData citizen) {
         Vector3d npcPos = citizen.getCurrentPosition() != null ? citizen.getCurrentPosition() : citizen.getPosition();
         String npcX = String.format(Locale.ROOT, "%.2f", npcPos.x);
         String npcY = String.format(Locale.ROOT, "%.2f", npcPos.y);

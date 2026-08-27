@@ -10,6 +10,7 @@ import com.hypixel.hytale.server.core.asset.type.blocktype.config.BlockType;
 import com.hypixel.hytale.server.core.entity.entities.Player;
 import com.hypixel.hytale.server.core.event.events.ecs.BreakBlockEvent;
 import com.hypixel.hytale.server.core.inventory.ItemStack;
+import com.hypixel.hytale.server.core.inventory.InventoryComponent;
 import com.hypixel.hytale.server.core.universe.PlayerRef;
 import com.hypixel.hytale.server.core.universe.world.storage.EntityStore;
 
@@ -31,12 +32,11 @@ public class PatrolStickBlockBreakListener extends EntityEventSystem<EntityStore
         }
 
         Ref<EntityStore> ref = chunk.getReferenceTo(index);
-        Player player = store.getComponent(ref, Player.getComponentType());
-        if (player == null) {
+        if (ref == null || !ref.isValid()) {
             return;
         }
 
-        ItemStack heldItem = player.getInventory().getItemInHand();
+        ItemStack heldItem = InventoryComponent.getItemInHand(store, ref);
         if (heldItem == null || !heldItem.isValid()) {
             return;
         }

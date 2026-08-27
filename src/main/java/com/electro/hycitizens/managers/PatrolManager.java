@@ -10,14 +10,14 @@ import org.joml.Vector3d;
 import com.hypixel.hytale.server.core.HytaleServer;
 import com.hypixel.hytale.server.core.entity.UUIDComponent;
 import com.hypixel.hytale.server.core.entity.entities.ProjectileComponent;
-import com.hypixel.hytale.server.core.modules.entity.component.Intangible;
 import com.hypixel.hytale.server.core.modules.entity.component.TransformComponent;
 import com.hypixel.hytale.server.core.modules.entity.tracker.NetworkId;
 import com.hypixel.hytale.server.core.universe.Universe;
 import com.hypixel.hytale.server.core.universe.world.World;
 import com.hypixel.hytale.server.core.universe.world.storage.EntityStore;
 import com.hypixel.hytale.server.npc.entities.NPCEntity;
-import com.hypixel.hytale.server.npc.role.Role;
+import com.hypixel.hytale.server.npc.role.support.MarkedEntitySupport;
+import com.hypixel.hytale.server.npc.role.support.StateSupport;
 
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
@@ -164,6 +164,12 @@ public class PatrolManager {
 
             PatrolWaypoint currentWaypoint = waypoints.get(currentIndex);
             Vector3d npcPos = npcTransform.getPosition();
+            if (npcPos != null) {
+                citizen.setCurrentPosition(new Vector3d(npcPos));
+            }
+            if (npcTransform.getRotation() != null) {
+                citizen.setCurrentRotation(npcTransform.getRotation());
+            }
             Vector3d wp = waypointPosition;
             double dx = wp.x - npcPos.x;
             double dy = wp.y - npcPos.y;
@@ -348,7 +354,6 @@ public class PatrolManager {
 
             holder.putComponent(TransformComponent.getComponentType(), new TransformComponent(position, new Rotation3f()));
             holder.ensureComponent(UUIDComponent.getComponentType());
-            holder.ensureComponent(Intangible.getComponentType());
             holder.addComponent(NetworkId.getComponentType(),
                     new NetworkId(world.getEntityStore().getStore().getExternalData().takeNextNetworkId()));
 
@@ -362,18 +367,7 @@ public class PatrolManager {
 
             moveTargets.put(citizen.getId(), targetRef);
 
-            Ref<EntityStore> npcRef = citizen.getNpcRef();
-            if (npcRef == null || !npcRef.isValid()) {
-                return;
-            }
-
-            NPCEntity npcEntity = npcRef.getStore().getComponent(npcRef, NPCEntity.getComponentType());
-            if (npcEntity == null || npcEntity.getRole() == null) {
-                return;
-            }
-
-            Role role = npcEntity.getRole();
-            role.getMarkedEntitySupport().setMarkedEntity(getMovementTargetSlot(role), targetRef);
+            bindMoveTarget(citizen, targetRef);
         } catch (Exception e) {
             getLogger().atWarning().log("Failed to create move target for citizen " + citizen.getId() + ": " + e.getMessage());
         }
@@ -382,7 +376,7 @@ public class PatrolManager {
     @Nullable
     private Ref<EntityStore> ensureMoveTarget(@Nonnull CitizenData citizen, @Nonnull World world, @Nonnull Vector3d position) {
         Ref<EntityStore> targetRef = moveTargets.get(citizen.getId());
-        if (targetRef != null && targetRef.isValid()) {
+        if (targetRef != null && targetRef.isValid() && targetRef.getStore() == world.getEntityStore().getStore()) {
             TransformComponent targetTransform = targetRef.getStore().getComponent(targetRef, TransformComponent.getComponentType());
             if (targetTransform != null) {
                 targetTransform.setPosition(new Vector3d(position.x, position.y, position.z));
@@ -391,6 +385,7 @@ public class PatrolManager {
             }
         }
 
+        cleanupMoveTarget(citizen, world);
         spawnMoveTarget(citizen, world, position);
         Ref<EntityStore> spawnedRef = moveTargets.get(citizen.getId());
         if (spawnedRef != null && spawnedRef.isValid()) {
@@ -405,8 +400,8 @@ public class PatrolManager {
             return;
         }
 
-        NPCEntity npcEntity = npcRef.getStore().getComponent(npcRef, NPCEntity.getComponentType());
-        if (npcEntity == null || npcEntity.getRole() == null || npcEntity.getRole().getMarkedEntitySupport() == null) {
+        MarkedEntitySupport markedEntitySupport = npcRef.getStore().getComponent(npcRef, MarkedEntitySupport.getComponentType());
+        if (markedEntitySupport == null) {
             return;
         }
 
@@ -415,17 +410,27 @@ public class PatrolManager {
             return;
         }
 
-        npcEntity.getRole().getMarkedEntitySupport().setMarkedEntity(getMovementTargetSlot(npcEntity.getRole()), targetRef);
-        npcEntity.setLeashPoint(targetTransform.getPosition());
+        markedEntitySupport.setMarkedEntity(MOVE_TARGET_SLOT, targetRef);
+        if (markedEntitySupport.getMarkedEntityRef(MOVE_TARGET_SLOT) == null) {
+            markedEntitySupport.setMarkedEntity(LOCKED_TARGET_SLOT, targetRef);
+        }
+        NPCEntity npcEntity = npcRef.getStore().getComponent(npcRef, NPCEntity.getComponentType());
+        if (npcEntity != null) {
+            npcEntity.setLeashPoint(targetTransform.getPosition());
+        }
     }
 
     @Nonnull
-    private String getMovementTargetSlot(@Nonnull Role role) {
-        return role.getStateSupport() != null ? MOVE_TARGET_SLOT : LOCKED_TARGET_SLOT;
+    private String getMovementTargetSlot(@Nonnull Ref<EntityStore> npcRef) {
+        StateSupport stateSupport = npcRef.getStore().getComponent(npcRef, StateSupport.getComponentType());
+        return stateSupport != null ? MOVE_TARGET_SLOT : LOCKED_TARGET_SLOT;
     }
 
     public boolean citizenMayNeedMoveTarget(@Nonnull CitizenData citizen) {
         if ("PATROL".equals(citizen.getMovementBehavior().getType())) {
+            return true;
+        }
+        if ("FOLLOW_PLAYER".equals(citizen.getMovementBehavior().getType())) {
             return true;
         }
         if ("FOLLOW_CITIZEN".equals(citizen.getMovementBehavior().getType())

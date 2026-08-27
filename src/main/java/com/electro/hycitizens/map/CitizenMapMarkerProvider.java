@@ -2,6 +2,7 @@ package com.electro.hycitizens.map;
 
 import com.electro.hycitizens.HyCitizensPlugin;
 import com.electro.hycitizens.models.CitizenData;
+import com.electro.hycitizens.util.RotationUtil;
 import com.hypixel.hytale.math.vector.Transform;
 import org.joml.Vector3d;
 import com.hypixel.hytale.math.vector.Rotation3f;
@@ -19,7 +20,6 @@ import com.hypixel.hytale.server.core.util.PositionUtil;
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
 import java.util.ArrayList;
-import java.util.Collection;
 import java.util.List;
 import java.util.UUID;
 
@@ -43,7 +43,7 @@ public final class CitizenMapMarkerProvider implements WorldMapManager.MarkerPro
         }
 
         List<PendingMarker> pendingMarkers = new ArrayList<>();
-        PlayerRef viewerRef = findViewerRef(world.getPlayerRefs(), viewer.getUuid());
+        PlayerRef viewerRef = viewer.getPlayerRef();
         Vector3d viewerPosition = viewerRef != null && viewerRef.getTransform() != null
                 ? new Vector3d(viewerRef.getTransform().getPosition())
                 : null;
@@ -63,22 +63,31 @@ public final class CitizenMapMarkerProvider implements WorldMapManager.MarkerPro
                 continue;
             }
 
+            Rotation3f rotation = citizen.getCurrentRotation() != null
+                    ? citizen.getCurrentRotation()
+                    : (citizen.getRotation() != null ? RotationUtil.toRotation(citizen.getRotation()) : new Rotation3f());
+
             String markerImage = CitizenMapMarkerAsset.resolveMarkerImage(citizen);
-            pendingMarkers.add(new PendingMarker(citizen, position, markerImage));
+            pendingMarkers.add(new PendingMarker(citizen, position, rotation, markerImage));
         }
 
         for (PendingMarker pendingMarker : pendingMarkers) {
-            collector.add(createMarker(pendingMarker.citizen(), pendingMarker.position(), pendingMarker.markerImage()));
+            collector.addIgnoreViewDistance(createMarker(
+                    pendingMarker.citizen(),
+                    pendingMarker.position(),
+                    pendingMarker.rotation(),
+                    pendingMarker.markerImage()
+            ));
         }
     }
 
-    private record PendingMarker(CitizenData citizen, Vector3d position, String markerImage) {
+    private record PendingMarker(CitizenData citizen, Vector3d position, Rotation3f rotation, String markerImage) {
     }
 
     @Nonnull
     private static MapMarker createMarker(@Nonnull CitizenData citizen, @Nonnull Vector3d position,
-                                          @Nonnull String markerImage) {
-        Transform transform = new Transform(new Vector3d(position), new Rotation3f());
+                                          @Nonnull Rotation3f rotation, @Nonnull String markerImage) {
+        Transform transform = new Transform(new Vector3d(position), rotation);
         String labelText = markerLabelText(citizen);
         return new MapMarker(
                 MARKER_PREFIX + citizen.getId() + "-" + markerIdSegment(markerImage) + "-" + markerIdSegment(labelText),
@@ -115,20 +124,6 @@ public final class CitizenMapMarkerProvider implements WorldMapManager.MarkerPro
                 .replace('\n', ' ')
                 .trim();
         return name;
-    }
-
-    @Nullable
-    private static PlayerRef findViewerRef(@Nullable Collection<PlayerRef> playerRefs, @Nullable UUID viewerUuid) {
-        if (playerRefs == null || viewerUuid == null) {
-            return null;
-        }
-
-        for (PlayerRef playerRef : playerRefs) {
-            if (playerRef != null && viewerUuid.equals(playerRef.getUuid())) {
-                return playerRef;
-            }
-        }
-        return null;
     }
 
     private static boolean isWithinCustomMarkerDistance(@Nonnull CitizenData citizen, @Nonnull Vector3d markerPosition, @Nullable Vector3d viewerPosition) {

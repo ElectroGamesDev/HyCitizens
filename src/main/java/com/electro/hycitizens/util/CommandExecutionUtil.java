@@ -1,10 +1,14 @@
 package com.electro.hycitizens.util;
 
+import com.hypixel.hytale.server.core.Message;
 import com.hypixel.hytale.server.core.command.system.AbstractCommand;
 import com.hypixel.hytale.server.core.command.system.CommandManager;
+import com.hypixel.hytale.server.core.command.system.CommandSender;
 import com.hypixel.hytale.server.core.console.ConsoleSender;
 import com.hypixel.hytale.server.core.permissions.PermissionsModule;
 import com.hypixel.hytale.server.core.universe.PlayerRef;
+import com.hypixel.hytale.server.core.universe.Universe;
+import com.hypixel.hytale.server.core.universe.world.World;
 
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
@@ -52,6 +56,88 @@ public final class CommandExecutionUtil {
                 permissions,
                 () -> commandManager.handleCommand(player, processedCommand)
         );
+    }
+
+    @Nonnull
+    public static CompletableFuture<String> executeWithCapture(@Nonnull String command) {
+        String processedCommand = normalizeCommand(command);
+        if (processedCommand.isEmpty()) {
+            return CompletableFuture.completedFuture("");
+        }
+
+        CommandManager commandManager = CommandManager.get();
+        if (commandManager == null) {
+            return CompletableFuture.completedFuture("");
+        }
+
+        CapturingConsoleSender capturingConsole = new CapturingConsoleSender();
+
+        // Execute as console. Many Hytale commands (especially those extending CommandBase)
+        // schedule their work on the world thread via world.execute(), meaning sendMessage()
+        // is called AFTER the command future completes. We add a 200ms delay to let the
+        // world-threaded lambda finish before reading the captured output.
+        return commandManager.handleCommand(capturingConsole, processedCommand)
+                .thenCompose(v -> delayedFuture(200))
+                .thenApply(v -> capturingConsole.getCapturedOutput())
+                .exceptionally(ex -> {
+                    getLogger().atWarning().log("[HyCitizens] Command capture failed: " + ex.getMessage());
+                    return capturingConsole.getCapturedOutput();
+                });
+    }
+
+    private static CompletableFuture<Void> delayedFuture(long millis) {
+        CompletableFuture<Void> delayed = new CompletableFuture<>();
+        CompletableFuture.runAsync(() -> {
+            try {
+                Thread.sleep(millis);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+            delayed.complete(null);
+        });
+        return delayed;
+    }
+    
+    private static class CapturingConsoleSender implements CommandSender {
+        private final StringBuilder output = new StringBuilder();
+        private final UUID uuid = new UUID(0L, 0L);
+
+        @Override
+        public void sendMessage(@Nonnull Message message) {
+            if (message != null && message.getRawText() != null) {
+                if (output.length() > 0) {
+                    output.append("\n");
+                }
+                output.append(message.getRawText());
+            }
+        }
+
+        public String getCapturedOutput() {
+            return output.toString();
+        }
+
+        @Nonnull
+        public String getDisplayName() {
+            return "Console";
+        }
+
+        @Nonnull
+        public String getUsername() {
+            return "Console";
+        }
+
+        @Nonnull
+        public UUID getUuid() {
+            return uuid;
+        }
+
+        public boolean hasPermission(@Nonnull String id) {
+            return true;
+        }
+
+        public boolean hasPermission(@Nonnull String id, boolean def) {
+            return true;
+        }
     }
 
     @Nonnull
@@ -130,8 +216,14 @@ public final class CommandExecutionUtil {
             return CompletableFuture.completedFuture(null);
         }
 
-        execution.whenComplete((ignored, throwable) ->
-                revokeTemporaryPermissions(permissionsModule, playerUuid, missingPermissions));
+        execution.whenComplete((ignored, throwable) -> {
+            World world = Universe.get() != null ? Universe.get().getWorld(player.getWorldUuid()) : null;
+            if (world != null) {
+                world.execute(() -> revokeTemporaryPermissions(permissionsModule, playerUuid, missingPermissions));
+            } else {
+                revokeTemporaryPermissions(permissionsModule, playerUuid, missingPermissions);
+            }
+        });
 
         return execution;
     }

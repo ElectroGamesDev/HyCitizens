@@ -1,6 +1,7 @@
 package com.electro.hycitizens.listeners;
 
 import com.electro.hycitizens.HyCitizensPlugin;
+import com.electro.hycitizens.api.scripting.ScriptManager;
 import com.electro.hycitizens.events.CitizenDeathEvent;
 import com.electro.hycitizens.interactions.CitizenInteraction;
 import com.electro.hycitizens.models.*;
@@ -19,6 +20,7 @@ import com.hypixel.hytale.server.core.entity.entities.Player;
 import com.hypixel.hytale.server.core.modules.entity.component.Invulnerable;
 import com.hypixel.hytale.server.core.modules.entity.component.TransformComponent;
 import com.hypixel.hytale.server.core.modules.entity.damage.Damage;
+import com.hypixel.hytale.server.core.modules.entity.damage.DamageCause;
 import com.hypixel.hytale.server.core.modules.entity.damage.DamageEventSystem;
 import com.hypixel.hytale.server.core.modules.entity.damage.DamageModule;
 import com.hypixel.hytale.server.core.modules.entity.item.ItemComponent;
@@ -111,6 +113,24 @@ public class EntityDamageListener extends DamageEventSystem {
             }
 
             targetCitizen.setLastDamageTakenAt(System.currentTimeMillis());
+
+            // Track damage dealer for FOREACH_DAMAGE_DEALER
+            if (attackerPlayerRef != null) {
+                targetCitizen.addDamageDealer(attackerPlayerRef.getUuid(), event.getAmount());
+            }
+
+            // Fire ON_DAMAGE trigger
+            Map<String, Object> triggerArgs = new HashMap<>();
+            triggerArgs.put("damage_amount", event.getAmount());
+            DamageCause damageCause = DamageCause.getAssetMap().getAsset(event.getDamageCauseIndex());
+            triggerArgs.put("damage_cause", damageCause != null ? damageCause.getId() : "UNKNOWN");
+            if (attackerPlayerRef != null) {
+                triggerArgs.put("attacker_name", attackerPlayerRef.getUsername());
+            }
+            ScriptManager.get().fireTrigger(targetCitizen, "ON_DAMAGE", triggerArgs, attackerPlayerRef, store);
+
+            // Fire ON_HEALTH_THRESHOLD trigger
+            ScriptManager.get().fireTrigger(targetCitizen, "ON_HEALTH_THRESHOLD", null, null, store);
 
             if (!targetCitizen.isAwaitingRespawn() && isLethalDamage(store, targetRef, event)) {
                 CitizenDeathEvent deathEvent = new CitizenDeathEvent(targetCitizen, attackerPlayerRef);

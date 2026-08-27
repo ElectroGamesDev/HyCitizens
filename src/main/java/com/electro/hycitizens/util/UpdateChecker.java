@@ -3,6 +3,7 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
 
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
@@ -95,7 +96,7 @@ public class UpdateChecker {
         try (var in = UpdateChecker.class.getClassLoader().getResourceAsStream("manifest.json")) {
             if (in == null) return "0.0.0";
 
-            String jsonText = new String(in.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+            String jsonText = new String(in.readAllBytes(), StandardCharsets.UTF_8);
             JsonObject json = JsonParser.parseString(jsonText).getAsJsonObject();
 
             return json.get("Version").getAsString();
