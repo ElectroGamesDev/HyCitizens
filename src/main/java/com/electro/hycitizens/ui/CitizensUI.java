@@ -972,10 +972,6 @@ public class CitizensUI {
         public boolean isHideNametag() { return citizen.isHideNametag(); }
         public boolean isHideNpc() { return citizen.isHideNpc(); }
         public boolean isMapMarkerEnabled() { return citizen.isMapMarkerEnabled(); }
-        public String getThumbnailUrl() {
-            String image = CitizenMapMarkerAsset.resolveMarkerImage(citizen);
-            return escapeHtml(image);
-        }
     }
 
     public String getSharedStyles() {
@@ -1055,16 +1051,19 @@ public class CitizensUI {
                     }
                 
                     .card-header {
-                        layout: center;
+                        layout: top;
+                        horizontal-align: center;
                         flex-weight: 0;
                         padding-bottom: 12;
+                        width: 100%;
                     }
                 
                     .card-title {
                         color: #eaf1ff;
                         font-size: 14;
                         font-weight: bold;
-                        flex-weight: 1;
+                        text-align: center;
+                        anchor-width: 100%;
                     }
                 
                     .card-body {
@@ -1081,10 +1080,12 @@ public class CitizensUI {
                     }
                 
                     .section-header {
-                        layout: left;
+                        layout: top;
+                        horizontal-align: center;
                         flex-weight: 0;
                         padding: 6 12 6 12;
                         border-radius: 6;
+                        width: 100%;
                     }
                 
                     .section-header-hover {
@@ -1095,7 +1096,7 @@ public class CitizensUI {
                         color: #f2f6ff;
                         font-size: 14;
                         font-weight: bold;
-                        text-align: left;
+                        text-align: center;
                         anchor-width: 100%;
                     }
                 
@@ -1104,7 +1105,7 @@ public class CitizensUI {
                         font-size: 12;
                         padding-top: 6;
                         padding-bottom: 12;
-                        text-align: left;
+                        text-align: center;
                         anchor-width: 100%;
                     }
 
@@ -1694,9 +1695,6 @@ public class CitizensUI {
         public String getGroupId() { return groupId; }
         public SafeCitizen getCitizen() { return citizen; }
         public CitizenData getRawCitizen() { return rawCitizen; }
-        public String getThumbnailImage() {
-            return rawCitizen != null ? CitizenMapMarkerAsset.resolveMarkerImage(rawCitizen) : "";
-        }
         public String getCitizenId() { return rawCitizen != null ? rawCitizen.getId() : ""; }
         public String getCitizenIdShort() {
             if (rawCitizen == null) return "";
@@ -1707,6 +1705,45 @@ public class CitizensUI {
         public String getCitizenModelId() { return rawCitizen != null ? escapeHtml(rawCitizen.getModelId()) : ""; }
         public float getCitizenScale() { return rawCitizen != null ? rawCitizen.getScale() : 1.0f; }
         public String getCitizenGroup() { return rawCitizen != null ? escapeHtml(rawCitizen.getGroup()) : ""; }
+        public String getCitizenInitial() {
+            if (rawCitizen == null || rawCitizen.getName() == null || rawCitizen.getName().isEmpty()) {
+                return "?";
+            }
+            String cleanName = rawCitizen.getName().replaceAll("\\{[^}]*\\}", "").trim();
+            return cleanName.isEmpty() ? "?" : cleanName.substring(0, 1).toUpperCase(Locale.ROOT);
+        }
+        /*
+        public String getThumbnailUrl() {
+            if (rawCitizen == null) return "";
+            try {
+                return CitizenMapMarkerAsset.resolveCitizenThumbnailPath(rawCitizen);
+            } catch (Exception e) {
+                return "";
+            }
+        }
+        public boolean isHasThumbnail() {
+            String url = getThumbnailUrl();
+            return url != null && !url.isBlank();
+        }
+        public boolean getHasThumbnail() {
+            return isHasThumbnail();
+        }
+        public boolean hasThumbnail() {
+            return isHasThumbnail();
+        }
+        */
+        public String getThumbnailUrl() {
+            return "";
+        }
+        public boolean isHasThumbnail() {
+            return false;
+        }
+        public boolean getHasThumbnail() {
+            return false;
+        }
+        public boolean hasThumbnail() {
+            return false;
+        }
         private boolean editing = false;
         public boolean isEditing() { return editing; }
         public void setEditing(boolean editing) { this.editing = editing; }
@@ -1731,12 +1768,21 @@ public class CitizensUI {
         openMainGUI(playerRef, store, Tab.MANAGE, "", null, citizen, draftMapMarkerEnabled, draftMapMarkerType, draftMapMarkerName, draftMapMarkerCustomIcon, draftMapMarkerMaxDistance);
     }
 
-    private void openMainGUI(@Nonnull PlayerRef playerRef, @Nonnull Store<EntityStore> store, @Nonnull Tab currentTab, @Nonnull String searchQuery, @Nullable String viewingGroup, @Nullable CitizenData editingCitizen, boolean draftMapMarkerEnabled, @Nullable String draftMapMarkerType, @Nullable String draftMapMarkerName, @Nullable String draftMapMarkerCustomIcon, float draftMapMarkerMaxDistance) {
-        pendingFollowSelections.remove(playerRef.getUuid());
-        List<CitizenData> allCitizens = plugin.getCitizensManager().getAllCitizens();
+    public record LeftPanelContext(
+            List<CitizenData> allCitizens,
+            List<ListItem> unifiedList,
+            String searchQuery,
+            String normalizedViewingGroup,
+            boolean isViewingSpecificGroup
+    ) {}
 
-        // Left Panel logic
-        String lowerSearchQuery = searchQuery.toLowerCase(Locale.ROOT).trim();
+    public LeftPanelContext prepareLeftPanelContext(
+            @Nonnull PlayerRef playerRef,
+            @Nullable String searchQuery,
+            @Nullable String viewingGroup,
+            @Nullable CitizenData activeCitizen) {
+        List<CitizenData> allCitizens = plugin.getCitizensManager().getAllCitizens();
+        String lowerSearchQuery = searchQuery != null ? searchQuery.toLowerCase(Locale.ROOT).trim() : "";
         List<CitizenData> filteredCitizens = allCitizens;
 
         if (!lowerSearchQuery.isEmpty()) {
@@ -1777,7 +1823,7 @@ public class CitizensUI {
         }
         for (CitizenData citizen : directCitizens) {
             ListItem item = ListItem.forCitizen(citizen);
-            if (editingCitizen != null && citizen.getId().equals(editingCitizen.getId())) {
+            if (activeCitizen != null && citizen.getId().equals(activeCitizen.getId())) {
                 item.setEditing(true);
             }
             unifiedList.add(item);
@@ -1789,12 +1835,152 @@ public class CitizensUI {
                     continue;
                 }
                 ListItem item = ListItem.forCitizen(citizen);
-                if (editingCitizen != null && citizen.getId().equals(editingCitizen.getId())) {
+                if (activeCitizen != null && citizen.getId().equals(activeCitizen.getId())) {
                     item.setEditing(true);
                 }
                 unifiedList.add(item);
             }
         }
+
+        return new LeftPanelContext(allCitizens, unifiedList, searchQuery != null ? searchQuery : "", normalizedViewingGroup, isViewingSpecificGroup);
+    }
+
+    public String getCitizensManagerLeftPanelHtml() {
+        return """
+                <!-- LEFT PANEL: CITIZENS MANAGER -->
+                <div class="main-container decorated-container" style="anchor-width: 600; anchor-height: 900; margin: 0 20 0 0;">
+                    <!-- Header -->
+                    <div class="header container-title">
+                        <div class="header-content">
+                            <p class="header-title">Citizens Manager</p>
+                        </div>
+                    </div>
+            
+                    <!-- Body -->
+                    <div class="body" data-hyui-scrollbar-style='"Common.ui" "DefaultScrollbarStyle"' style="layout-mode: TopScrolling; flex-weight: 1;">
+                        <!-- Top Row -->
+                        <div style="layout: left; width: 100%; vertical-align: center;">
+                            <button id="start-create" class="secondary-button" style="anchor-width: 150;">CREATE</button>
+                            <div style="flex-weight: 1;"></div>
+                            <p style="color: #cccccc; vertical-align: center;">Total Citizens: {{$citizenCount}}</p>
+                        </div>
+                        <div class="spacer-sm"></div>
+                        
+                        <!-- Search Bar -->
+                        <div class="form-row" style="layout: left;">
+                            <div class="form-group" style="flex-weight: 1;">
+                                <p class="form-label">Search Citizens & Groups</p>
+                                <input id="search-input" type="text" class="form-input" placeholder="Search by name, ID, or group..." value="{{$searchQuery}}" />
+                            </div>
+                            <div class="spacer-h-sm"></div>
+                            <button id="search-btn" class="secondary-button" style="anchor-width: 100; anchor-height: 40;">SEARCH</button>
+                        </div>
+                        <div class="spacer-sm"></div>
+
+                        {{#if isViewingGroup}}
+                        <!-- Viewing Specific Group -->
+                        <div class="form-row">
+                            <button id="back-to-all" class="secondary-button" style="anchor-width: 80;">Back</button>
+                            <div class="spacer-h-sm"></div>
+                            <button id="new-child-group-btn" class="secondary-button" style="anchor-width: 130;">New Child</button>
+                            <div class="spacer-h-sm"></div>
+                            <button id="move-current-group-btn" class="secondary-button" style="anchor-width: 100;">Move</button>
+                            <div class="spacer-h-sm"></div>
+                            <button id="respawn-current-group-btn" class="secondary-button" style="anchor-width: 120;">Respawn</button>
+                        </div>
+                        <div class="form-row">
+                            <div style="flex-weight: 1; layout: center;">
+                                <p style="font-size: 16; font-weight: bold; color: #FFFFFF;">Group: {{$viewingGroup}}</p>
+                            </div>
+                        </div>
+                        <div class="spacer-sm"></div>
+                        {{/if}}
+                        
+                        <!-- List -->
+                        {{#if hasCitizens}}
+                        <div class="list-container" data-hyui-scrollbar-style='"Common.ui" "DefaultScrollbarStyle"'>
+                            {{#each unifiedList}}
+                            {{#if !isGroup}}
+                            <!-- Citizen Item -->
+                            <div class="list-item{{#if isEditing}} list-item-selected{{/if}}" style="text-align: left; width: 100%; vertical-align: center;">
+                                <!-- Headshot Thumbnail (Commented out: HyUI limits dynamic image slots to 25 per page)
+                                {{#if hasThumbnail}}
+                                <img id="avatar-{{$citizenId}}" class="dynamic-image" src="{{$thumbnailUrl}}" style="anchor-width: 44; anchor-height: 44; margin: 0 14 0 0; border-radius: 6; border: 1 solid #2b4260;" />
+                                {{/if}}
+                                -->
+                                <div class="list-item-content">
+                                    <p class="list-item-title">{{$citizenName}}</p>
+                                    <p class="list-item-subtitle">Model: {{$citizenModelId}} | Scale: {{$citizenScale}}</p>
+                                    <p class="list-item-meta">ID: {{$citizenIdShort}}{{#if $citizenGroup}} | Group: {{$citizenGroup}}{{/if}}</p>
+                                </div>
+                                <div class="list-item-actions" style="vertical-align: center;">
+                                    <button id="select-citizen-{{$citizenId}}" class="secondary-button small-secondary-button" style="anchor-width: 90;">EDIT</button>
+                                </div>
+                            </div>
+                            {{else}}
+                            <!-- Group Item -->
+                            <div class="list-item" style="background: rgba(100, 100, 255, 0.1); width: 100%; vertical-align: center; padding: 10 14 10 14;">
+                                <div class="list-item-content">
+                                    <p class="list-item-title">{{$groupName}}</p>
+                                    <p class="list-item-subtitle">Click to view citizens in this group</p>
+                                </div>
+                                <div class="list-item-actions" style="vertical-align: center;">
+                                    <button id="view-group-{{$groupId}}" class="secondary-button small-secondary-button" style="anchor-width: 90;">VIEW</button>
+                                </div>
+                            </div>
+                            {{/if}}
+                            <div class="spacer-sm"></div>
+                            {{/each}}
+                            <div class="spacer-xl"></div>
+                        </div>
+                        {{else}}
+                        <div class="empty-state">
+                            <div class="empty-state-content">
+                                <p class="empty-state-title">No Citizens Yet</p>
+                                <p class="empty-state-description">Click CREATE to add your first citizen!</p>
+                            </div>
+                        </div>
+                        {{/if}}
+                        <div class="spacer-lg"></div>
+                    </div>
+
+                    <!-- Footer (Static) -->
+                    <div class="footer" style="layout: center; flex-weight: 0; padding: 26 16 26 16; border-top: 1 solid #1a293c; width: 100%; vertical-align: center;">
+                        <div class="form-row" style="layout: left; horizontal-align: center; vertical-align: center; width: 100%;">
+                            <button id="edit-closest-btn" class="secondary-button" style="anchor-width: 170;">Edit Closest</button>
+                            <div class="spacer-h-sm"></div>
+                            <button id="get-citizen-stick-btn" class="secondary-button" style="anchor-width: 170;">Citizen Stick</button>
+                            <div class="spacer-h-sm"></div>
+                            <button id="respawn-all-btn" class="secondary-button" style="anchor-width: 170;">Respawn All</button>
+                        </div>
+                    </div>
+                </div>
+                """;
+    }
+
+    public String wrapSideBySideHtml(TemplateProcessor template, LeftPanelContext ctx, String rightPanelHtml) {
+        template.setVariable("citizenCount", ctx.allCitizens().size())
+                .setVariable("unifiedList", ctx.unifiedList())
+                .setVariable("hasCitizens", !ctx.unifiedList().isEmpty())
+                .setVariable("searchQuery", escapeHtml(ctx.searchQuery()))
+                .setVariable("viewingGroup", escapeHtml(ctx.normalizedViewingGroup()))
+                .setVariable("isViewingGroup", ctx.isViewingSpecificGroup());
+
+        return getSharedStyles() + """
+                <div class="page-overlay">
+                    <div style="layout: left; horizontal-align: center; vertical-align: center; width: 100%; height: 100%; padding: 20;">
+                """
+                + getCitizensManagerLeftPanelHtml()
+                + rightPanelHtml
+                + """
+                    </div>
+                </div>
+                """;
+    }
+
+    private void openMainGUI(@Nonnull PlayerRef playerRef, @Nonnull Store<EntityStore> store, @Nonnull Tab currentTab, @Nonnull String searchQuery, @Nullable String viewingGroup, @Nullable CitizenData editingCitizen, boolean draftMapMarkerEnabled, @Nullable String draftMapMarkerType, @Nullable String draftMapMarkerName, @Nullable String draftMapMarkerCustomIcon, float draftMapMarkerMaxDistance) {
+        pendingFollowSelections.remove(playerRef.getUuid());
+        LeftPanelContext ctx = prepareLeftPanelContext(playerRef, searchQuery, viewingGroup, editingCitizen);
 
         // Right Panel logic
         List<String> allGroups = plugin.getCitizensManager().getAllGroups();
@@ -1804,14 +1990,8 @@ public class CitizensUI {
         Set<String> playerCollapsed = collapsedSections.computeIfAbsent(playerRef.getUuid(), k -> ConcurrentHashMap.newKeySet());
 
         TemplateProcessor template = createBaseTemplate()
-                .setVariable("citizenCount", allCitizens.size())
                 .setVariable("isCreateTab", currentTab == Tab.CREATE)
                 .setVariable("isManageTab", currentTab == Tab.MANAGE)
-                .setVariable("unifiedList", unifiedList)
-                .setVariable("hasCitizens", !unifiedList.isEmpty())
-                .setVariable("searchQuery", escapeHtml(searchQuery))
-                .setVariable("viewingGroup", escapeHtml(normalizedViewingGroup))
-                .setVariable("isViewingGroup", isViewingSpecificGroup)
                 .setVariable("hasEditingCitizen", editingCitizen != null)
                 .setVariable("basicInfoCollapsed", playerCollapsed.contains("basic-info"))
                 .setVariable("groupCollapsed", playerCollapsed.contains("group"))
@@ -1847,119 +2027,10 @@ public class CitizensUI {
                     .setVariable("entityOptions", generateEntityDropdownOptions(editingCitizen.getModelId()));
         }
 
-        String html = template.process(getSharedStyles() + """
-            <div class="page-overlay">
-                <div style="layout: left; horizontal-align: center; vertical-align: center; width: 100%; height: 100%; padding: 20;">
-                    <!-- LEFT PANEL: CITIZENS MANAGER -->
-                    <div class="main-container decorated-container" style="anchor-width: 480; anchor-height: 900; margin: 0 20 0 0;">
-                        <!-- Header -->
-                        <div class="header container-title">
-                            <div class="header-content">
-                                <p class="header-title">Citizens Manager</p>
-                            </div>
-                        </div>
-                
-                        <!-- Body -->
-                        <div class="body" data-hyui-scrollbar-style='"Common.ui" "DefaultScrollbarStyle"' style="layout-mode: TopScrolling; flex-weight: 1;">
-                            <!-- Top Row -->
-                            <div style="layout: left; width: 100%; vertical-align: center;">
-                                <button id="start-create" class="secondary-button" style="anchor-width: 150;">CREATE</button>
-                                <div style="flex-weight: 1;"></div>
-                                <p style="color: #cccccc; vertical-align: center;">Total Citizens: {{$citizenCount}}</p>
-                            </div>
-                            <div class="spacer-sm"></div>
-                            
-                            <!-- Search Bar -->
-                            <div class="form-row" style="layout: left;">
-                                <div class="form-group" style="flex-weight: 1;">
-                                    <p class="form-label">Search Citizens & Groups</p>
-                                    <input id="search-input" type="text" class="form-input" placeholder="Search by name, ID, or group..." value="{{$searchQuery}}" />
-                                </div>
-                                <div class="spacer-h-sm"></div>
-                                <button id="search-btn" class="secondary-button" style="anchor-width: 100; anchor-height: 40;">SEARCH</button>
-                            </div>
-                            <div class="spacer-sm"></div>
-
-                            {{#if isViewingGroup}}
-                            <!-- Viewing Specific Group -->
-                            <div class="form-row">
-                                <button id="back-to-all" class="secondary-button" style="anchor-width: 80;">Back</button>
-                                <div class="spacer-h-sm"></div>
-                                <button id="new-child-group-btn" class="secondary-button" style="anchor-width: 130;">New Child</button>
-                                <div class="spacer-h-sm"></div>
-                                <button id="move-current-group-btn" class="secondary-button" style="anchor-width: 100;">Move</button>
-                                <div class="spacer-h-sm"></div>
-                                <button id="respawn-current-group-btn" class="secondary-button" style="anchor-width: 120;">Respawn</button>
-                            </div>
-                            <div class="form-row">
-                                <div style="flex-weight: 1; layout: center;">
-                                    <p style="font-size: 16; font-weight: bold; color: #FFFFFF;">Group: {{$viewingGroup}}</p>
-                                </div>
-                            </div>
-                            <div class="spacer-sm"></div>
-                            {{/if}}
-                            
-                            <!-- List -->
-                            {{#if hasCitizens}}
-                            <div class="list-container" data-hyui-scrollbar-style='"Common.ui" "DefaultScrollbarStyle"'>
-                                {{#each unifiedList}}
-                                {{#if !isGroup}}
-                                <!-- Citizen Item -->
-                                <div class="list-item{{#if isEditing}} list-item-selected{{/if}}" style="text-align: left; width: 100%;">
-                                    <!-- Thumbnail -->
-                                    <div style="anchor-width: 48; anchor-height: 48; background: rgba(0,0,0,0.5); margin: 0 15 0 0;">
-                                        <img src="asset://electro/HyCitizensData/UI/WorldMap/MapMarkers/{{$thumbnailImage}}" style="anchor-width: 48; anchor-height: 48;" />
-                                    </div>
-                                    <div class="list-item-content">
-                                        <p class="list-item-title">{{$citizenName}}</p>
-                                        <p class="list-item-subtitle">Model: {{$citizenModelId}} | Scale: {{$citizenScale}}</p>
-                                        <p class="list-item-meta">ID: {{$citizenIdShort}}{{#if $citizenGroup}} | Group: {{$citizenGroup}}{{/if}}</p>
-                                    </div>
-                                    <div class="list-item-actions">
-                                        <button id="select-citizen-{{$citizenId}}" class="secondary-button" style="anchor-width: 110; anchor-height: 32; font-size: 13;">EDIT</button>
-                                    </div>
-                                </div>
-                                {{else}}
-                                <!-- Group Item -->
-                                <div class="list-item" style="background: rgba(100, 100, 255, 0.1);">
-                                    <div class="list-item-content">
-                                        <p class="list-item-title">{{$groupName}}</p>
-                                        <p class="list-item-subtitle">Click to view citizens in this group</p>
-                                    </div>
-                                    <div class="list-item-actions">
-                                        <button id="view-group-{{$groupId}}" class="secondary-button" style="anchor-width: 120; anchor-height: 32; font-size: 13;">VIEW</button>
-                                    </div>
-                                </div>
-                                {{/if}}
-                                <div class="spacer-sm"></div>
-                                {{/each}}
-                                <div class="spacer-xl"></div>
-                            </div>
-                            {{else}}
-                            <div class="empty-state">
-                                <div class="empty-state-content">
-                                    <p class="empty-state-title">No Citizens Yet</p>
-                                    <p class="empty-state-description">Click CREATE to add your first citizen!</p>
-                                </div>
-                            </div>
-                            {{/if}}
-                            <div class="spacer-lg"></div>
-                        </div>
-
-                        <!-- Footer (Static) -->
-                        <div class="footer" style="layout: center; flex-weight: 0; padding: 26 16 26 16; border-top: 1 solid #1a293c; width: 100%; vertical-align: center;">
-                            <div class="form-row" style="layout: left; horizontal-align: center; vertical-align: center; width: 100%;">
-                                <button id="edit-closest-btn" class="secondary-button" style="anchor-width: 130;">Edit Closest</button>
-                                <div class="spacer-h-sm"></div>
-                                <button id="get-citizen-stick-btn" class="secondary-button" style="anchor-width: 130;">Citizen Stick</button>
-                                <div class="spacer-h-sm"></div>
-                                <button id="respawn-all-btn" class="secondary-button" style="anchor-width: 130;">Respawn All</button>
-                            </div>
-                        </div>
-                    </div>
-
+        String rightPanelHtml;
+        if (editingCitizen != null) {
+            rightPanelHtml = """
                     <!-- RIGHT PANEL: EDIT CITIZEN -->
-                    {{#if hasEditingCitizen}}
                     <div class="main-container decorated-container" style="anchor-width: 900; anchor-height: 900;">
                         <!-- Header -->
                         <div class="header container-title">
@@ -1981,8 +2052,9 @@ public class CitizensUI {
                 
                             <!-- Basic Information Section -->
                             <div class="section">
-                                <div class="section-header" style="background-color: #21324a(0.4); layout: center; horizontal-align: center;">
-                                    <p class="section-title" style="text-align: center; width: 100%;">Basic Information</p>
+                                <div class="section-header" style="background-color: #21324a(0.4);">
+                                    <p class="section-title">Basic Information</p>
+                                    <p class="section-description">Set the citizen's name and display settings</p>
                                 </div>
                                 <div class="spacer-sm"></div>
                                 <div class="form-row">
@@ -2018,28 +2090,23 @@ public class CitizensUI {
                                         </div>
                                         {{#if mapMarkerEnabled}}
                                         <div class="spacer-sm"></div>
-                                        <div class="form-row">
-                                            <div class="form-col" style="padding: 0 8 0 0; flex-weight: 1;">
-                                                <div class="form-group">
-                                                    <p class="form-label">Map Marker Type</p>
-                                                    <select id="map-marker-type" data-hyui-showlabel="true">{{{$mapMarkerTypeOptions}}}</select>
-                                                </div>
-                                            </div>
-                                            <div class="form-col" style="padding: 0 0 0 8; flex-weight: 1;">
-                                                <div class="form-group">
-                                                    <p class="form-label">Marker Name</p>
-                                                    <input type="text" id="map-marker-name" class="form-input" value="{{$mapMarkerName}}" placeholder="Leave empty" maxlength="64" style="width: 100%;" />
-                                                </div>
-                                            </div>
+                                        <div class="form-group">
+                                            <p class="form-label">Map Marker Type</p>
+                                            <select id="map-marker-type" data-hyui-showlabel="true">{{{$mapMarkerTypeOptions}}}</select>
+                                        </div>
+                                        <div class="spacer-sm"></div>
+                                        <div class="form-group">
+                                            <p class="form-label">Marker Name</p>
+                                            <input type="text" id="map-marker-name" class="form-input" value="{{$mapMarkerName}}" placeholder="Leave empty for citizen name" maxlength="64" style="width: 100%;" />
                                         </div>
                                         {{#if isCustomMapMarker}}
-                                        <div class="spacer-xs"></div>
+                                        <div class="spacer-sm"></div>
                                         <div class="form-group">
                                             <p class="form-label">Custom Marker Image</p>
                                             <select id="map-marker-custom-icon" data-hyui-showlabel="true">{{{$mapMarkerCustomIconOptions}}}</select>
                                         </div>
                                         {{/if}}
-                                        <div class="spacer-xs"></div>
+                                        <div class="spacer-sm"></div>
                                         <div class="form-group">
                                             {{@numberField:id=map-marker-max-distance,label=Display View Distance,value={{$mapMarkerMaxDistance}},placeholder=0,min=0,max=100000,step=1,decimals=0,hint=0 uses the map view distance}}
                                         </div>
@@ -2052,11 +2119,11 @@ public class CitizensUI {
  
                             <!-- Group Section -->
                             <div class="section">
-                                <div class="section-header" style="background-color: #21324a(0.4); layout: center; horizontal-align: center;">
-                                    <p class="section-title" style="text-align: center; width: 100%;">Group</p>
+                                <div class="section-header" style="background-color: #21324a(0.4);">
+                                    <p class="section-title">Group</p>
+                                    <p class="section-description">Organize citizens into groups for easier management</p>
                                 </div>
                                 <div class="spacer-sm"></div>
-                                <p class="section-description">Organize citizens into groups for easier management</p>
                                 <div class="form-row">
                                     <!-- Left Column: Select Existing Group -->
                                     <div class="form-col" style="padding: 0 15 0 15; flex-weight: 1;">
@@ -2083,8 +2150,9 @@ public class CitizensUI {
  
                             <!-- Entity Selection & Scaling -->
                             <div class="section">
-                                <div class="section-header" style="background-color: #21324a(0.4); layout: center; horizontal-align: center;">
-                                    <p class="section-title" style="text-align: center; width: 100%;">Entity Selection & Scaling</p>
+                                <div class="section-header" style="background-color: #21324a(0.4);">
+                                    <p class="section-title">Entity Selection & Scaling</p>
+                                    <p class="section-description">Choose model type, skin, and scale</p>
                                 </div>
                                 <div class="spacer-sm"></div>
                                 <div class="form-row" style="horizontal-align: center;">
@@ -2171,8 +2239,9 @@ public class CitizensUI {
                             
                             <!-- Permissions -->
                             <div class="section">
-                                <div class="section-header" style="background-color: #21324a(0.4); layout: center; horizontal-align: center;">
-                                    <p class="section-title" style="text-align: center; width: 100%;">Permissions</p>
+                                <div class="section-header" style="background-color: #21324a(0.4);">
+                                    <p class="section-title">Permissions</p>
+                                    <p class="section-description">Restrict interaction permissions</p>
                                 </div>
                                 <div class="spacer-sm"></div>
                                 <div class="form-row">
@@ -2197,11 +2266,11 @@ public class CitizensUI {
  
                             <!-- Advanced Configuration Section -->
                             <div class="section">
-                                <div class="section-header" style="background-color: #21324a(0.4); layout: center; horizontal-align: center;">
-                                    <p class="section-title" style="text-align: center; width: 100%;">Advanced Configuration</p>
+                                <div class="section-header" style="background-color: #21324a(0.4);">
+                                    <p class="section-title">Advanced Configuration</p>
+                                    <p class="section-description">Open specialized editors and apply setup changes</p>
                                 </div>
                                 <div class="spacer-sm"></div>
-                                <p class="section-description" style="text-align: center;">Open specialized editors and apply setup changes</p>
                                 <div class="form-row" style="width: 100%; horizontal-align: center;">
                                     <button id="edit-commands-btn" class="secondary-button" style="flex-weight: 0; anchor-width: 190; anchor-height: 44;">Commands</button>
                                     <div class="spacer-h-sm"></div>
@@ -2244,18 +2313,84 @@ public class CitizensUI {
                             </div>
                         </div>
                     </div>
-                    {{/if}}
-                </div>
-            </div>
-            """);
+                    """;
+        } else {
+            rightPanelHtml = """
+                    <!-- RIGHT PANEL: CITIZENS OVERVIEW -->
+                    <div class="main-container decorated-container" style="anchor-width: 900; anchor-height: 900;">
+                        <div class="header container-title">
+                            <div class="header-content">
+                                <p class="header-title">Citizens Manager</p>
+                            </div>
+                        </div>
+
+                        <div class="body" style="layout: center; flex-direction: column; align-items: center; justify-content: center; flex-weight: 1; padding: 40;">
+                            <div class="stat-card" style="layout: center; flex-direction: column; align-items: center; width: 620; padding: 36; border-radius: 12; background: #141f2e;">
+                                <p style="font-size: 24; font-weight: bold; color: #FFFFFF; text-align: center;">Select a Citizen to Edit</p>
+                                <div class="spacer-sm"></div>
+                                <p style="font-size: 14; color: #9bb7d4; text-align: center; line-height: 1.5;">Choose any citizen or group from the list on the left to view and modify their settings, or create a brand new citizen.</p>
+                                <div class="spacer-lg"></div>
+                                <div class="form-row" style="layout: center; horizontal-align: center;">
+                                    <button id="overview-create-btn" class="secondary-button" style="anchor-width: 220; anchor-height: 44;">CREATE CITIZEN</button>
+                                    <div class="spacer-h-md"></div>
+                                    <button id="overview-closest-btn" class="secondary-button" style="anchor-width: 220; anchor-height: 44;">EDIT CLOSEST</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    """;
+        }
+
+        String html = template.process(wrapSideBySideHtml(template, ctx, rightPanelHtml));
 
         PageBuilder page = PageBuilder.pageForPlayer(playerRef)
                 .withLifetime(CustomPageLifetime.CanDismiss)
                 .fromHtml(HtmlUtils.sanitizeHtmlForHyUI(html));
 
-        setupMainEventListeners(page, playerRef, store, currentTab, unifiedList, searchQuery, viewingGroup, editingCitizen);
+        setupMainEventListeners(page, playerRef, store, currentTab, ctx.unifiedList(), searchQuery, viewingGroup, editingCitizen);
         if (editingCitizen != null) {
             setupEditCitizenListeners(page, playerRef, store, editingCitizen, draftMapMarkerEnabled, draftMapMarkerType, draftMapMarkerName, draftMapMarkerCustomIcon, draftMapMarkerMaxDistance);
+        } else {
+            try {
+                page.addEventListener("overview-create-btn", CustomUIEventBindingType.Activating, event ->
+                        openCreateCitizenGUI(playerRef, store));
+            } catch (IllegalArgumentException ignored) {}
+            try {
+                page.addEventListener("overview-closest-btn", CustomUIEventBindingType.Activating, event -> {
+                    UUID worldUUID = playerRef.getWorldUuid();
+                    if (worldUUID == null) {
+                        playerRef.sendMessage(Message.raw("Could not determine your world.").color(Color.RED));
+                        return;
+                    }
+
+                    Vector3d playerPos = new Vector3d(playerRef.getTransform().getPosition());
+                    List<CitizenData> nearby = plugin.getCitizensManager().getCitizensNear(playerPos, 75.0);
+                    CitizenData closest = null;
+                    double closestDistSq = Double.MAX_VALUE;
+
+                    for (CitizenData candidate : nearby) {
+                        if (!worldUUID.equals(candidate.getWorldUUID())) {
+                            continue;
+                        }
+                        Vector3d candidatePos = candidate.getCurrentPosition() != null ? candidate.getCurrentPosition() : candidate.getPosition();
+                        double dx = candidatePos.x - playerPos.x;
+                        double dy = candidatePos.y - playerPos.y;
+                        double dz = candidatePos.z - playerPos.z;
+                        double distSq = dx * dx + dy * dy + dz * dz;
+                        if (distSq < closestDistSq) {
+                            closestDistSq = distSq;
+                            closest = candidate;
+                        }
+                    }
+
+                    if (closest == null) {
+                        playerRef.sendMessage(Message.raw("No nearby citizen found within 75 blocks.").color(Color.RED));
+                        return;
+                    }
+
+                    openEditCitizenGUI(playerRef, store, closest);
+                });
+            } catch (IllegalArgumentException ignored) {}
         }
 
         page.open(store);
@@ -2314,14 +2449,16 @@ public class CitizensUI {
                 .setVariable("useLiveSkin", useLiveSkin)
                 .setVariable("skinUsername", escapeHtml(skinUsername))
                 .setVariable("rotateTowardsPlayer", rotateTowardsPlayer)
-                .setVariable("lookAtDistance", lookAtDistance)
+.setVariable("lookAtDistance", lookAtDistance)
                 .setVariable("nametagSummary", buildNametagSummary(name, nametagOffset, hideNametag, modelNametagEnabled,
                         nametagModelId, nametagModelScale, rotateNametagTowardsPlayer))
                 .setVariable("entityOptions", generateEntityDropdownOptions(modelId.isEmpty() ? "PlayerTestModel_V" : modelId));
 
-        String html = template.process(getSharedStyles() + """
-                <div class="page-overlay">
-                    <div class="main-container decorated-container" style="anchor-width: 900; anchor-height: 860;">
+        LeftPanelContext ctx = prepareLeftPanelContext(playerRef, "", group, null);
+
+        String rightPanelHtml = """
+                    <!-- RIGHT PANEL: CREATE NEW CITIZEN -->
+                    <div class="main-container decorated-container" style="anchor-width: 900; anchor-height: 900;">
                 
                         <!-- Header -->
                         <div class="header container-title">
@@ -2331,7 +2468,7 @@ public class CitizensUI {
                         </div>
                 
                         <!-- Body -->
-                        <div class="body" data-hyui-scrollbar-style='"Common.ui" "DefaultScrollbarStyle"' style="layout-mode: TopScrolling;">
+                        <div class="body" data-hyui-scrollbar-style='"Common.ui" "DefaultScrollbarStyle"' style="layout-mode: TopScrolling; flex-weight: 1;">
 
                             <p class="page-description">Configure your new NPC's appearance and behavior</p>
                             <div class="spacer-sm"></div>
@@ -2343,96 +2480,91 @@ public class CitizensUI {
                 
                             <!-- Basic Information Section -->
                             <div class="section">
-                                {{@sectionHeader:title=Basic Information,description=Set the citizen's name and display settings}}
-                 
-                                <div class="form-row" style="horizontal-align: center;">
-                                     <div class="form-col-fixed" style="anchor-width: 460;">
-                                         <div class="form-group">
-                                             <p class="form-label">Citizen Name *</p>
-                                             <input type="text" id="citizen-name" class="form-input" value="{{$name}}"\s
-                                                    placeholder="Enter a display name" />
-                                             <div class="spacer-xs"></div>
-                                             <p class="form-hint" style="text-align: center;">Supports {bold}, {italic}, {underline}, {strikethrough}, {red}, {#FFFFF}, {red-}gradient{-blue}</p>
-                                             <div class="spacer-xs"></div>
-                                             <button id="nametag-settings-btn" class="secondary-button small-secondary-button" style="anchor-width: 210;">Nametag Settings</button>
-                                             <div class="spacer-xs"></div>
-                                             <p class="form-hint" style="text-align: center;">{{$nametagSummary}}</p>
-                                         </div>
-                                     </div>
+                                <div class="section-header" style="background-color: #21324a(0.4);">
+                                    <p class="section-title">Basic Information</p>
+                                    <p class="section-description">Set the citizen's name and display settings</p>
                                 </div>
-
                                 <div class="spacer-sm"></div>
-
-                                <div class="checkbox-row">
-                                    <input type="checkbox" id="hide-npc-check" {{#if hideNpc}}checked{{/if}} />
-                                    <div style="layout: top; flex-weight: 0; text-align: center;">
-                                        <p class="checkbox-label">Hide NPC</p>
-                                        <p class="checkbox-description">Hide the NPC entity</p>
+                                <div class="form-row">
+                                    <!-- Left Column: Name & Nametag & Hide NPC -->
+                                    <div class="form-col" style="padding: 0 15 0 15; flex-weight: 1;">
+                                        <div class="form-group">
+                                            <p class="form-label">Citizen Name *</p>
+                                            <input type="text" id="citizen-name" class="form-input" value="{{$name}}" placeholder="Enter a display name" maxlength="256" style="width: 100%;" />
+                                            <p class="form-hint" style="text-align: center;">{bold}, {italic}, {underline}, {strikethrough}, {red}, {#FFFFF}, {red-}gradient{-blue}</p>
+                                        </div>
+                                        <div class="spacer-sm"></div>
+                                        <button id="nametag-settings-btn" class="secondary-button" style="width: 100%;">Nametag Settings</button>
+                                        <div class="spacer-xs"></div>
+                                        <p class="form-hint" style="text-align: center;">{{$nametagSummary}}</p>
+                                        <div class="spacer-sm"></div>
+                                        <div class="checkbox-row">
+                                            <input type="checkbox" id="hide-npc-check" {{#if hideNpc}}checked{{/if}} />
+                                            <div style="layout: top; flex-weight: 1; padding-left: 10;">
+                                                <p class="checkbox-label">Hide NPC</p>
+                                                <p class="checkbox-description">Hide the NPC entity</p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    
+                                    <!-- Right Column: Map Marker Settings -->
+                                    <div class="form-col" style="padding: 0 15 0 15; flex-weight: 1;">
+                                        <div class="checkbox-row">
+                                            <input type="checkbox" id="map-marker-check" {{#if mapMarkerEnabled}}checked{{/if}} />
+                                            <div style="layout: top; flex-weight: 1; padding-left: 10;">
+                                                <p class="checkbox-label">Show Map Marker</p>
+                                                <p class="checkbox-description">Add this citizen to the world map</p>
+                                            </div>
+                                        </div>
+                                        {{#if mapMarkerEnabled}}
+                                        <div class="spacer-sm"></div>
+                                        <div class="form-group">
+                                            <p class="form-label">Map Marker Type</p>
+                                            <select id="map-marker-type" data-hyui-showlabel="true">{{{$mapMarkerTypeOptions}}}</select>
+                                        </div>
+                                        <div class="spacer-sm"></div>
+                                        <div class="form-group">
+                                            <p class="form-label">Marker Name</p>
+                                            <input type="text" id="map-marker-name" class="form-input" value="{{$mapMarkerName}}" placeholder="Leave empty for citizen name" maxlength="64" style="width: 100%;" />
+                                        </div>
+                                        {{#if isCustomMapMarker}}
+                                        <div class="spacer-sm"></div>
+                                        <div class="form-group">
+                                            <p class="form-label">Custom Marker Image</p>
+                                            <select id="map-marker-custom-icon" data-hyui-showlabel="true">{{{$mapMarkerCustomIconOptions}}}</select>
+                                        </div>
+                                        {{/if}}
+                                        <div class="spacer-sm"></div>
+                                        <div class="form-group">
+                                            {{@numberField:id=map-marker-max-distance,label=Display View Distance,value={{$mapMarkerMaxDistance}},placeholder=0,min=0,max=100000,step=1,decimals=0,hint=0 uses the map view distance}}
+                                        </div>
+                                        {{/if}}
                                     </div>
                                 </div>
-                                <div class="spacer-xs"></div>
-                                <div class="checkbox-row">
-                                    <input type="checkbox" id="map-marker-check" {{#if mapMarkerEnabled}}checked{{/if}} />
-                                    <div style="layout: top; flex-weight: 0; text-align: center;">
-                                        <p class="checkbox-label">Show Map Marker</p>
-                                        <p class="checkbox-description">Add this citizen to the world map</p>
-                                    </div>
-                                </div>
-                                {{#if mapMarkerEnabled}}
-                                <div class="spacer-xs"></div>
-                                <div class="form-group" style="anchor-width: 360;">
-                                    <p class="form-label">Map Marker Type</p>
-                                    <select id="map-marker-type" data-hyui-showlabel="true">
-                                        {{{$mapMarkerTypeOptions}}}
-                                    </select>
-                                    <p class="form-hint">Used when Show Map Marker is enabled</p>
-                                </div>
-                                <div class="spacer-xs"></div>
-                                <div class="form-group" style="anchor-width: 360;">
-                                    <p class="form-label">Marker Name</p>
-                                    <input type="text" id="map-marker-name" class="form-input" value="{{$mapMarkerName}}"
-                                           placeholder="Leave empty to use citizen name" maxlength="64" />
-                                    <p class="form-hint">Leave empty to use the citizen name</p>
-                                </div>
-                                {{#if isCustomMapMarker}}
-                                <div class="spacer-xs"></div>
-                                <div class="form-group" style="anchor-width: 420;">
-                                    <p class="form-label">Custom Marker Image</p>
-                                    <select id="map-marker-custom-icon" data-hyui-showlabel="true">
-                                        {{{$mapMarkerCustomIconOptions}}}
-                                    </select>
-                                    <p class="form-hint">Put PNG images in {{$customMarkerDirectory}}</p>
-                                </div>
-                                {{/if}}
-                                <div class="spacer-xs"></div>
-                                <div class="form-group" style="anchor-width: 360;">
-                                    {{@numberField:id=map-marker-max-distance,label=Display View Distance,value={{$mapMarkerMaxDistance}},placeholder=0,min=0,max=100000,step=1,decimals=0,hint=0 uses the map view distance}}
-                                </div>
-                                {{/if}}
                             </div>
-
+                
                             <div class="spacer-md"></div>
                 
                             <!-- Group Section -->
                             <div class="section">
                                 {{@sectionHeader:title=Group,description=Organize citizens into groups for easier management}}
-                
-                                <div class="form-group">
-                                    <p class="form-label" style="text-align: center;">Select Existing Group</p>
-                                    <select id="group-dropdown" data-hyui-showlabel="true">
-                                        {{{$groupOptions}}}
-                                    </select>
-                                    <p class="form-hint" style="text-align: center;">Choose from existing groups</p>
-                                </div>
-                
-                                <div class="spacer-sm"></div>
-                                <div class="divider"></div>
-                                <div class="spacer-sm"></div>
-                
-                                <div class="form-group">
-                                    <p class="form-label" style="text-align: center;">Or Enter New Group Name</p>
-                                    <input type="text" id="group-custom" class="form-input" value="{{$group}}" placeholder="Enter group name or leave empty" style="anchor-width: 200;" />
-                                    <p class="form-hint" style="text-align: center;">Type a group name to create a new group or use an existing one</p>
+                                
+                                <div class="form-row" style="horizontal-align: center;">
+                                    <div class="form-col-fixed" style="anchor-width: 460;">
+                                        <div class="form-group">
+                                            <p class="form-label">Select Existing Group</p>
+                                            <select id="group-dropdown" data-hyui-showlabel="true">
+                                                {{{$groupOptions}}}
+                                            </select>
+                                            <p class="form-hint" style="text-align: center;">Choose from existing groups</p>
+                                        </div>
+                                        <div class="spacer-sm"></div>
+                                        <div class="form-group">
+                                            <p class="form-label">Or Enter New Group Name</p>
+                                            <input type="text" id="group-custom" class="form-input" value="{{$group}}" placeholder="Enter group name or leave empty" style="width: 100%;" />
+                                            <p class="form-hint" style="text-align: center;">Type a group name to create a new group or use an existing one</p>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
                 
@@ -2442,89 +2574,73 @@ public class CitizensUI {
                             <div class="section">
                                 {{@sectionHeader:title=Entity Type,description=Choose whether this citizen uses a player model or another entity}}
                 
-                                <div class="toggle-group">
-                                    <button id="type-player" class="secondary-button toggle-btn{{#if isPlayerModel}} toggle-active{{/if}}" style="anchor-width: 360; anchor-height: 48;">Player Model</button>
-                                    <button id="type-entity" class="secondary-button toggle-btn{{#if !isPlayerModel}} toggle-active{{/if}}" style="anchor-width: 360; anchor-height: 48;">Other Entities</button>
+                                <div class="form-row" style="horizontal-align: center;">
+                                    <div class="toggle-group" style="layout: left;">
+                                        <button id="type-player" class="secondary-button toggle-btn{{#if isPlayerModel}} toggle-active{{/if}}" style="anchor-width: 200; anchor-height: 48;">Player Model</button>
+                                        <div class="spacer-h-sm"></div>
+                                        <button id="type-entity" class="secondary-button toggle-btn{{#if !isPlayerModel}} toggle-active{{/if}}" style="anchor-width: 200; anchor-height: 48;">Other Entities</button>
+                                    </div>
                                 </div>
                 
                                 <div class="spacer-md"></div>
                 
                                 {{#if isPlayerModel}}
-                                <!-- Player Skin Configuration -->
-                                <div class="card">
+                                <div class="card" style="width: 100%;">
                                     <div class="card-header" style="layout: center;">
-                                        <p class="card-title" style="text-align: center; flex-weight: 0;">Player Skin Configuration</p>
+                                        <p class="card-title" style="text-align: center;">Player Skin</p>
                                     </div>
                                     <div class="card-body">
-                                        <div class="form-group">
-                                            <p class="form-label" style="text-align: center;">Skin Username</p>
-                                            <div class="form-row">
-                                                <input type="text" id="skin-username" class="form-input" value="{{$skinUsername}}"
-                                                       placeholder="Enter username" style="anchor-width: 250;" />
-                                                <div class="spacer-h-sm"></div>
-                                                <button id="get-player-skin-btn" class="secondary-button small-secondary-button" style="anchor-width: 160;">Use My Skin</button>
-                                            </div>
-                                            <p class="form-hint" style="text-align: center;">Leave empty to use your current skin</p>
-                                        </div>
-
-                                        <div class="spacer-sm"></div>
-
-                                        <div class="form-group">
-                                            <button id="random-skin-btn" class="secondary-button" style="anchor-width: 225;">Random Skin</button>
-                                            <p class="form-hint" style="text-align: center;">Generate a random skin for this citizen</p>
-                                        </div>
-
-                                        <div class="spacer-sm"></div>
-                
-                                        <div class="checkbox-row">
+                                        <div class="checkbox-row" style="horizontal-align: center;">
                                             <input type="checkbox" id="live-skin-check" {{#if useLiveSkin}}checked{{/if}} />
-                                            <div style="layout: top; flex-weight: 0; text-align: center;">
-                                                <p class="checkbox-label">Enable Live Skin Updates</p>
-                                                <p class="checkbox-description">Automatically refresh the skin every 30 minutes</p>
-                                            </div>
+                                            <p class="checkbox-label" style="font-size: 16;">Use Live Player Skin</p>
                                         </div>
+                                        <div class="spacer-sm"></div>
+                                        
+                                        {{#if useLiveSkin}}
+                                        <div class="form-group" style="horizontal-align: center;">
+                                            <p class="form-label" style="text-align: center;">Target Username</p>
+                                            <input type="text" id="skin-username" class="form-input" value="{{$skinUsername}}" 
+                                                   placeholder="e.g., electro" style="width: 100%;" />
+                                        </div>
+                                        {{else}}
+                                        <div class="form-row" style="horizontal-align: center;">
+                                            <button id="get-player-skin-btn" class="secondary-button small-secondary-button" style="anchor-width: 160;">Use My Skin</button>
+                                            <div class="spacer-h-xs"></div>
+                                            <button id="random-skin-btn" class="secondary-button small-secondary-button" style="anchor-width: 160;">Random Skin</button>
+                                        </div>
+                                        {{/if}}
                                     </div>
                                 </div>
                                 {{else}}
-                                <!-- Entity Selection -->
-                                <div class="card">
-                                    <div class="card-header">
-                                        <p class="card-title" style="text-align: center; flex-weight: 0;">Entity Selection</p>
-                                    </div>
-                                    <div class="card-body">
+                                <div class="form-row" style="horizontal-align: center;">
+                                    <div class="form-col-fixed" style="anchor-width: 460;">
                                         <div class="form-group">
-                                            <p class="form-label" style="text-align: center;">Select Entity Type</p>
-                                            <select id="entity-dropdown" value="{{$modelId}}" data-hyui-showlabel="true">
-                                                {{$entityOptions}}
+                                            <p class="form-label">Entity Type</p>
+                                            <select id="entity-dropdown" data-hyui-showlabel="true">
+                                                {{{$entityOptions}}}
                                             </select>
                                             <p class="form-hint" style="text-align: center;">Choose from common entity types</p>
                                         </div>
-                
                                         <div class="spacer-sm"></div>
-                                        <div class="divider"></div>
-                                        <div class="spacer-sm"></div>
-                
                                         <div class="form-group">
-                                            <p class="form-label" style="text-align: center;">Or Enter An Entity/Model ID</p>
+                                            <p class="form-label">Or Enter An Entity/Model ID</p>
                                             <input type="text" id="citizen-model-id" class="form-input" value="{{$modelId}}"
-                                                   placeholder="e.g., PlayerTestModel_V, Sheep" maxlength="64" style="anchor-width: 200;" />
-                                            <p class="form-hint" style="text-align: center;">You can also type an entity/model ID</p>
+                                                   placeholder="e.g., PlayerTestModel_V, Sheep" maxlength="64" style="width: 100%;" />
+                                            <p class="form-hint" style="text-align: center;">Enter any valid entity ID</p>
                                         </div>
                                     </div>
                                 </div>
                                 {{/if}}
-                               <div class="checkbox-row">
+                                <div class="spacer-sm"></div>
+                                <div class="checkbox-row" style="horizontal-align: center;">
                                     <input type="checkbox" id="rotate-towards-player" {{#if rotateTowardsPlayer}}checked{{/if}} />
                                     <div style="layout: top; flex-weight: 0; text-align: center;">
                                         <p class="checkbox-label">Rotate Towards Player</p>
-                                        <p class="checkbox-description">The citizen will face players when they approach</p>
                                     </div>
                                 </div>
-                                <div class="spacer-xs"></div>
-                                <div class="form-row">
-                                    <div style="anchor-width: 260;">
-                                        {{@numberField:id=look-at-distance,label=Look-At Distance,value={{$lookAtDistance}},placeholder=25,min=0,max=200,step=1,decimals=0}}
-                                    </div>
+                                <div class="spacer-sm"></div>
+                                <div class="form-group" style="horizontal-align: center; anchor-width: 460;">
+                                    {{@numberField:id=look-at-distance,label=Look-At Distance,value={{$lookAtDistance}},placeholder=0.0,min=0,max=100,step=0.5,decimals=1,hint=Distance inside which NPC turns to players}}
                                 </div>
                             </div>
                 
@@ -2534,45 +2650,36 @@ public class CitizensUI {
                             <div class="section">
                                 {{@sectionHeader:title=Scale,description=Adjust the size of the citizen}}
                 
-                                <div class="form-row">
-                                    <div class="form-col-fixed" style="anchor-width: 200;">
+                                <div class="form-row" style="horizontal-align: center;">
+                                    <div class="form-col-fixed" style="anchor-width: 250;">
                                         <div class="form-group">
-                                            <p class="form-label">Scale Factor *</p>
-                                            <input type="number" id="citizen-scale" class="form-input"
-                                                   value="{{$scale}}"
-                                                   placeholder="1.0"
-                                                   min="0.01" max="100" step="0.25"
-                                                   data-hyui-max-decimal-places="2" />
-                                            <p class="form-hint">Default: 1.0 (normal size)</p>
+                                            {{@numberField:id=citizen-scale,label=Scale Factor *,value={{$scale}},min=0.1,max=10.0,step=0.1,decimals=2}}
+                                            <p class="form-hint" style="text-align: center;">* Scaling non-player models requires a reload</p>
                                         </div>
                                     </div>
                                 </div>
                             </div>
                 
                             <div class="spacer-md"></div>
-
+                
                             <!-- Permissions Section -->
                             <div class="section">
                                 {{@sectionHeader:title=Permissions,description=Control who can interact with this citizen}}
-
-                                <div class="form-row">
-                                    <div class="form-col">
+                
+                                <div class="form-row" style="horizontal-align: center;">
+                                    <div class="form-col-fixed" style="anchor-width: 250;">
                                         <div class="form-group">
                                             <div class="form-row">
                                                 <p class="form-label">Required Permission</p>
                                                 <p class="form-label-optional">(Optional)</p>
                                             </div>
-                                            <input type="text" id="citizen-permission" class="form-input" value="{{$permission}}"
-                                                   placeholder="e.g., citizens.interact.vip" style="anchor-width: 215;" />
-                                            <p class="form-hint" style="text-align: center;">Leave empty to allow everyone</p>
+                                            <input type="text" id="citizen-permission" class="form-input" value="{{$permission}}" 
+                                                   placeholder="e.g., citizens.interact.vip" style="anchor-width: 250;" />
+                                            <p class="form-hint" style="text-align: center;">Leave empty for no permission requirement</p>
                                         </div>
                                     </div>
-                                </div>
-
-                                <div class="spacer-sm"></div>
-                
-                                <div class="form-row">
-                                    <div class="form-col">
+                                    <div class="spacer-h-md"></div>
+                                    <div class="form-col-fixed" style="anchor-width: 250;">
                                         <div class="form-group">
                                             <div class="form-row">
                                                 <p class="form-label">No Permission Message</p>
@@ -2591,20 +2698,22 @@ public class CitizensUI {
                         </div>
                 
                         <!-- Footer -->
-                        <div class="footer">
-                            <button id="cancel-btn" class="secondary-button">Cancel</button>
+                        <div class="footer" style="layout: center; flex-weight: 0; padding: 26 16 26 16; border-top: 1 solid #1a293c; width: 100%; vertical-align: center;">
+                            <button id="cancel-btn" class="secondary-button" style="anchor-width: 150;">Cancel</button>
                             <div class="spacer-h-md"></div>
-                            <button id="create-btn" class="secondary-button btn-wide">Create</button>
+                            <button id="create-btn" class="secondary-button btn-wide" style="anchor-width: 200;">Create</button>
                         </div>
                 
                     </div>
-                </div>
-                """);
+                """;
+
+        String html = template.process(wrapSideBySideHtml(template, ctx, rightPanelHtml));
 
         PageBuilder page = PageBuilder.pageForPlayer(playerRef)
                 .withLifetime(CustomPageLifetime.CanDismiss)
                 .fromHtml(HtmlUtils.sanitizeHtmlForHyUI(html));
 
+        setupMainEventListeners(page, playerRef, store, Tab.CREATE, ctx.unifiedList(), ctx.searchQuery(), ctx.normalizedViewingGroup(), null);
         setupCreateCitizenListeners(page, playerRef, store, isPlayerModel, name, nametagOffset, hideNametag, hideNpc,
                 mapMarkerEnabled, mapMarkerType, mapMarkerName, mapMarkerCustomIcon, mapMarkerMaxDistance,
                 modelNametagEnabled, nametagModelId, nametagModelScale, rotateNametagTowardsPlayer,
@@ -2617,8 +2726,6 @@ public class CitizensUI {
         openEditCitizenGUI(playerRef, store, citizen, citizen.isMapMarkerEnabled(), citizen.getMapMarkerType(),
                 citizen.getMapMarkerName(), citizen.getMapMarkerCustomIcon(), citizen.getMapMarkerMaxDistance());
     }
-
-
 
     public static class IndexedAnimationBehavior {
         private final int index;
@@ -2775,8 +2882,10 @@ public class CitizensUI {
                 .setVariable("modeRandom", "RANDOM".equalsIgnoreCase(commandMode))
                 .setVariable("modeSequential", "SEQUENTIAL".equalsIgnoreCase(commandMode));
 
-        String html = template.process(getSharedStyles() + """
-                <div class="page-overlay">
+        LeftPanelContext ctx = prepareLeftPanelContext(playerRef, "", citizen != null ? citizen.getGroup() : null, citizen);
+
+        String rightPanelHtml = """
+                    <!-- RIGHT PANEL: COMMAND ACTIONS -->
                     <div class="main-container decorated-container" style="anchor-width: 900; anchor-height: 900;">
 
                         <!-- Header -->
@@ -2787,14 +2896,14 @@ public class CitizensUI {
                         </div>
 
                         <!-- Body -->
-                        <div class="body">
+                        <div class="body" data-hyui-scrollbar-style='"Common.ui" "DefaultScrollbarStyle"' style="layout-mode: TopScrolling; flex-weight: 1;">
 
                             <p class="page-description">Configure commands that execute when players interact ({{$actionCount}} commands)</p>
                             <div class="spacer-sm"></div>
 
                             <!-- Info + Add Section -->
                             <div class="section">
-                                {{@sectionHeader:title=Commands}}
+                                {{@sectionHeader:title=Commands,description=Execute commands when players interact}}
 
                                 <div style="layout: center;">
                                     <button id="add-command-btn" class="secondary-button" style="anchor-width: 200; anchor-height: 38;">Add Command</button>
@@ -2804,9 +2913,9 @@ public class CitizensUI {
 
                                 <div class="card">
                                     <div class="card-body">
-                                        <p style="color: #8b949e; font-size: 12;"><span style="color: #58a6ff;">Variables:</span> {PlayerName}, {CitizenName}, {NpcX}, {NpcY}, {NpcZ}</p>
+                                        <p style="color: #8b949e; font-size: 12; text-align: center;"><span style="color: #58a6ff;">Variables:</span> {PlayerName}, {CitizenName}, {NpcX}, {NpcY}, {NpcZ}</p>
                                         <div class="spacer-xs"></div>
-                                        <p style="color: #8b949e; font-size: 12;">Each command can be triggered by <span style="color: #58a6ff;">Left Click</span>, <span style="color: #a371f7;">F Key</span>, or <span style="color: #3fb950;">Both</span>.</p>
+                                        <p style="color: #8b949e; font-size: 12; text-align: center;">Each command can be triggered by <span style="color: #58a6ff;">Left Click</span>, <span style="color: #a371f7;">F Key</span>, or <span style="color: #3fb950;">Both</span>.</p>
                                     </div>
                                 </div>
                             </div>
@@ -2816,12 +2925,12 @@ public class CitizensUI {
                             {{#if showSelectionMode}}
                             <div class="section">
                                 {{@sectionHeader:title=Selection Mode,description=How matching commands are selected on interaction}}
-                                <div class="form-row">
-                                    <button id="cmd-mode-all" class="{{#if modeAll}}secondary-button{{else}}secondary-button{{/if}}" style="flex-weight: 1; anchor-height: 38;">All</button>
+                                <div class="form-row" style="horizontal-align: center;">
+                                    <button id="cmd-mode-all" class="secondary-button" style="anchor-width: 160; anchor-height: 38;">All</button>
                                     <div class="spacer-h-sm"></div>
-                                    <button id="cmd-mode-random" class="{{#if modeRandom}}secondary-button{{else}}secondary-button{{/if}}" style="flex-weight: 1; anchor-height: 38;">Random</button>
+                                    <button id="cmd-mode-random" class="secondary-button" style="anchor-width: 160; anchor-height: 38;">Random</button>
                                     <div class="spacer-h-sm"></div>
-                                    <button id="cmd-mode-sequential" class="{{#if modeSequential}}secondary-button{{else}}secondary-button{{/if}}" style="flex-weight: 1; anchor-height: 38;">Sequential</button>
+                                    <button id="cmd-mode-sequential" class="secondary-button" style="anchor-width: 160; anchor-height: 38;">Sequential</button>
                                 </div>
                                 <div class="spacer-xs"></div>
                                 {{#if modeAll}}
@@ -2850,9 +2959,9 @@ public class CitizensUI {
                                         <p class="command-type">{{$triggerLabel}}{{#if hasDelay}} | Delay: {{$delaySeconds}}s{{/if}}{{#if hasChanceModifier}} | Chance: {{$chancePercent}}%{{/if}}</p>
                                     </div>
                                     <div class="command-actions">
-                                        <button id="edit-cmd-{{$index}}" class="secondary-button small-secondary-button">Edit</button>
+                                        <button id="edit-cmd-{{$index}}" class="secondary-button small-secondary-button" style="anchor-width: 80;">Edit</button>
                                         <div class="spacer-h-sm"></div>
-                                        <button id="delete-{{$index}}" class="secondary-button small-secondary-button">Delete</button>
+                                        <button id="delete-{{$index}}" class="secondary-button small-secondary-button" style="anchor-width: 80;">Delete</button>
                                     </div>
                                 </div>
                                 <div class="spacer-sm"></div>
@@ -2870,149 +2979,152 @@ public class CitizensUI {
                         </div>
 
                         <!-- Footer -->
-                        <div class="footer">
-                            <button id="cancel-btn" class="secondary-button">Cancel</button>
+                        <div class="footer" style="layout: center; flex-weight: 0; padding: 26 16 26 16; border-top: 1 solid #1a293c; width: 100%; vertical-align: center;">
+                            <button id="cancel-btn" class="secondary-button" style="anchor-width: 150;">Cancel</button>
                             <div class="spacer-h-md"></div>
-                            <button id="done-btn" class="secondary-button">Done</button>
+                            <button id="done-btn" class="secondary-button" style="anchor-width: 150;">Done</button>
                         </div>
 
                     </div>
-                </div>
-                """);
+                """;
+
+        String html = template.process(wrapSideBySideHtml(template, ctx, rightPanelHtml));
 
         PageBuilder page = PageBuilder.pageForPlayer(playerRef)
                 .withLifetime(CustomPageLifetime.CanDismiss)
                 .fromHtml(HtmlUtils.sanitizeHtmlForHyUI(html));
 
+        setupMainEventListeners(page, playerRef, store, Tab.MANAGE, ctx.unifiedList(), ctx.searchQuery(), ctx.normalizedViewingGroup(), citizen);
         setupCommandActionsListeners(page, playerRef, store, citizenId, actions, isCreating);
 
         page.open(store);
     }
 
-    private void setupMainEventListeners(PageBuilder page, PlayerRef playerRef, Store<EntityStore> store,
+    public void setupMainEventListeners(PageBuilder page, PlayerRef playerRef, Store<EntityStore> store,
                                          Tab currentTab, List<ListItem> unifiedList, String searchQuery, String viewingGroup,
                                          @Nullable CitizenData editingCitizen) {
-        page.addEventListener("start-create", CustomUIEventBindingType.Activating, event ->
-                openCreateCitizenGUI(playerRef, store));
+        try {
+            page.addEventListener("start-create", CustomUIEventBindingType.Activating, event ->
+                    openCreateCitizenGUI(playerRef, store));
+        } catch (IllegalArgumentException ignored) {}
 
         // Search button event listener
-        page.addEventListener("search-btn", CustomUIEventBindingType.Activating, (event, ctx) -> {
+        try {
+            page.addEventListener("search-btn", CustomUIEventBindingType.Activating, (event, ctx) -> {
                 String newSearchQuery = ctx.getValue("search-input", String.class).orElse("");
                 openCitizensGUI(playerRef, store, currentTab, newSearchQuery, viewingGroup);
             });
+        } catch (IllegalArgumentException ignored) {}
 
         // Left Panel static footer buttons (always visible)
-        page.addEventListener("edit-closest-btn", CustomUIEventBindingType.Activating, event -> {
-            UUID worldUUID = playerRef.getWorldUuid();
-            if (worldUUID == null) {
-                playerRef.sendMessage(Message.raw("Could not determine your world.").color(Color.RED));
-                return;
-            }
-
-            Vector3d playerPos = new Vector3d(playerRef.getTransform().getPosition());
-            List<CitizenData> nearby = plugin.getCitizensManager().getCitizensNear(playerPos, 75.0);
-            CitizenData closest = null;
-            double closestDistSq = Double.MAX_VALUE;
-
-            for (CitizenData candidate : nearby) {
-                if (!worldUUID.equals(candidate.getWorldUUID())) {
-                    continue;
+        try {
+            page.addEventListener("edit-closest-btn", CustomUIEventBindingType.Activating, event -> {
+                UUID worldUUID = playerRef.getWorldUuid();
+                if (worldUUID == null) {
+                    playerRef.sendMessage(Message.raw("Could not determine your world.").color(Color.RED));
+                    return;
                 }
-                Vector3d candidatePos = candidate.getCurrentPosition() != null ? candidate.getCurrentPosition() : candidate.getPosition();
-                double dx = candidatePos.x - playerPos.x;
-                double dy = candidatePos.y - playerPos.y;
-                double dz = candidatePos.z - playerPos.z;
-                double distSq = dx * dx + dy * dy + dz * dz;
-                if (distSq < closestDistSq) {
-                    closestDistSq = distSq;
-                    closest = candidate;
+
+                Vector3d playerPos = new Vector3d(playerRef.getTransform().getPosition());
+                List<CitizenData> nearby = plugin.getCitizensManager().getCitizensNear(playerPos, 75.0);
+                CitizenData closest = null;
+                double closestDistSq = Double.MAX_VALUE;
+
+                for (CitizenData candidate : nearby) {
+                    if (!worldUUID.equals(candidate.getWorldUUID())) {
+                        continue;
+                    }
+                    Vector3d candidatePos = candidate.getCurrentPosition() != null ? candidate.getCurrentPosition() : candidate.getPosition();
+                    double dx = candidatePos.x - playerPos.x;
+                    double dy = candidatePos.y - playerPos.y;
+                    double dz = candidatePos.z - playerPos.z;
+                    double distSq = dx * dx + dy * dy + dz * dz;
+                    if (distSq < closestDistSq) {
+                        closestDistSq = distSq;
+                        closest = candidate;
+                    }
                 }
-            }
 
-            if (closest == null) {
-                playerRef.sendMessage(Message.raw("No nearby citizen found within 75 blocks.").color(Color.RED));
-                return;
-            }
-
-            openEditCitizenGUI(playerRef, store, closest);
-        });
-
-        page.addEventListener("respawn-all-btn", CustomUIEventBindingType.Activating, event -> {
-            int count = plugin.getCitizensManager().respawnAllCitizens(true);
-            playerRef.sendMessage(Message.raw("Respawned " + count + " citizens.").color(Color.GREEN));
-            openCitizensGUI(playerRef, store, currentTab, searchQuery, viewingGroup);
-        });
-
-        page.addEventListener("get-citizen-stick-btn", CustomUIEventBindingType.Activating, event -> {
-            Ref<EntityStore> ref = playerRef.getReference();
-            if (ref == null || !ref.isValid()) {
-                playerRef.sendMessage(Message.raw("An error occurred.").color(Color.RED));
-                return;
-            }
-
-            Player player = ref.getStore().getComponent(ref, Player.getComponentType());
-            if (player == null) {
-                playerRef.sendMessage(Message.raw("An error occurred.").color(Color.RED));
-                return;
-            }
-
-            if (!playerRef.hasPermission("hycitizens.admin")) {
-                playerRef.sendMessage(Message.raw("You need hycitizens.admin to get the Citizen Stick.").color(Color.RED));
-                return;
-            }
-
-            ItemStack stack = new ItemStack("CitizenStick");
-            boolean added = false;
-            InventoryComponent.Hotbar hotbar = store.getComponent(ref, InventoryComponent.Hotbar.getComponentType());
-            InventoryComponent.Storage storage = store.getComponent(ref, InventoryComponent.Storage.getComponentType());
-            if (hotbar != null && hotbar.getInventory().canAddItemStack(stack)) {
-                hotbar.getInventory().addItemStack(stack);
-                added = true;
-            } else if (storage != null && storage.getInventory().canAddItemStack(stack)) {
-                storage.getInventory().addItemStack(stack);
-                added = true;
-            }
-
-            if (!added) {
-                playerRef.sendMessage(Message.raw("Your inventory is full.").color(Color.RED));
-                return;
-            }
-
-            playerRef.sendMessage(Message.raw("You received a Citizen Stick. Hit a citizen with it to open the Edit menu.").color(Color.GREEN));
-        });
-
-        // Edit Citizen bottom buttons (only active if currently editing a citizen)
-        if (editingCitizen != null) {
-            page.addEventListener("bottom-tp", CustomUIEventBindingType.Activating, event ->
-                    teleportPlayerToCitizen(playerRef, editingCitizen));
-
-            page.addEventListener("bottom-clone", CustomUIEventBindingType.Activating, event -> {
-                if (cloneCitizenToPlayer(playerRef, editingCitizen)) {
-                    openCitizensGUI(playerRef, store, Tab.MANAGE);
+                if (closest == null) {
+                    playerRef.sendMessage(Message.raw("No nearby citizen found within 75 blocks.").color(Color.RED));
+                    return;
                 }
+
+                openEditCitizenGUI(playerRef, store, closest);
             });
+        } catch (IllegalArgumentException ignored) {}
 
-            page.addEventListener("bottom-remove", CustomUIEventBindingType.Activating, event -> {
-                removeCitizen(playerRef, editingCitizen);
-                openCitizensGUI(playerRef, store, Tab.MANAGE);
+        try {
+            page.addEventListener("respawn-all-btn", CustomUIEventBindingType.Activating, event -> {
+                int count = plugin.getCitizensManager().respawnAllCitizens(true);
+                playerRef.sendMessage(Message.raw("Respawned " + count + " citizens.").color(Color.GREEN));
+                openCitizensGUI(playerRef, store, currentTab, searchQuery, viewingGroup);
             });
-        }
+        } catch (IllegalArgumentException ignored) {}
+
+        try {
+            page.addEventListener("get-citizen-stick-btn", CustomUIEventBindingType.Activating, event -> {
+                Ref<EntityStore> ref = playerRef.getReference();
+                if (ref == null || !ref.isValid()) {
+                    playerRef.sendMessage(Message.raw("An error occurred.").color(Color.RED));
+                    return;
+                }
+
+                Player player = ref.getStore().getComponent(ref, Player.getComponentType());
+                if (player == null) {
+                    playerRef.sendMessage(Message.raw("An error occurred.").color(Color.RED));
+                    return;
+                }
+
+                if (!playerRef.hasPermission("hycitizens.admin")) {
+                    playerRef.sendMessage(Message.raw("You need hycitizens.admin to get the Citizen Stick.").color(Color.RED));
+                    return;
+                }
+
+                ItemStack stack = new ItemStack("CitizenStick");
+                boolean added = false;
+                InventoryComponent.Hotbar hotbar = store.getComponent(ref, InventoryComponent.Hotbar.getComponentType());
+                InventoryComponent.Storage storage = store.getComponent(ref, InventoryComponent.Storage.getComponentType());
+                if (hotbar != null && hotbar.getInventory().canAddItemStack(stack)) {
+                    hotbar.getInventory().addItemStack(stack);
+                    added = true;
+                } else if (storage != null && storage.getInventory().canAddItemStack(stack)) {
+                    storage.getInventory().addItemStack(stack);
+                    added = true;
+                }
+
+                if (!added) {
+                    playerRef.sendMessage(Message.raw("Your inventory is full.").color(Color.RED));
+                    return;
+                }
+
+                playerRef.sendMessage(Message.raw("You received a Citizen Stick. Hit a citizen with it to open the Edit menu.").color(Color.GREEN));
+            });
+        } catch (IllegalArgumentException ignored) {}
 
         // Back button listener
         if (viewingGroup != null && !viewingGroup.isEmpty()) {
-            page.addEventListener("back-to-all", CustomUIEventBindingType.Activating, event -> {
-                String parentGroup = getParentGroup(viewingGroup);
-                openCitizensGUI(playerRef, store, Tab.MANAGE, "", parentGroup.isEmpty() ? null : parentGroup);
-            });
-            page.addEventListener("new-child-group-btn", CustomUIEventBindingType.Activating, event ->
-                    openCreateGroupGUI(playerRef, store, viewingGroup));
-            page.addEventListener("move-current-group-btn", CustomUIEventBindingType.Activating, event ->
-                    openMoveGroupGUI(playerRef, store, viewingGroup));
-            page.addEventListener("respawn-current-group-btn", CustomUIEventBindingType.Activating, event -> {
-                int count = plugin.getCitizensManager().respawnCitizensInGroup(viewingGroup, true, true);
-                playerRef.sendMessage(Message.raw("Respawned " + count + " citizens in this group.").color(Color.GREEN));
-                openCitizensGUI(playerRef, store, currentTab, searchQuery, viewingGroup);
-            });
+            try {
+                page.addEventListener("back-to-all", CustomUIEventBindingType.Activating, event -> {
+                    String parentGroup = getParentGroup(viewingGroup);
+                    openCitizensGUI(playerRef, store, Tab.MANAGE, "", parentGroup.isEmpty() ? null : parentGroup);
+                });
+            } catch (IllegalArgumentException ignored) {}
+            try {
+                page.addEventListener("new-child-group-btn", CustomUIEventBindingType.Activating, event ->
+                        openCreateGroupGUI(playerRef, store, viewingGroup));
+            } catch (IllegalArgumentException ignored) {}
+            try {
+                page.addEventListener("move-current-group-btn", CustomUIEventBindingType.Activating, event ->
+                        openMoveGroupGUI(playerRef, store, viewingGroup));
+            } catch (IllegalArgumentException ignored) {}
+            try {
+                page.addEventListener("respawn-current-group-btn", CustomUIEventBindingType.Activating, event -> {
+                    int count = plugin.getCitizensManager().respawnCitizensInGroup(viewingGroup, true, true);
+                    playerRef.sendMessage(Message.raw("Respawned " + count + " citizens in this group.").color(Color.GREEN));
+                    openCitizensGUI(playerRef, store, currentTab, searchQuery, viewingGroup);
+                });
+            } catch (IllegalArgumentException ignored) {}
         }
 
         // Register event listeners for all items in the unified list
@@ -3264,43 +3376,53 @@ public class CitizensUI {
     }
 
     private void openRenameGroupGUI(@Nonnull PlayerRef playerRef, @Nonnull Store<EntityStore> store, @Nonnull String oldGroupName) {
+        LeftPanelContext ctx = prepareLeftPanelContext(playerRef, "", oldGroupName, null);
+
         TemplateProcessor template = createBaseTemplate()
                 .setVariable("oldName", escapeHtml(oldGroupName))
                 .setVariable("newName", escapeHtml(oldGroupName));
 
-        String html = template.process(getSharedStyles() + """
-                <div class="page-overlay">
-                    <div class="main-container decorated-container" style="anchor-width: 620; anchor-height: 360;">
+        String rightPanelHtml = """
+                    <!-- RIGHT PANEL: RENAME GROUP -->
+                    <div class="main-container decorated-container" style="anchor-width: 900; anchor-height: 900;">
                         <div class="header container-title">
                             <div class="header-content">
                                 <p class="header-title">Rename Group</p>
                             </div>
                         </div>
-                        <div class="body">
+                        <div class="body" data-hyui-scrollbar-style='"Common.ui" "DefaultScrollbarStyle"' style="layout-mode: TopScrolling; flex-weight: 1;">
                             <p class="page-description">Change group name for all citizens in this group</p>
                             <div class="spacer-sm"></div>
                             <div class="section">
-                                {{@formField:id=new-group-name,label=New Group Name,value={{$newName}},placeholder=Enter a new group name...}}
-                                <div class="spacer-xs"></div>
-                                <p class="form-hint">Current name: {{$oldName}}</p>
+                                {{@sectionHeader:title=Group Information,description=Enter a new name for the group}}
+                                <div class="form-row" style="horizontal-align: center;">
+                                    <div class="form-col-fixed" style="anchor-width: 460;">
+                                        {{@formField:id=new-group-name,label=New Group Name,value={{$newName}},placeholder=Enter a new group name...}}
+                                        <div class="spacer-xs"></div>
+                                        <p class="form-hint" style="text-align: center;">Current name: {{$oldName}}</p>
+                                    </div>
+                                </div>
                             </div>
                         </div>
-                        <div class="footer">
-                            <button id="cancel-btn" class="secondary-button">Cancel</button>
+                        <div class="footer" style="layout: center; flex-weight: 0; padding: 26 16 26 16; border-top: 1 solid #1a293c; width: 100%; vertical-align: center;">
+                            <button id="cancel-btn" class="secondary-button" style="anchor-width: 150;">Cancel</button>
                             <div class="spacer-h-md"></div>
                             <button id="save-btn" class="secondary-button" style="anchor-width: 180;">Rename Group</button>
                         </div>
                     </div>
-                </div>
-                """);
+                """;
+
+        String html = template.process(wrapSideBySideHtml(template, ctx, rightPanelHtml));
 
         PageBuilder page = PageBuilder.pageForPlayer(playerRef)
                 .withLifetime(CustomPageLifetime.CanDismiss)
                 .fromHtml(HtmlUtils.sanitizeHtmlForHyUI(html));
 
+        setupMainEventListeners(page, playerRef, store, Tab.MANAGE, ctx.unifiedList(), ctx.searchQuery(), ctx.normalizedViewingGroup(), null);
+
         final String[] newName = {oldGroupName};
-        page.addEventListener("new-group-name", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
-            newName[0] = ctx.getValue("new-group-name", String.class).orElse(oldGroupName).trim();
+        page.addEventListener("new-group-name", CustomUIEventBindingType.ValueChanged, (event, eventCtx) -> {
+            newName[0] = eventCtx.getValue("new-group-name", String.class).orElse(oldGroupName).trim();
         });
 
         page.addEventListener("save-btn", CustomUIEventBindingType.Activating, event -> {
@@ -3333,48 +3455,58 @@ public class CitizensUI {
     private void openCreateGroupGUI(@Nonnull PlayerRef playerRef, @Nonnull Store<EntityStore> store,
                                     @Nullable String parentGroup) {
         String normalizedParent = normalizeGroupPath(parentGroup);
+        LeftPanelContext ctx = prepareLeftPanelContext(playerRef, "", normalizedParent, null);
+
         TemplateProcessor template = createBaseTemplate()
                 .setVariable("parentName", normalizedParent.isEmpty() ? "Root" : escapeHtml(normalizedParent))
                 .setVariable("isChildGroup", !normalizedParent.isEmpty())
                 .setVariable("newGroupName", "");
 
-        String html = template.process(getSharedStyles() + """
-                <div class="page-overlay">
-                    <div class="main-container decorated-container" style="anchor-width: 620; anchor-height: 380;">
+        String rightPanelHtml = """
+                    <!-- RIGHT PANEL: CREATE GROUP -->
+                    <div class="main-container decorated-container" style="anchor-width: 900; anchor-height: 900;">
                         <div class="header container-title">
                             <div class="header-content">
                                 <p class="header-title">{{#if isChildGroup}}Create Child Group{{else}}Create Group{{/if}}</p>
                             </div>
                         </div>
-                        <div class="body">
+                        <div class="body" data-hyui-scrollbar-style='"Common.ui" "DefaultScrollbarStyle"' style="layout-mode: TopScrolling; flex-weight: 1;">
                             <p class="page-description">Parent: {{$parentName}}</p>
                             <div class="spacer-sm"></div>
                             <div class="section">
-                                {{@formField:id=group-name,label=Group Name,value={{$newGroupName}},placeholder=Enter group name...}}
-                                <div class="spacer-xs"></div>
-                                <p class="form-hint">Child groups are shown under their parent in the Manage tab.</p>
+                                {{@sectionHeader:title=Group Information,description=Child groups are shown under their parent in the Manage tab}}
+                                <div class="form-row" style="horizontal-align: center;">
+                                    <div class="form-col-fixed" style="anchor-width: 460;">
+                                        {{@formField:id=group-name,label=Group Name,value={{$newGroupName}},placeholder=Enter group name...}}
+                                        <div class="spacer-xs"></div>
+                                        <p class="form-hint" style="text-align: center;">Child groups are shown under their parent in the Manage tab.</p>
+                                    </div>
+                                </div>
                             </div>
                         </div>
-                        <div class="footer">
-                            <button id="cancel-btn" class="secondary-button">Cancel</button>
+                        <div class="footer" style="layout: center; flex-weight: 0; padding: 26 16 26 16; border-top: 1 solid #1a293c; width: 100%; vertical-align: center;">
+                            <button id="cancel-btn" class="secondary-button" style="anchor-width: 150;">Cancel</button>
                             <div class="spacer-h-md"></div>
                             <button id="save-btn" class="secondary-button" style="anchor-width: 170;">Create Group</button>
                         </div>
                     </div>
-                </div>
-                """);
+                """;
+
+        String html = template.process(wrapSideBySideHtml(template, ctx, rightPanelHtml));
 
         PageBuilder page = PageBuilder.pageForPlayer(playerRef)
                 .withLifetime(CustomPageLifetime.CanDismiss)
                 .fromHtml(HtmlUtils.sanitizeHtmlForHyUI(html));
 
+        setupMainEventListeners(page, playerRef, store, Tab.MANAGE, ctx.unifiedList(), ctx.searchQuery(), ctx.normalizedViewingGroup(), null);
+
         final String[] groupName = {""};
-        page.addEventListener("group-name", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
-            groupName[0] = ctx.getValue("group-name", String.class).orElse("").trim();
+        page.addEventListener("group-name", CustomUIEventBindingType.ValueChanged, (event, eventCtx) -> {
+            groupName[0] = eventCtx.getValue("group-name", String.class).orElse("").trim();
         });
 
-        page.addEventListener("save-btn", CustomUIEventBindingType.Activating, (event, ctx) -> {
-            groupName[0] = ctx.getValue("group-name", String.class).orElse(groupName[0]).trim();
+        page.addEventListener("save-btn", CustomUIEventBindingType.Activating, (event, eventCtx) -> {
+            groupName[0] = eventCtx.getValue("group-name", String.class).orElse(groupName[0]).trim();
             String fullGroupName = buildChildGroupPath(normalizedParent, groupName[0]);
             if (fullGroupName.isEmpty()) {
                 playerRef.sendMessage(Message.raw("Please enter a group name.").color(Color.RED));
@@ -3400,51 +3532,61 @@ public class CitizensUI {
                                   @Nonnull String groupName) {
         String normalizedGroup = normalizeGroupPath(groupName);
         String currentParent = getParentGroup(normalizedGroup);
+        LeftPanelContext ctx = prepareLeftPanelContext(playerRef, "", currentParent, null);
+
         TemplateProcessor template = createBaseTemplate()
                 .setVariable("groupName", escapeHtml(normalizedGroup))
                 .setVariable("parentOptions", generateGroupParentOptions(currentParent, normalizedGroup));
 
-        String html = template.process(getSharedStyles() + """
-                <div class="page-overlay">
-                    <div class="main-container decorated-container" style="anchor-width: 660; anchor-height: 400;">
+        String rightPanelHtml = """
+                    <!-- RIGHT PANEL: MOVE GROUP -->
+                    <div class="main-container decorated-container" style="anchor-width: 900; anchor-height: 900;">
                         <div class="header container-title">
                             <div class="header-content">
                                 <p class="header-title">Move Group</p>
                             </div>
                         </div>
-                        <div class="body">
+                        <div class="body" data-hyui-scrollbar-style='"Common.ui" "DefaultScrollbarStyle"' style="layout-mode: TopScrolling; flex-weight: 1;">
                             <p class="page-description">Move {{$groupName}} under another group or back to root</p>
                             <div class="spacer-sm"></div>
                             <div class="section">
-                                <div class="form-group">
-                                    <p class="form-label">New Parent</p>
-                                    <select id="group-parent" data-hyui-showlabel="true">
-                                        {{{$parentOptions}}}
-                                    </select>
-                                    <p class="form-hint">Choose Root to make this a top-level group.</p>
+                                {{@sectionHeader:title=Parent Selection,description=Choose Root to make this a top-level group}}
+                                <div class="form-row" style="horizontal-align: center;">
+                                    <div class="form-col-fixed" style="anchor-width: 460;">
+                                        <div class="form-group">
+                                            <p class="form-label">New Parent</p>
+                                            <select id="group-parent" data-hyui-showlabel="true">
+                                                {{{$parentOptions}}}
+                                            </select>
+                                            <p class="form-hint" style="text-align: center;">Choose Root to make this a top-level group.</p>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
                         </div>
-                        <div class="footer">
-                            <button id="cancel-btn" class="secondary-button">Cancel</button>
+                        <div class="footer" style="layout: center; flex-weight: 0; padding: 26 16 26 16; border-top: 1 solid #1a293c; width: 100%; vertical-align: center;">
+                            <button id="cancel-btn" class="secondary-button" style="anchor-width: 150;">Cancel</button>
                             <div class="spacer-h-md"></div>
                             <button id="save-btn" class="secondary-button" style="anchor-width: 160;">Move Group</button>
                         </div>
                     </div>
-                </div>
-                """);
+                """;
+
+        String html = template.process(wrapSideBySideHtml(template, ctx, rightPanelHtml));
 
         PageBuilder page = PageBuilder.pageForPlayer(playerRef)
                 .withLifetime(CustomPageLifetime.CanDismiss)
                 .fromHtml(HtmlUtils.sanitizeHtmlForHyUI(html));
 
+        setupMainEventListeners(page, playerRef, store, Tab.MANAGE, ctx.unifiedList(), ctx.searchQuery(), ctx.normalizedViewingGroup(), null);
+
         final String[] selectedParent = {currentParent};
-        page.addEventListener("group-parent", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
-            selectedParent[0] = normalizeGroupPath(ctx.getValue("group-parent", String.class).orElse(""));
+        page.addEventListener("group-parent", CustomUIEventBindingType.ValueChanged, (event, eventCtx) -> {
+            selectedParent[0] = normalizeGroupPath(eventCtx.getValue("group-parent", String.class).orElse(""));
         });
 
-        page.addEventListener("save-btn", CustomUIEventBindingType.Activating, (event, ctx) -> {
-            selectedParent[0] = normalizeGroupPath(ctx.getValue("group-parent", String.class).orElse(selectedParent[0]));
+        page.addEventListener("save-btn", CustomUIEventBindingType.Activating, (event, eventCtx) -> {
+            selectedParent[0] = normalizeGroupPath(eventCtx.getValue("group-parent", String.class).orElse(selectedParent[0]));
             boolean moved = plugin.getCitizensManager().moveGroup(normalizedGroup, selectedParent[0]);
             if (!moved) {
                 playerRef.sendMessage(Message.raw("Could not move group. Check for name conflicts or invalid parent group.").color(Color.RED));
@@ -3505,6 +3647,7 @@ public class CitizensUI {
     private void openNametagLinesGUI(@Nonnull PlayerRef playerRef, @Nonnull Store<EntityStore> store,
                                      @Nonnull String currentName, @Nonnull Consumer<String> onDone,
                                      @Nonnull Runnable onCancel) {
+        LeftPanelContext ctx = prepareLeftPanelContext(playerRef, "", null, null);
         List<String> lines = splitNametagLines(currentName);
         StringBuilder linesHtml = new StringBuilder();
 
@@ -3524,15 +3667,15 @@ public class CitizensUI {
         TemplateProcessor template = createBaseTemplate()
                 .setVariable("lineCount", lines.size());
 
-        String html = template.process(getSharedStyles() + """
-                <div class="page-overlay">
-                    <div class="main-container decorated-container" style="anchor-width: 760; anchor-height: 720;">
+        String rightPanelHtml = """
+                    <!-- RIGHT PANEL: NAMETAG LINES -->
+                    <div class="main-container decorated-container" style="anchor-width: 900; anchor-height: 900;">
                         <div class="header container-title">
                             <div class="header-content">
                                 <p class="header-title">Nametag Lines</p>
                             </div>
                         </div>
-                        <div class="body" data-hyui-scrollbar-style='"Common.ui" "DefaultScrollbarStyle"' style="layout-mode: TopScrolling;">
+                        <div class="body" data-hyui-scrollbar-style='"Common.ui" "DefaultScrollbarStyle"' style="layout-mode: TopScrolling; flex-weight: 1;">
                             <p class="page-description">Build multi-line nametags with dedicated line entries ({{$lineCount}} lines)</p>
                             <div class="spacer-xs"></div>
                             <p class="form-hint" style="text-align: center;">Supports {bold}, {italic}, {underline}, {strikethrough}, {red}, {#FFF}, {red-blue} gradient, {red-}text{-blue}</p>
@@ -3541,28 +3684,33 @@ public class CitizensUI {
                                 {{@sectionHeader:title=Lines,description=Each non-empty line will be shown above the citizen}}
                 """ + linesHtml + """
                                 <div class="spacer-xs"></div>
-                                <button id="add-line-btn" class="secondary-button" style="anchor-width: 170;">Add Line</button>
+                                <div style="layout: center;">
+                                    <button id="add-line-btn" class="secondary-button" style="anchor-width: 170;">Add Line</button>
+                                </div>
                             </div>
                         </div>
-                        <div class="footer">
-                            <button id="cancel-btn" class="secondary-button">Cancel</button>
+                        <div class="footer" style="layout: center; flex-weight: 0; padding: 26 16 26 16; border-top: 1 solid #1a293c; width: 100%; vertical-align: center;">
+                            <button id="cancel-btn" class="secondary-button" style="anchor-width: 150;">Cancel</button>
                             <div class="spacer-h-md"></div>
                             <button id="save-btn" class="secondary-button" style="anchor-width: 170;">Save</button>
                         </div>
                     </div>
-                </div>
-                """);
+                """;
+
+        String html = template.process(wrapSideBySideHtml(template, ctx, rightPanelHtml));
 
         PageBuilder page = PageBuilder.pageForPlayer(playerRef)
                 .withLifetime(CustomPageLifetime.CanDismiss)
                 .fromHtml(HtmlUtils.sanitizeHtmlForHyUI(html));
 
+        setupMainEventListeners(page, playerRef, store, Tab.MANAGE, ctx.unifiedList(), ctx.searchQuery(), ctx.normalizedViewingGroup(), null);
+
         final String[] lineValues = lines.toArray(new String[0]);
 
         for (int i = 0; i < lines.size(); i++) {
             final int idx = i;
-            page.addEventListener("line-" + i, CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
-                lineValues[idx] = ctx.getValue("line-" + idx, String.class).orElse("");
+            page.addEventListener("line-" + i, CustomUIEventBindingType.ValueChanged, (event, eventCtx) -> {
+                lineValues[idx] = eventCtx.getValue("line-" + idx, String.class).orElse("");
             });
 
             page.addEventListener("delete-line-" + i, CustomUIEventBindingType.Activating, event -> {
@@ -3600,6 +3748,7 @@ public class CitizensUI {
                                         boolean currentRotateNametagTowardsPlayer,
                                         @Nonnull Consumer<NametagSettingsState> onDone,
                                         @Nonnull Runnable onCancel) {
+        LeftPanelContext ctx = prepareLeftPanelContext(playerRef, "", null, null);
         List<String> lines = splitNametagLines(currentName);
 
         TemplateProcessor template = createBaseTemplate()
@@ -3621,23 +3770,26 @@ public class CitizensUI {
                 ))
                 .setVariable("modelOptions", generateModelDropdownOptions(currentNametagModelId, true));
 
-        String html = template.process(getSharedStyles() + """
-                <div class="page-overlay">
-                    <div class="main-container decorated-container" style="anchor-width: 760; anchor-height: 760;">
+        String rightPanelHtml = """
+                    <!-- RIGHT PANEL: NAMETAG SETTINGS -->
+                    <div class="main-container decorated-container" style="anchor-width: 900; anchor-height: 900;">
                         <div class="header container-title">
                             <div class="header-content">
                                 <p class="header-title">Nametag Settings</p>
                             </div>
                         </div>
-                        <div class="body" data-hyui-scrollbar-style='"Common.ui" "DefaultScrollbarStyle"' style="layout-mode: TopScrolling;">
+                        <div class="body" data-hyui-scrollbar-style='"Common.ui" "DefaultScrollbarStyle"' style="layout-mode: TopScrolling; flex-weight: 1;">
                             <p class="page-description">{{$nametagSummary}}</p>
                             <div class="spacer-sm"></div>
 
                             <div class="section">
                                 {{@sectionHeader:title=Display Mode,description=Choose between text lines or a model nametag}}
-                                <div class="toggle-group">
-                                    <button id="nametag-mode-text" class="secondary-button toggle-btn{{#if !modelEnabled}} toggle-active{{/if}}" style="anchor-width: 320; anchor-height: 48;">Text Nametag</button>
-                                    <button id="nametag-mode-model" class="secondary-button toggle-btn{{#if modelEnabled}} toggle-active{{/if}}" style="anchor-width: 320; anchor-height: 48;">Model Nametag</button>
+                                <div class="form-row" style="horizontal-align: center;">
+                                    <div class="toggle-group" style="layout: left;">
+                                        <button id="nametag-mode-text" class="secondary-button toggle-btn{{#if !modelEnabled}} toggle-active{{/if}}" style="anchor-width: 200; anchor-height: 48;">Text Nametag</button>
+                                        <div class="spacer-h-sm"></div>
+                                        <button id="nametag-mode-model" class="secondary-button toggle-btn{{#if modelEnabled}} toggle-active{{/if}}" style="anchor-width: 200; anchor-height: 48;">Model Nametag</button>
+                                    </div>
                                 </div>
                             </div>
 
@@ -3646,7 +3798,7 @@ public class CitizensUI {
                             <div class="section">
                                 {{@sectionHeader:title=General,description=Shared nametag options}}
                                 <div class="form-row" style="horizontal-align: center;">
-                                    <div class="form-col-fixed" style="anchor-width: 180;">
+                                    <div class="form-col-fixed" style="anchor-width: 250;">
                                         <div class="form-group">
                                             <p class="form-label">Nametag Offset</p>
                                             <input type="number" id="nametag-offset" class="form-input"
@@ -3660,7 +3812,7 @@ public class CitizensUI {
 
                                 <div class="spacer-sm"></div>
 
-                                <div class="checkbox-row">
+                                <div class="checkbox-row" style="horizontal-align: center;">
                                     <input type="checkbox" id="hide-nametag-check" {{#if hideNametag}}checked{{/if}} />
                                     <div style="layout: top; flex-weight: 0; text-align: center;">
                                         <p class="checkbox-label">Hide Nametag</p>
@@ -3674,41 +3826,41 @@ public class CitizensUI {
                             {{#if modelEnabled}}
                             <div class="section">
                                 {{@sectionHeader:title=Model,description=Pick the model used instead of text}}
-                                <div class="card">
+                                <div class="card" style="width: 100%;">
                                     <div class="card-body">
-                                        <div class="form-group">
-                                            <p class="form-label" style="text-align: center;">Select Model</p>
-                                            <select id="nametag-model-dropdown" value="{{$nametagModelId}}" data-hyui-showlabel="true">
-                                                {{$modelOptions}}
-                                            </select>
-                                            <p class="form-hint" style="text-align: center;">The dropdown includes every loaded model asset</p>
-                                        </div>
-
-                                        <div class="spacer-sm"></div>
-                                        <div class="divider"></div>
-                                        <div class="spacer-sm"></div>
-
-                                        <div class="form-group">
-                                            <p class="form-label" style="text-align: center;">Or Enter A Model ID</p>
-                                            <input type="text" id="nametag-model-id" class="form-input" value="{{$nametagModelId}}"
-                                                   placeholder="e.g., Sheep, PlayerTestModel_V" maxlength="96" style="anchor-width: 260;" />
-                                        </div>
-
-                                        <div class="spacer-sm"></div>
-
                                         <div class="form-row" style="horizontal-align: center;">
-                                            <div style="anchor-width: 220;">
-                                                {{@numberField:id=nametag-model-scale,label=Model Scale,value={{$nametagModelScale}},placeholder=1.0,min=0.01,max=100,step=0.1,decimals=2}}
-                                            </div>
-                                        </div>
+                                            <div class="form-col-fixed" style="anchor-width: 460;">
+                                                <div class="form-group">
+                                                    <p class="form-label">Select Model</p>
+                                                    <select id="nametag-model-dropdown" value="{{$nametagModelId}}" data-hyui-showlabel="true">
+                                                        {{$modelOptions}}
+                                                    </select>
+                                                    <p class="form-hint" style="text-align: center;">The dropdown includes every loaded model asset</p>
+                                                </div>
 
-                                        <div class="spacer-sm"></div>
+                                                <div class="spacer-sm"></div>
 
-                                        <div class="checkbox-row">
-                                            <input type="checkbox" id="rotate-nametag-towards-player" {{#if rotateModelTowardsPlayer}}checked{{/if}} />
-                                            <div style="layout: top; flex-weight: 0; text-align: center;">
-                                                <p class="checkbox-label">Rotate Model Towards Players</p>
-                                                <p class="checkbox-description">Rotates the model towards the player</p>
+                                                <div class="form-group">
+                                                    <p class="form-label">Or Enter A Model ID</p>
+                                                    <input type="text" id="nametag-model-id" class="form-input" value="{{$nametagModelId}}"
+                                                           placeholder="e.g., Sheep, PlayerTestModel_V" maxlength="96" style="width: 100%;" />
+                                                </div>
+
+                                                <div class="spacer-sm"></div>
+
+                                                <div class="form-group">
+                                                    {{@numberField:id=nametag-model-scale,label=Model Scale,value={{$nametagModelScale}},placeholder=1.0,min=0.01,max=100,step=0.1,decimals=2}}
+                                                </div>
+
+                                                <div class="spacer-sm"></div>
+
+                                                <div class="checkbox-row" style="horizontal-align: center;">
+                                                    <input type="checkbox" id="rotate-nametag-towards-player" {{#if rotateModelTowardsPlayer}}checked{{/if}} />
+                                                    <div style="layout: top; flex-weight: 0; text-align: center;">
+                                                        <p class="checkbox-label">Rotate Model Towards Players</p>
+                                                        <p class="checkbox-description">Rotates the model towards the player</p>
+                                                    </div>
+                                                </div>
                                             </div>
                                         </div>
                                     </div>
@@ -3717,7 +3869,7 @@ public class CitizensUI {
                             {{else}}
                             <div class="section">
                                 {{@sectionHeader:title=Text Lines,description=Manage the lines shown when using text nametags}}
-                                <div class="card">
+                                <div class="card" style="width: 100%;">
                                     <div class="card-body" style="layout: top; horizontal-align: center;">
                                         <p class="form-hint" style="text-align: center;">{{$lineCount}} configured line(s)</p>
                                         <div class="spacer-xs"></div>
@@ -3729,18 +3881,21 @@ public class CitizensUI {
 
                             <div class="spacer-lg"></div>
                         </div>
-                        <div class="footer">
-                            <button id="cancel-btn" class="secondary-button">Cancel</button>
+                        <div class="footer" style="layout: center; flex-weight: 0; padding: 26 16 26 16; border-top: 1 solid #1a293c; width: 100%; vertical-align: center;">
+                            <button id="cancel-btn" class="secondary-button" style="anchor-width: 150;">Cancel</button>
                             <div class="spacer-h-md"></div>
-                            <button id="done-btn" class="secondary-button btn-wide">Done</button>
+                            <button id="done-btn" class="secondary-button btn-wide" style="anchor-width: 170;">Done</button>
                         </div>
                     </div>
-                </div>
-                """);
+                """;
+
+        String html = template.process(wrapSideBySideHtml(template, ctx, rightPanelHtml));
 
         PageBuilder page = PageBuilder.pageForPlayer(playerRef)
                 .withLifetime(CustomPageLifetime.CanDismiss)
                 .fromHtml(HtmlUtils.sanitizeHtmlForHyUI(html));
+
+        setupMainEventListeners(page, playerRef, store, Tab.MANAGE, ctx.unifiedList(), ctx.searchQuery(), ctx.normalizedViewingGroup(), null);
 
         final String[] editedName = {currentName};
         final float[] nametagOffset = {currentNametagOffset};
@@ -3758,10 +3913,10 @@ public class CitizensUI {
                 openNametagSettingsGUI(playerRef, store, editedName[0], nametagOffset[0], hideNametag[0],
                         true, nametagModelId[0], nametagModelScale[0], rotateModelTowardsPlayer[0], onDone, onCancel));
 
-        page.addEventListener("nametag-offset", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
-            ctx.getValue("nametag-offset", Double.class).ifPresent(val -> nametagOffset[0] = val.floatValue());
+        page.addEventListener("nametag-offset", CustomUIEventBindingType.ValueChanged, (event, uiCtx) -> {
+            uiCtx.getValue("nametag-offset", Double.class).ifPresent(val -> nametagOffset[0] = val.floatValue());
             if (nametagOffset[0] == 0.0f) {
-                ctx.getValue("nametag-offset", String.class).ifPresent(val -> {
+                uiCtx.getValue("nametag-offset", String.class).ifPresent(val -> {
                     try {
                         nametagOffset[0] = Float.parseFloat(val);
                     } catch (NumberFormatException ignored) {
@@ -3770,25 +3925,25 @@ public class CitizensUI {
             }
         });
 
-        page.addEventListener("hide-nametag-check", CustomUIEventBindingType.ValueChanged, (event, ctx) ->
-                hideNametag[0] = ctx.getValue("hide-nametag-check", Boolean.class).orElse(false));
+        page.addEventListener("hide-nametag-check", CustomUIEventBindingType.ValueChanged, (event, uiCtx) ->
+                hideNametag[0] = uiCtx.getValue("hide-nametag-check", Boolean.class).orElse(false));
 
         if (currentModelNametagEnabled) {
-            page.addEventListener("nametag-model-id", CustomUIEventBindingType.ValueChanged, (event, ctx) ->
-                    nametagModelId[0] = ctx.getValue("nametag-model-id", String.class).orElse(""));
+            page.addEventListener("nametag-model-id", CustomUIEventBindingType.ValueChanged, (event, uiCtx) ->
+                    nametagModelId[0] = uiCtx.getValue("nametag-model-id", String.class).orElse(""));
 
-            page.addEventListener("nametag-model-dropdown", CustomUIEventBindingType.ValueChanged, (event, ctx) ->
-                    ctx.getValue("nametag-model-dropdown", String.class).ifPresent(val -> nametagModelId[0] = val));
+            page.addEventListener("nametag-model-dropdown", CustomUIEventBindingType.ValueChanged, (event, uiCtx) ->
+                    uiCtx.getValue("nametag-model-dropdown", String.class).ifPresent(val -> nametagModelId[0] = val));
 
             try {
-                page.addEventListener("nametag-model-scale", CustomUIEventBindingType.ValueChanged, (event, ctx) ->
-                        ctx.getValue("nametag-model-scale", Double.class)
+                page.addEventListener("nametag-model-scale", CustomUIEventBindingType.ValueChanged, (event, uiCtx) ->
+                        uiCtx.getValue("nametag-model-scale", Double.class)
                                 .ifPresent(val -> nametagModelScale[0] = Math.max(0.01f, val.floatValue())));
             } catch (IllegalArgumentException ignored) {
             }
 
-            page.addEventListener("rotate-nametag-towards-player", CustomUIEventBindingType.ValueChanged, (event, ctx) ->
-                    rotateModelTowardsPlayer[0] = ctx.getValue("rotate-nametag-towards-player", Boolean.class).orElse(true));
+            page.addEventListener("rotate-nametag-towards-player", CustomUIEventBindingType.ValueChanged, (event, uiCtx) ->
+                    rotateModelTowardsPlayer[0] = uiCtx.getValue("rotate-nametag-towards-player", Boolean.class).orElse(true));
         } else {
             page.addEventListener("edit-nametag-lines-btn", CustomUIEventBindingType.Activating, event ->
                     openNametagLinesGUI(
@@ -4806,6 +4961,26 @@ public class CitizensUI {
             page.addEventListener("save-btn-top", CustomUIEventBindingType.Activating, (event, ctx) -> saveAction.accept(event, ctx));
         } catch (IllegalArgumentException ignored) {}
 
+        try {
+            page.addEventListener("bottom-tp", CustomUIEventBindingType.Activating, event ->
+                    teleportPlayerToCitizen(playerRef, citizen));
+        } catch (IllegalArgumentException ignored) {}
+
+        try {
+            page.addEventListener("bottom-clone", CustomUIEventBindingType.Activating, event -> {
+                if (cloneCitizenToPlayer(playerRef, citizen)) {
+                    openCitizensGUI(playerRef, store, Tab.MANAGE);
+                }
+            });
+        } catch (IllegalArgumentException ignored) {}
+
+        try {
+            page.addEventListener("bottom-remove", CustomUIEventBindingType.Activating, event -> {
+                removeCitizen(playerRef, citizen);
+                openCitizensGUI(playerRef, store, Tab.MANAGE);
+            });
+        } catch (IllegalArgumentException ignored) {}
+
         page.addEventListener("cancel-btn", CustomUIEventBindingType.Activating, event ->
                 openManageForGroup(playerRef, store, currentGroup[0]));
     }
@@ -4897,6 +5072,8 @@ public class CitizensUI {
                                    boolean isCreating, @Nonnull CommandAction command, int editIndex) {
         boolean isNew = (editIndex == -1);
         String currentTrigger = command.getInteractionTrigger() != null ? command.getInteractionTrigger() : "BOTH";
+        CitizenData citizen = plugin.getCitizensManager().getCitizen(citizenId);
+        LeftPanelContext ctx = prepareLeftPanelContext(playerRef, "", citizen != null ? citizen.getGroup() : null, citizen);
 
         TemplateProcessor template = createBaseTemplate()
                 .setVariable("command", escapeHtml(command.getCommand()))
@@ -4908,9 +5085,9 @@ public class CitizensUI {
                 .setVariable("isFKey", "F_KEY".equals(currentTrigger))
                 .setVariable("isBoth", "BOTH".equals(currentTrigger));
 
-        String html = template.process(getSharedStyles() + """
-                <div class="page-overlay">
-                    <div class="main-container decorated-container" style="anchor-width: 680; anchor-height: 780;">
+        String rightPanelHtml = """
+                    <!-- RIGHT PANEL: EDIT COMMAND -->
+                    <div class="main-container decorated-container" style="anchor-width: 900; anchor-height: 900;">
 
                         <!-- Header -->
                         <div class="header container-title">
@@ -4920,17 +5097,22 @@ public class CitizensUI {
                         </div>
 
                         <!-- Body -->
-                        <div class="body">
+                        <div class="body" data-hyui-scrollbar-style='"Common.ui" "DefaultScrollbarStyle"' style="layout-mode: TopScrolling; flex-weight: 1;">
 
                             <p class="page-description">{{#if isNew}}Configure a new command to execute on interaction{{else}}Modify the command that executes on interaction{{/if}}</p>
                             <div class="spacer-sm"></div>
 
                             <!-- Command Input -->
                             <div class="section">
-                                {{@sectionHeader:title=Command}}
-                                <input type="text" id="command-input" class="form-input" value="{{$command}}"
-                                       placeholder="give {PlayerName} Rock_Gem_Diamond" />
-                                <p class="form-hint">The command to execute. Do not include the leading /. Variables: {PlayerName}, {CitizenName}, {NpcX}, {NpcY}, {NpcZ}.</p>
+                                {{@sectionHeader:title=Command,description=Enter command without leading slash}}
+                                <div class="form-row" style="horizontal-align: center;">
+                                    <div class="form-col-fixed" style="anchor-width: 460;">
+                                        <input type="text" id="command-input" class="form-input" value="{{$command}}"
+                                               placeholder="give {PlayerName} Rock_Gem_Diamond" style="width: 100%;" />
+                                        <div class="spacer-xs"></div>
+                                        <p class="form-hint" style="text-align: center;">The command to execute. Do not include the leading /. Variables: {PlayerName}, {CitizenName}, {NpcX}, {NpcY}, {NpcZ}.</p>
+                                    </div>
+                                </div>
                             </div>
 
                             <div class="spacer-md"></div>
@@ -4938,12 +5120,12 @@ public class CitizensUI {
                             <!-- Interaction Trigger -->
                             <div class="section">
                                 {{@sectionHeader:title=Interaction Trigger,description=Which player action triggers this command}}
-                                <div class="form-row">
-                                    <button id="trigger-left-click" class="{{#if isLeftClick}}secondary-button{{else}}secondary-button{{/if}}" style="flex-weight: 1; anchor-height: 38;">Left Click</button>
+                                <div class="form-row" style="horizontal-align: center;">
+                                    <button id="trigger-left-click" class="secondary-button" style="anchor-width: 150; anchor-height: 38;">Left Click</button>
                                     <div class="spacer-h-sm"></div>
-                                    <button id="trigger-f-key" class="{{#if isFKey}}secondary-button{{else}}secondary-button{{/if}}" style="flex-weight: 1; anchor-height: 38;">F Key</button>
+                                    <button id="trigger-f-key" class="secondary-button" style="anchor-width: 150; anchor-height: 38;">F Key</button>
                                     <div class="spacer-h-sm"></div>
-                                    <button id="trigger-both" class="{{#if isBoth}}secondary-button{{else}}secondary-button{{/if}}" style="flex-weight: 1; anchor-height: 38;">Both</button>
+                                    <button id="trigger-both" class="secondary-button" style="anchor-width: 150; anchor-height: 38;">Both</button>
                                 </div>
                                 <div class="spacer-xs"></div>
                                 {{#if isLeftClick}}
@@ -4961,25 +5143,33 @@ public class CitizensUI {
 
                             <!-- Delay Input -->
                             <div class="section">
-                                {{@sectionHeader:title=Delay}}
-                                {{@numberField:id=delay-seconds,label=Delay Before Command (seconds),value={{$delaySeconds}},placeholder=0,min=0,max=300,step=0.5,decimals=1,hint=Wait time before executing this command}}
+                                {{@sectionHeader:title=Delay,description=Wait time before executing this command}}
+                                <div class="form-row" style="horizontal-align: center;">
+                                    <div class="form-col-fixed" style="anchor-width: 250;">
+                                        {{@numberField:id=delay-seconds,label=Delay Before Command (seconds),value={{$delaySeconds}},placeholder=0,min=0,max=300,step=0.5,decimals=1,hint=Wait time before executing this command}}
+                                    </div>
+                                </div>
                             </div>
 
                             <div class="spacer-md"></div>
 
                             <div class="section">
-                                {{@sectionHeader:title=Chance}}
-                                {{@numberField:id=chance-percent,label=Chance %,value={{$chancePercent}},placeholder=100,min=0,max=100,step=1,decimals=1,hint=Percent chance this command is selected when it is otherwise eligible}}
+                                {{@sectionHeader:title=Chance,description=Execution probability}}
+                                <div class="form-row" style="horizontal-align: center;">
+                                    <div class="form-col-fixed" style="anchor-width: 250;">
+                                        {{@numberField:id=chance-percent,label=Chance %,value={{$chancePercent}},placeholder=100,min=0,max=100,step=1,decimals=1,hint=Percent chance this command is selected when it is otherwise eligible}}
+                                    </div>
+                                </div>
                             </div>
 
                             <div class="spacer-md"></div>
 
                             <!-- Run As Server Toggle -->
                             <div class="section">
-                                {{@sectionHeader:title=Execution Mode}}
-                                <div class="checkbox-row">
+                                {{@sectionHeader:title=Execution Mode,description=Run command as console or player}}
+                                <div class="checkbox-row" style="horizontal-align: center;">
                                     <input type="checkbox" id="run-as-server" {{#if runAsServer}}checked{{/if}} />
-                                    <div style="layout: top; flex-weight: 0;">
+                                    <div style="layout: top; flex-weight: 0; text-align: center;">
                                         <p class="checkbox-label">Run as Server</p>
                                         <p class="checkbox-description">Execute as console command instead of player</p>
                                     </div>
@@ -4989,19 +5179,22 @@ public class CitizensUI {
                         </div>
 
                         <!-- Footer -->
-                        <div class="footer">
-                            <button id="cancel-btn" class="secondary-button">Cancel</button>
+                        <div class="footer" style="layout: center; flex-weight: 0; padding: 26 16 26 16; border-top: 1 solid #1a293c; width: 100%; vertical-align: center;">
+                            <button id="cancel-btn" class="secondary-button" style="anchor-width: 150;">Cancel</button>
                             <div class="spacer-h-md"></div>
                             <button id="save-cmd-btn" class="secondary-button" style="anchor-width: 200;">{{#if isNew}}Add Command{{else}}Save Changes{{/if}}</button>
                         </div>
 
                     </div>
-                </div>
-                """);
+                """;
+
+        String html = template.process(wrapSideBySideHtml(template, ctx, rightPanelHtml));
 
         PageBuilder page = PageBuilder.pageForPlayer(playerRef)
                 .withLifetime(CustomPageLifetime.CanDismiss)
                 .fromHtml(HtmlUtils.sanitizeHtmlForHyUI(html));
+
+        setupMainEventListeners(page, playerRef, store, Tab.MANAGE, ctx.unifiedList(), ctx.searchQuery(), ctx.normalizedViewingGroup(), citizen);
 
         final String[] commandText = {command.getCommand()};
         final boolean[] runAsServer = {command.isRunAsServer()};
@@ -5009,8 +5202,8 @@ public class CitizensUI {
         final float[] chancePercent = {command.getChancePercent()};
         final String[] interactionTrigger = {currentTrigger};
 
-        page.addEventListener("command-input", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
-            commandText[0] = ctx.getValue("command-input", String.class).orElse("");
+        page.addEventListener("command-input", CustomUIEventBindingType.ValueChanged, (event, eventCtx) -> {
+            commandText[0] = eventCtx.getValue("command-input", String.class).orElse("");
         });
 
         page.addEventListener("trigger-left-click", CustomUIEventBindingType.Activating, event -> {
@@ -5031,12 +5224,12 @@ public class CitizensUI {
                     new CommandAction(commandText[0], runAsServer[0], delaySeconds[0], "BOTH", chancePercent[0]), editIndex);
         });
 
-        page.addEventListener("delay-seconds", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
-            ctx.getValue("delay-seconds", Double.class)
+        page.addEventListener("delay-seconds", CustomUIEventBindingType.ValueChanged, (event, eventCtx) -> {
+            eventCtx.getValue("delay-seconds", Double.class)
                     .ifPresent(val -> delaySeconds[0] = val.floatValue());
 
             if (delaySeconds[0] == 0.0f) {
-                ctx.getValue("delay-seconds", String.class)
+                eventCtx.getValue("delay-seconds", String.class)
                         .ifPresent(val -> {
                             try {
                                 delaySeconds[0] = Float.parseFloat(val);
@@ -5046,12 +5239,12 @@ public class CitizensUI {
             }
         });
 
-        page.addEventListener("run-as-server", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
-            runAsServer[0] = ctx.getValue("run-as-server", Boolean.class).orElse(false);
+        page.addEventListener("run-as-server", CustomUIEventBindingType.ValueChanged, (event, eventCtx) -> {
+            runAsServer[0] = eventCtx.getValue("run-as-server", Boolean.class).orElse(false);
         });
 
-        page.addEventListener("chance-percent", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
-            ctx.getValue("chance-percent", Double.class).ifPresent(val -> {
+        page.addEventListener("chance-percent", CustomUIEventBindingType.ValueChanged, (event, eventCtx) -> {
+            eventCtx.getValue("chance-percent", Double.class).ifPresent(val -> {
                 chancePercent[0] = Math.max(0.0f, Math.min(100.0f, val.floatValue()));
             });
         });
@@ -5161,9 +5354,11 @@ public class CitizensUI {
                 .setVariable("followTargetName", escapeHtml(followTargetName))
                 .setVariable("followTargetMeta", escapeHtml(followTargetMeta));
 
-        String html = template.process(getSharedStyles() + """
-                <div class="page-overlay">
-                    <div class="main-container decorated-container" style="anchor-width: 950; anchor-height: 1040;">
+        LeftPanelContext ctx = prepareLeftPanelContext(playerRef, "", citizen.getGroup(), citizen);
+
+        String rightPanelHtml = """
+                    <!-- RIGHT PANEL: BEHAVIORS -->
+                    <div class="main-container decorated-container" style="anchor-width: 900; anchor-height: 900;">
                 
                         <!-- Header -->
                         <div class="header container-title">
@@ -5173,7 +5368,7 @@ public class CitizensUI {
                         </div>
                 
                         <!-- Body -->
-                        <div class="body" data-hyui-scrollbar-style='"Common.ui" "DefaultScrollbarStyle"' style="layout-mode: TopScrolling;">
+                        <div class="body" data-hyui-scrollbar-style='"Common.ui" "DefaultScrollbarStyle"' style="layout-mode: TopScrolling; flex-weight: 1;">
 
                             <p class="page-description">Configure movement and animations for this citizen</p>
                             <div class="spacer-sm"></div>
@@ -5532,20 +5727,22 @@ public class CitizensUI {
                         <div class="spacer-sm"></div>
 
                         <!-- Footer -->
-                        <div class="footer">
-                            <button id="cancel-btn" class="secondary-button">Cancel</button>
+                        <div class="footer" style="layout: center; flex-weight: 0; padding: 26 16 26 16; border-top: 1 solid #1a293c; width: 100%; vertical-align: center;">
+                            <button id="cancel-btn" class="secondary-button" style="anchor-width: 150;">Cancel</button>
                             <div class="spacer-h-md"></div>
                             <button id="done-btn" class="secondary-button" style="anchor-width: 160;">Done</button>
                         </div>
 
                     </div>
-                </div>
-                """);
+                """;
+
+        String html = template.process(wrapSideBySideHtml(template, ctx, rightPanelHtml));
 
         PageBuilder page = PageBuilder.pageForPlayer(playerRef)
                 .withLifetime(CustomPageLifetime.CanDismiss)
                 .fromHtml(HtmlUtils.sanitizeHtmlForHyUI(html));
 
+        setupMainEventListeners(page, playerRef, store, Tab.MANAGE, ctx.unifiedList(), ctx.searchQuery(), ctx.normalizedViewingGroup(), citizen);
         setupBehaviorsListeners(page, playerRef, store, citizen);
 
         page.open(store);
@@ -5929,24 +6126,25 @@ public class CitizensUI {
             indexedFactions.add(new IndexedFaction(i, factions.get(i)));
         }
 
+        LeftPanelContext ctx = prepareLeftPanelContext(playerRef, "", citizen.getGroup(), citizen);
+
         TemplateProcessor template = createBaseTemplate()
                 .setVariable("attitudeGroupOptions", generateAttitudeGroupOptions(citizen.getAttitudeGroup(), true))
                 .setVariable("factionIdOptions", generateFactionIdOptions(assignedFactionId))
                 .setVariable("factions", indexedFactions)
                 .setVariable("hasFactions", !indexedFactions.isEmpty());
 
-        String html = template.process(getSharedStyles() + """
-                <style>
-                    .faction-page .form-label {
-                        text-align: center;
-                    }
+        String rightPanelHtml = """
+                    <style>
+                        .faction-page .form-label {
+                            text-align: center;
+                        }
 
-                    .faction-page .form-hint {
-                        text-align: center;
-                    }
-                </style>
-                <div class="page-overlay faction-page">
-                    <div class="main-container decorated-container" style="anchor-width: 850; anchor-height: 850;">
+                        .faction-page .form-hint {
+                            text-align: center;
+                        }
+                    </style>
+                    <div class="main-container decorated-container faction-page" style="anchor-width: 900; anchor-height: 900;">
 
                         <div class="header container-title">
                             <div class="header-content">
@@ -5954,31 +6152,39 @@ public class CitizensUI {
                             </div>
                         </div>
 
-                        <div class="body" data-hyui-scrollbar-style='"Common.ui" "DefaultScrollbarStyle"' style="layout-mode: TopScrolling;">
+                        <div class="body" data-hyui-scrollbar-style='"Common.ui" "DefaultScrollbarStyle"' style="layout-mode: TopScrolling; flex-weight: 1;">
                             <p class="page-description">Assign this citizen to a faction or manage reusable faction definitions</p>
                             <div class="spacer-sm"></div>
 
                             <div class="section">
                                 {{@sectionHeader:title=Faction,description=Assign a reusable HyCitizens faction to this citizen}}
-                                <select id="faction-id-select" data-hyui-showlabel="true">
-                                    {{{$factionIdOptions}}}
-                                </select>
+                                <div class="form-row" style="horizontal-align: center;">
+                                    <div class="form-col-fixed" style="anchor-width: 460;">
+                                        <select id="faction-id-select" data-hyui-showlabel="true">
+                                            {{{$factionIdOptions}}}
+                                        </select>
+                                    </div>
+                                </div>
                             </div>
 
                             <div class="spacer-md"></div>
 
                             <div class="section">
                                 {{@sectionHeader:title=Fallback Attitude Group,description=Used only when no faction is selected}}
-                                <select id="attitude-group-select" data-hyui-showlabel="true">
-                                    {{{$attitudeGroupOptions}}}
-                                </select>
+                                <div class="form-row" style="horizontal-align: center;">
+                                    <div class="form-col-fixed" style="anchor-width: 460;">
+                                        <select id="attitude-group-select" data-hyui-showlabel="true">
+                                            {{{$attitudeGroupOptions}}}
+                                        </select>
+                                    </div>
+                                </div>
                             </div>
 
                             <div class="spacer-md"></div>
 
                             <div class="section">
                                 {{@sectionHeader:title=Faction Definitions,description=Create or edit reusable faction relationships}}
-                                <div class="form-row">
+                                <div class="form-row" style="horizontal-align: center;">
                                     <button id="create-faction-btn" class="secondary-button" style="anchor-width: 220; anchor-height: 44;">Create Faction</button>
                                 </div>
                                 <div class="spacer-sm"></div>
@@ -6011,19 +6217,21 @@ public class CitizensUI {
                             </div>
                         </div>
 
-                        <div class="footer">
-                            <button id="cancel-btn" class="secondary-button">Back</button>
+                        <div class="footer" style="layout: center; flex-weight: 0; padding: 26 16 26 16; border-top: 1 solid #1a293c; width: 100%; vertical-align: center;">
+                            <button id="cancel-btn" class="secondary-button" style="anchor-width: 150;">Back</button>
                             <div class="spacer-h-md"></div>
-                            <button id="save-factions-btn" class="secondary-button">Save</button>
+                            <button id="save-factions-btn" class="secondary-button" style="anchor-width: 150;">Save</button>
                         </div>
                     </div>
-                </div>
-                """);
+                """;
+
+        String html = template.process(wrapSideBySideHtml(template, ctx, rightPanelHtml));
 
         PageBuilder page = PageBuilder.pageForPlayer(playerRef)
                 .withLifetime(CustomPageLifetime.CanDismiss)
                 .fromHtml(HtmlUtils.sanitizeHtmlForHyUI(html));
 
+        setupMainEventListeners(page, playerRef, store, Tab.MANAGE, ctx.unifiedList(), ctx.searchQuery(), ctx.normalizedViewingGroup(), citizen);
         setupFactionsListeners(page, playerRef, store, citizen, factions);
         page.open(store);
     }
@@ -6069,6 +6277,8 @@ public class CitizensUI {
     private void openFactionEditorGUI(@Nonnull PlayerRef playerRef, @Nonnull Store<EntityStore> store,
                                       @Nonnull CitizenData citizen, @Nonnull FactionConfig faction,
                                       boolean creating) {
+        LeftPanelContext ctx = prepareLeftPanelContext(playerRef, "", citizen.getGroup(), citizen);
+
         TemplateProcessor template = createBaseTemplate()
                 .setVariable("creating", creating)
                 .setVariable("factionId", escapeHtml(faction.getFactionId()))
@@ -6077,69 +6287,84 @@ public class CitizensUI {
                 .setVariable("factionPassiveGroups", escapeHtml(String.join(", ", faction.getPassiveGroups())))
                 .setVariable("npcGroupAddOptions", generateNpcGroupOptions("", true));
 
-        String html = template.process(getSharedStyles() + """
-                <style>
-                    .faction-page .form-label {
-                        text-align: center;
-                    }
+        String rightPanelHtml = """
+                    <style>
+                        .faction-page .form-label {
+                            text-align: center;
+                        }
 
-                    .faction-page .form-hint {
-                        text-align: center;
-                    }
-                </style>
-                <div class="page-overlay faction-page">
-                    <div class="main-container decorated-container" style="anchor-width: 820; anchor-height: 900;">
+                        .faction-page .form-hint {
+                            text-align: center;
+                        }
+                    </style>
+                    <div class="main-container decorated-container faction-page" style="anchor-width: 900; anchor-height: 900;">
                         <div class="header container-title">
                             <div class="header-content">
                                 <p class="header-title">{{#if creating}}Create Faction{{else}}Edit Faction{{/if}}</p>
                             </div>
                         </div>
 
-                        <div class="body" data-hyui-scrollbar-style='"Common.ui" "DefaultScrollbarStyle"' style="layout-mode: TopScrolling;">
+                        <div class="body" data-hyui-scrollbar-style='"Common.ui" "DefaultScrollbarStyle"' style="layout-mode: TopScrolling; flex-weight: 1;">
                             <div class="section">
                                 {{@sectionHeader:title=Faction,description=Reusable HyCitizens faction definition}}
-                                {{@formField:id=faction-id,label=Faction ID,value={{$factionId}},placeholder=Guard,hint=Saved as HyCitizens_Faction_FactionID}}
+                                <div class="form-row" style="horizontal-align: center;">
+                                    <div class="form-col-fixed" style="anchor-width: 460;">
+                                        {{@formField:id=faction-id,label=Faction ID,value={{$factionId}},placeholder=Guard,hint=Saved as HyCitizens_Faction_FactionID}}
+                                    </div>
+                                </div>
                             </div>
 
                             <div class="spacer-md"></div>
 
                             <div class="section">
                                 {{@sectionHeader:title=Hostile,description=Groups this faction attacks on sight}}
-                                {{@formField:id=faction-hostile-groups,label=Hostile Groups,value={{$factionHostileGroups}},placeholder=Predators, Bandits,hint=Comma-separated NPC group IDs}}
-                                <div class="spacer-xs"></div>
-                                <p class="form-label">Add Known Group</p>
-                                <select id="faction-hostile-add" data-hyui-showlabel="true">
-                                    {{{$npcGroupAddOptions}}}
-                                </select>
+                                <div class="form-row" style="horizontal-align: center;">
+                                    <div class="form-col-fixed" style="anchor-width: 460;">
+                                        {{@formField:id=faction-hostile-groups,label=Hostile Groups,value={{$factionHostileGroups}},placeholder=Predators, Bandits,hint=Comma-separated NPC group IDs}}
+                                        <div class="spacer-xs"></div>
+                                        <p class="form-label">Add Known Group</p>
+                                        <select id="faction-hostile-add" data-hyui-showlabel="true">
+                                            {{{$npcGroupAddOptions}}}
+                                        </select>
+                                    </div>
+                                </div>
                             </div>
 
                             <div class="spacer-md"></div>
 
                             <div class="section">
                                 {{@sectionHeader:title=Neutral,description=Groups this faction treats as neutral}}
-                                {{@formField:id=faction-neutral-groups,label=Neutral Groups,value={{$factionNeutralGroups}},placeholder=Prey,hint=Comma-separated NPC group IDs}}
-                                <div class="spacer-xs"></div>
-                                <p class="form-label">Add Known Group</p>
-                                <select id="faction-neutral-add" data-hyui-showlabel="true">
-                                    {{{$npcGroupAddOptions}}}
-                                </select>
+                                <div class="form-row" style="horizontal-align: center;">
+                                    <div class="form-col-fixed" style="anchor-width: 460;">
+                                        {{@formField:id=faction-neutral-groups,label=Neutral Groups,value={{$factionNeutralGroups}},placeholder=Prey,hint=Comma-separated NPC group IDs}}
+                                        <div class="spacer-xs"></div>
+                                        <p class="form-label">Add Known Group</p>
+                                        <select id="faction-neutral-add" data-hyui-showlabel="true">
+                                            {{{$npcGroupAddOptions}}}
+                                        </select>
+                                    </div>
+                                </div>
                             </div>
 
                             <div class="spacer-md"></div>
 
                             <div class="section">
                                 {{@sectionHeader:title=Passive,description=Groups this faction ignores}}
-                                {{@formField:id=faction-passive-groups,label=Passive Groups,value={{$factionPassiveGroups}},placeholder=Passive,hint=Comma-separated NPC group IDs}}
-                                <div class="spacer-xs"></div>
-                                <p class="form-label">Add Known Group</p>
-                                <select id="faction-passive-add" data-hyui-showlabel="true">
-                                    {{{$npcGroupAddOptions}}}
-                                </select>
+                                <div class="form-row" style="horizontal-align: center;">
+                                    <div class="form-col-fixed" style="anchor-width: 460;">
+                                        {{@formField:id=faction-passive-groups,label=Passive Groups,value={{$factionPassiveGroups}},placeholder=Passive,hint=Comma-separated NPC group IDs}}
+                                        <div class="spacer-xs"></div>
+                                        <p class="form-label">Add Known Group</p>
+                                        <select id="faction-passive-add" data-hyui-showlabel="true">
+                                            {{{$npcGroupAddOptions}}}
+                                        </select>
+                                    </div>
+                                </div>
                             </div>
                         </div>
 
-                        <div class="footer">
-                            <button id="cancel-btn" class="secondary-button">Back</button>
+                        <div class="footer" style="layout: center; flex-weight: 0; padding: 26 16 26 16; border-top: 1 solid #1a293c; width: 100%; vertical-align: center;">
+                            <button id="cancel-btn" class="secondary-button" style="anchor-width: 150;">Back</button>
                             <div class="spacer-h-md"></div>
                             {{#if creating}}
                                 <button id="save-faction-btn" class="secondary-button" style="anchor-width: 180;">Save Faction</button>
@@ -6150,13 +6375,15 @@ public class CitizensUI {
                             {{/if}}
                         </div>
                     </div>
-                </div>
-                """);
+                """;
+
+        String html = template.process(wrapSideBySideHtml(template, ctx, rightPanelHtml));
 
         PageBuilder page = PageBuilder.pageForPlayer(playerRef)
                 .withLifetime(CustomPageLifetime.CanDismiss)
                 .fromHtml(HtmlUtils.sanitizeHtmlForHyUI(html));
 
+        setupMainEventListeners(page, playerRef, store, Tab.MANAGE, ctx.unifiedList(), ctx.searchQuery(), ctx.normalizedViewingGroup(), citizen);
         setupFactionEditorListeners(page, playerRef, store, citizen, faction, creating);
         page.open(store);
     }
@@ -6298,9 +6525,11 @@ public class CitizensUI {
                 .setVariable("hasDefaultForSlot", defaultAnimForSlot != null)
                 .setVariable("defaultAnimName", defaultAnimForSlot != null ? escapeHtml(defaultAnimForSlot) : "");
 
-        String html = template.process(getSharedStyles() + """
-                <div class="page-overlay">
-                    <div class="main-container decorated-container" style="anchor-width: 750; anchor-height: 900;">
+        LeftPanelContext ctx = prepareLeftPanelContext(playerRef, "", citizen.getGroup(), citizen);
+
+        String rightPanelHtml = """
+                    <!-- RIGHT PANEL: ANIMATION EDITOR -->
+                    <div class="main-container decorated-container" style="anchor-width: 900; anchor-height: 900;">
 
                         <!-- Header -->
                         <div class="header container-title">
@@ -6310,31 +6539,31 @@ public class CitizensUI {
                         </div>
                 
                         <!-- Body -->
-                        <div class="body">
+                        <div class="body" data-hyui-scrollbar-style='"Common.ui" "DefaultScrollbarStyle"' style="layout-mode: TopScrolling; flex-weight: 1;">
 
                             <p class="page-description">Configure when and how an animation plays</p>
                             <div class="spacer-sm"></div>
                 
                             <!-- Trigger Type -->
                             <div class="section">
-                                {{@sectionHeader:title=Trigger Type}}
+                                {{@sectionHeader:title=Trigger Type,description=When this animation should play}}
                                 <p style="color: #58a6ff; font-size: 12; text-align: center; margin-bottom: 8px;">
                                     Selected: {{#if isDefault}}Default{{/if}}{{#if isOnInteract}}On Interact{{/if}}{{#if isOnAttack}}On Attack{{/if}}{{#if isProxEnter}}Proximity Enter{{/if}}{{#if isProxExit}}Proximity Exit{{/if}}{{#if isTimed}}Timed{{/if}}
                                 </p>
-                                <div class="form-row">
-                                    <button id="type-default" class="{{#if isDefault}}secondary-button{{else}}secondary-button{{/if}}" style="anchor-width: 150; anchor-height: 45;">Default</button>
+                                <div class="form-row" style="horizontal-align: center;">
+                                    <button id="type-default" class="secondary-button" style="anchor-width: 150; anchor-height: 45;">Default</button>
                                     <div class="spacer-h-sm"></div>
-                                    <button id="type-interact" class="{{#if isOnInteract}}secondary-button{{else}}secondary-button{{/if}}" style="anchor-width: 200; anchor-height: 45;">On Interact</button>
+                                    <button id="type-interact" class="secondary-button" style="anchor-width: 170; anchor-height: 45;">On Interact</button>
                                     <div class="spacer-h-sm"></div>
-                                    <button id="type-attack" class="{{#if isOnAttack}}secondary-button{{else}}secondary-button{{/if}}" style="anchor-width: 150; anchor-height: 45;">On Attack</button>
+                                    <button id="type-attack" class="secondary-button" style="anchor-width: 150; anchor-height: 45;">On Attack</button>
                                 </div>
                                 <div class="spacer-sm"></div>
-                                <div class="form-row">
-                                    <button id="type-prox-enter" class="{{#if isProxEnter}}secondary-button{{else}}secondary-button{{/if}}" style="anchor-width: 215; anchor-height: 45;">Proximity Enter</button>
+                                <div class="form-row" style="horizontal-align: center;">
+                                    <button id="type-prox-enter" class="secondary-button" style="anchor-width: 170; anchor-height: 45;">Proximity Enter</button>
                                     <div class="spacer-h-sm"></div>
-                                    <button id="type-prox-exit" class="{{#if isProxExit}}secondary-button{{else}}secondary-button{{/if}}" style="anchor-width: 215; anchor-height: 45;">Proximity Exit</button>
+                                    <button id="type-prox-exit" class="secondary-button" style="anchor-width: 170; anchor-height: 45;">Proximity Exit</button>
                                     <div class="spacer-h-sm"></div>
-                                    <button id="type-timed" class="{{#if isTimed}}secondary-button{{else}}secondary-button{{/if}}" style="anchor-width: 150; anchor-height: 45;">Timed</button>
+                                    <button id="type-timed" class="secondary-button" style="anchor-width: 150; anchor-height: 45;">Timed</button>
                                 </div>
                             </div>
                 
@@ -6342,13 +6571,16 @@ public class CitizensUI {
                 
                             <!-- Animation Name -->
                             <div class="section">
-                                {{@sectionHeader:title=Animation Name}}
-                                <select id="anim-name" value="{{$animName}}" data-hyui-showlabel="true">
-                                    {{$animationOptions}}
-                                </select>
-                                 <p class="form-hint" style="text-align: center;">Select the animation to play on the model.</p>
-                                <div>
-                                    <p class="form-hint" style="text-align: center;">Note: It is recommended to install third-party animation mods. For example: "Emotale" or "Emotes" from CurseForge.</p>
+                                {{@sectionHeader:title=Animation Name,description=Select the animation to play on the model}}
+                                <div class="form-row" style="horizontal-align: center;">
+                                    <div class="form-col-fixed" style="anchor-width: 460;">
+                                        <select id="anim-name" value="{{$animName}}" data-hyui-showlabel="true">
+                                            {{$animationOptions}}
+                                        </select>
+                                        <div class="spacer-xs"></div>
+                                        <p class="form-hint" style="text-align: center;">Select the animation to play on the model.</p>
+                                        <p class="form-hint" style="text-align: center;">Note: It is recommended to install third-party animation mods. For example: "Emotale" or "Emotes" from CurseForge.</p>
+                                    </div>
                                 </div>
                             </div>
                 
@@ -6356,20 +6588,20 @@ public class CitizensUI {
                 
                             <!-- Animation Slot -->
                             <div class="section">
-                                {{@sectionHeader:title=Animation Type}}
+                                {{@sectionHeader:title=Animation Type,description=Select the slot type for this animation}}
                                 <p style="color: #58a6ff; font-size: 12; text-align: center; margin-bottom: 8px;">
                                     Selected: {{#if isSlot0}}Movement{{/if}}{{#if isSlot1}}Status{{/if}}{{#if isSlot2}}Action{{/if}}{{#if isSlot3}}Face{{/if}}{{#if isSlot4}}Emote{{/if}}
                                 </p>
-                                <div class="form-row">
-                                    <button id="slot-0" class="{{#if isSlot0}}secondary-button{{else}}secondary-button{{/if}}" style="anchor-width: 150; anchor-height: 45;">Movement</button>
+                                <div class="form-row" style="horizontal-align: center;">
+                                    <button id="slot-0" class="secondary-button" style="anchor-width: 120; anchor-height: 45;">Movement</button>
                                     <div class="spacer-h-sm"></div>
-                                    <button id="slot-1" class="{{#if isSlot1}}secondary-button{{else}}secondary-button{{/if}}" style="anchor-width: 120; anchor-height: 45;">Status</button>
+                                    <button id="slot-1" class="secondary-button" style="anchor-width: 110; anchor-height: 45;">Status</button>
                                     <div class="spacer-h-sm"></div>
-                                    <button id="slot-2" class="{{#if isSlot2}}secondary-button{{else}}secondary-button{{/if}}" style="anchor-width: 120; anchor-height: 45;">Action</button>
+                                    <button id="slot-2" class="secondary-button" style="anchor-width: 110; anchor-height: 45;">Action</button>
                                     <div class="spacer-h-sm"></div>
-                                    <button id="slot-3" class="{{#if isSlot3}}secondary-button{{else}}secondary-button{{/if}}" style="anchor-width: 110; anchor-height: 45;">Face</button>
+                                    <button id="slot-3" class="secondary-button" style="anchor-width: 100; anchor-height: 45;">Face</button>
                                     <div class="spacer-h-sm"></div>
-                                    <button id="slot-4" class="{{#if isSlot4}}secondary-button{{else}}secondary-button{{/if}}" style="anchor-width: 110; anchor-height: 45;">Emote</button>
+                                    <button id="slot-4" class="secondary-button" style="anchor-width: 100; anchor-height: 45;">Emote</button>
                                 </div>
                                 <div class="spacer-xs"></div>
                                 <p style="color: #8b949e; font-size: 12; text-align: center;">Trial and error may be needed to figure out which animation uses which type. Usually "Action" works for most.</p>
@@ -6380,8 +6612,8 @@ public class CitizensUI {
                             <!-- Conditional fields -->
                             {{#if isTimed}}
                             <div class="section">
-                                <div style="layout: center; flex-weight: 0;">
-                                    <div style="anchor-width: 300; flex-weight: 0;">
+                                <div class="form-row" style="horizontal-align: center;">
+                                    <div class="form-col-fixed" style="anchor-width: 250;">
                                         {{@numberField:id=interval-seconds,label=Interval (seconds),value={{$intervalSeconds}},placeholder=5.0,min=0.5,max=3600,step=0.5,decimals=1,hint=How often the animation plays}}
                                     </div>
                                 </div>
@@ -6390,8 +6622,8 @@ public class CitizensUI {
                 
                             {{#if isProxEnter}}
                             <div class="section">
-                                <div style="layout: center; flex-weight: 0;">
-                                    <div style="anchor-width: 300; flex-weight: 0;">
+                                <div class="form-row" style="horizontal-align: center;">
+                                    <div class="form-col-fixed" style="anchor-width: 250;">
                                         {{@numberField:id=proximity-range,label=Range (blocks),value={{$proximityRange}},placeholder=8,min=1,max=100,step=1,decimals=0,hint=Distance in blocks to trigger the animation}}
                                     </div>
                                 </div>
@@ -6400,8 +6632,8 @@ public class CitizensUI {
 
                             {{#if isProxExit}}
                             <div class="section">
-                                <div style="layout: center; flex-weight: 0;">
-                                    <div style="anchor-width: 300; flex-weight: 0;">
+                                <div class="form-row" style="horizontal-align: center;">
+                                    <div class="form-col-fixed" style="anchor-width: 250;">
                                         {{@numberField:id=proximity-range,label=Range (blocks),value={{$proximityRange}},placeholder=8,min=1,max=100,step=1,decimals=0,hint=Distance in blocks to trigger the animation}}
                                     </div>
                                 </div>
@@ -6417,7 +6649,7 @@ public class CitizensUI {
                                     <p class="form-hint" style="text-align: center; color: #f85149;">Only enable this if the animation is set to loop!</p>
                                 </div>
 
-                                <div class="checkbox-row">
+                                <div class="checkbox-row" style="horizontal-align: center;">
                                     <input type="checkbox" id="stop-after-time" {{#if stopAfterTime}}checked{{/if}} />
                                     <div style="layout: top; flex-weight: 0; text-align: center;">
                                         <p class="checkbox-label">Stop animating after time</p>
@@ -6428,8 +6660,8 @@ public class CitizensUI {
 
                                 {{#if stopAfterTime}}
                                 <div class="spacer-sm"></div>
-                                <div style="layout: center; flex-weight: 0;">
-                                    <div style="anchor-width: 300; flex-weight: 0;">
+                                <div class="form-row" style="horizontal-align: center;">
+                                    <div class="form-col-fixed" style="anchor-width: 250;">
                                         {{@numberField:id=stop-time-seconds,label=Stop After (seconds),value={{$stopTimeSeconds}},placeholder=3.0,min=0.5,max=60,step=0.5,decimals=1,hint=Time since last trigger before stopping the animation}}
                                     </div>
                                 </div>
@@ -6442,13 +6674,15 @@ public class CitizensUI {
                                 </p>
                                 {{/if}}
 
-                                <div class="section" style="background-color: #161b22;">
-                                    <p style="color: #8b949e; font-size: 12; text-align: center; margin-bottom: 6px;">Stop Animation</p>
-                                    <select id="stop-anim-name" data-hyui-showlabel="true">
-                                        <option value="" {{#if stopAnimNameIsEmpty}}selected{{/if}}>{{#if hasDefaultForSlot}}DEFAULT{{else}}Idle{{/if}}</option>
-                                        {{$stopAnimationOptions}}
-                                    </select>
-                                    <p class="form-hint" style="text-align: center;">Animation to play when stopping. Leave empty to use DEFAULT if available.</p>
+                                <div class="form-row" style="horizontal-align: center;">
+                                    <div class="form-col-fixed" style="anchor-width: 460;">
+                                        <p style="color: #8b949e; font-size: 12; text-align: center; margin-bottom: 6px;">Stop Animation</p>
+                                        <select id="stop-anim-name" data-hyui-showlabel="true">
+                                            <option value="" {{#if stopAnimNameIsEmpty}}selected{{/if}}>{{#if hasDefaultForSlot}}DEFAULT{{else}}Idle{{/if}}</option>
+                                            {{$stopAnimationOptions}}
+                                        </select>
+                                        <p class="form-hint" style="text-align: center;">Animation to play when stopping. Leave empty to use DEFAULT if available.</p>
+                                    </div>
                                 </div>
                                 {{/if}}
                             </div>
@@ -6457,20 +6691,22 @@ public class CitizensUI {
                         </div>
 
                         <!-- Footer -->
-                        <div class="footer">
-                            <button id="cancel-btn" class="secondary-button">Cancel</button>
+                        <div class="footer" style="layout: center; flex-weight: 0; padding: 26 16 26 16; border-top: 1 solid #1a293c; width: 100%; vertical-align: center;">
+                            <button id="cancel-btn" class="secondary-button" style="anchor-width: 150;">Cancel</button>
                             <div class="spacer-h-md"></div>
                             <button id="save-anim-btn" class="secondary-button" style="anchor-width: 200;">{{#if isEditing}}Save Changes{{else}}Add Animation{{/if}}</button>
                         </div>
                 
                     </div>
-                </div>
-                """);
+                """;
+
+        String html = template.process(wrapSideBySideHtml(template, ctx, rightPanelHtml));
 
         PageBuilder page = PageBuilder.pageForPlayer(playerRef)
                 .withLifetime(CustomPageLifetime.CanDismiss)
                 .fromHtml(HtmlUtils.sanitizeHtmlForHyUI(html));
 
+        setupMainEventListeners(page, playerRef, store, Tab.MANAGE, ctx.unifiedList(), ctx.searchQuery(), ctx.normalizedViewingGroup(), citizen);
         setupAnimationEditorListeners(page, playerRef, store, citizen, existing, editIndex);
 
         page.open(store);
@@ -6645,6 +6881,8 @@ public class CitizensUI {
             indexedMsgs.add(new IndexedMessage(i, msgs.get(i)));
         }
 
+        LeftPanelContext ctx = prepareLeftPanelContext(playerRef, "", citizen.getGroup(), citizen);
+
         TemplateProcessor template = createBaseTemplate()
                 .setVariable("messages", indexedMsgs)
                 .setVariable("hasMessages", !msgs.isEmpty())
@@ -6655,9 +6893,9 @@ public class CitizensUI {
                 .setVariable("selectionMode", mc.getSelectionMode())
                 .setVariable("enabled", mc.isEnabled());
 
-        String html = template.process(getSharedStyles() + """
-                <div class="page-overlay">
-                    <div class="main-container decorated-container" style="anchor-width: 900; anchor-height: 720;">
+        String rightPanelHtml = """
+                    <!-- RIGHT PANEL: MESSAGES -->
+                    <div class="main-container decorated-container" style="anchor-width: 900; anchor-height: 900;">
 
                         <!-- Header -->
                         <div class="header container-title">
@@ -6667,14 +6905,14 @@ public class CitizensUI {
                         </div>
 
                         <!-- Body -->
-                        <div class="body">
+                        <div class="body" data-hyui-scrollbar-style='"Common.ui" "DefaultScrollbarStyle"' style="layout-mode: TopScrolling; flex-weight: 1;">
 
                             <p class="page-description">Configure messages sent on interaction ({{$messageCount}} messages)</p>
                             <div class="spacer-sm"></div>
 
                             <!-- Info + Add Section -->
                             <div class="section">
-                                {{@sectionHeader:title=Messages}}
+                                {{@sectionHeader:title=Messages,description=Sent to the player upon interaction}}
                                 
                                 <div style="layout: center;">
                                     <button id="add-message-btn" class="secondary-button" style="anchor-width: 200; anchor-height: 38;">Add Message</button>
@@ -6684,13 +6922,13 @@ public class CitizensUI {
 
                                 <div class="card">
                                     <div class="card-body">
-                                        <p style="color: #8b949e; font-size: 12;"><span style="color: #58a6ff;">Colors:</span> {RED}, {GREEN}, {BLUE}, {YELLOW}, {#HEX}</p>
+                                        <p style="color: #8b949e; font-size: 12; text-align: center;"><span style="color: #58a6ff;">Colors:</span> {RED}, {GREEN}, {BLUE}, {YELLOW}, {#HEX}</p>
                                         <div class="spacer-xs"></div>
-                                        <p style="color: #8b949e; font-size: 12;"><span style="color: #58a6ff;">Variables:</span> {PlayerName}, {CitizenName}, {NpcX}, {NpcY}, {NpcZ}</p>
+                                        <p style="color: #8b949e; font-size: 12; text-align: center;"><span style="color: #58a6ff;">Variables:</span> {PlayerName}, {CitizenName}, {NpcX}, {NpcY}, {NpcZ}</p>
                                         <div class="spacer-xs"></div>
-                                        <p style="color: #8b949e; font-size: 12;"><span style="color: #58a6ff;">Rich Text:</span> **bold**, *italic*, [label](https://example.com)</p>
+                                        <p style="color: #8b949e; font-size: 12; text-align: center;"><span style="color: #58a6ff;">Rich Text:</span> **bold**, *italic*, [label](https://example.com)</p>
                                         <div class="spacer-xs"></div>
-                                        <p style="color: #8b949e; font-size: 12;">Each message can be triggered by <span style="color: #58a6ff;">Left Click</span>, <span style="color: #a371f7;">F Key</span>, or <span style="color: #3fb950;">Both</span>.</p>
+                                        <p style="color: #8b949e; font-size: 12; text-align: center;">Each message can be triggered by <span style="color: #58a6ff;">Left Click</span>, <span style="color: #a371f7;">F Key</span>, or <span style="color: #3fb950;">Both</span>.</p>
                                     </div>
                                 </div>
                             </div>
@@ -6700,12 +6938,12 @@ public class CitizensUI {
                             <!-- Selection Mode -->
                             <div class="section">
                                 {{@sectionHeader:title=Selection Mode,description=How messages are chosen when the citizen is interacted with}}
-                                <div class="form-row">
-                                    <button id="mode-random" class="{{#if isRandom}}secondary-button{{else}}secondary-button{{/if}}" style="flex-weight: 1; anchor-height: 38;">Random</button>
+                                <div class="form-row" style="horizontal-align: center;">
+                                    <button id="mode-random" class="secondary-button" style="anchor-width: 150; anchor-height: 38;">Random</button>
                                     <div class="spacer-h-sm"></div>
-                                    <button id="mode-sequential" class="{{#if isSequential}}secondary-button{{else}}secondary-button{{/if}}" style="flex-weight: 1; anchor-height: 38;">Sequential</button>
+                                    <button id="mode-sequential" class="secondary-button" style="anchor-width: 150; anchor-height: 38;">Sequential</button>
                                     <div class="spacer-h-sm"></div>
-                                    <button id="mode-all" class="{{#if isAll}}secondary-button{{else}}secondary-button{{/if}}" style="flex-weight: 1; anchor-height: 38;">All</button>
+                                    <button id="mode-all" class="secondary-button" style="anchor-width: 150; anchor-height: 38;">All</button>
                                 </div>
                                 <div class="spacer-xs"></div>
                                 {{#if isRandom}}
@@ -6754,20 +6992,22 @@ public class CitizensUI {
                         </div>
 
                         <!-- Footer -->
-                        <div class="footer">
-                            <button id="cancel-btn" class="secondary-button">Cancel</button>
+                        <div class="footer" style="layout: center; flex-weight: 0; padding: 26 16 26 16; border-top: 1 solid #1a293c; width: 100%; vertical-align: center;">
+                            <button id="cancel-btn" class="secondary-button" style="anchor-width: 150;">Cancel</button>
                             <div class="spacer-h-md"></div>
-                            <button id="done-btn" class="secondary-button" style="anchor-width: 110;">Done</button>
+                            <button id="done-btn" class="secondary-button" style="anchor-width: 150;">Done</button>
                         </div>
 
                     </div>
-                </div>
-                """);
+                """;
+
+        String html = template.process(wrapSideBySideHtml(template, ctx, rightPanelHtml));
 
         PageBuilder page = PageBuilder.pageForPlayer(playerRef)
                 .withLifetime(CustomPageLifetime.CanDismiss)
                 .fromHtml(HtmlUtils.sanitizeHtmlForHyUI(html));
 
+        setupMainEventListeners(page, playerRef, store, Tab.MANAGE, ctx.unifiedList(), ctx.searchQuery(), ctx.normalizedViewingGroup(), citizen);
         setupMessagesListeners(page, playerRef, store, citizen);
 
         page.open(store);
@@ -6834,6 +7074,7 @@ public class CitizensUI {
                                    @Nonnull CitizenData citizen, @Nonnull CitizenMessage message, int editIndex) {
         boolean isNew = (editIndex == -1);
         String currentTrigger = message.getInteractionTrigger() != null ? message.getInteractionTrigger() : "BOTH";
+        LeftPanelContext ctx = prepareLeftPanelContext(playerRef, "", citizen.getGroup(), citizen);
 
         TemplateProcessor template = createBaseTemplate()
                 .setVariable("message", escapeHtml(message.getMessage()))
@@ -6844,9 +7085,9 @@ public class CitizensUI {
                 .setVariable("isFKey", "F_KEY".equals(currentTrigger))
                 .setVariable("isBoth", "BOTH".equals(currentTrigger));
 
-        String html = template.process(getSharedStyles() + """
-                <div class="page-overlay">
-                    <div class="main-container decorated-container" style="anchor-width: 680; anchor-height: 760;">
+        String rightPanelHtml = """
+                    <!-- RIGHT PANEL: EDIT MESSAGE -->
+                    <div class="main-container decorated-container" style="anchor-width: 900; anchor-height: 900;">
 
                         <!-- Header -->
                         <div class="header container-title">
@@ -6856,21 +7097,24 @@ public class CitizensUI {
                         </div>
 
                         <!-- Body -->
-                        <div class="body">
+                        <div class="body" data-hyui-scrollbar-style='"Common.ui" "DefaultScrollbarStyle"' style="layout-mode: TopScrolling; flex-weight: 1;">
 
                             <p class="page-description">{{#if isNew}}Configure a new message to send on interaction{{else}}Modify the message sent on interaction{{/if}}</p>
                             <div class="spacer-sm"></div>
 
                             <!-- Message Input -->
                             <div class="section">
-                                {{@sectionHeader:title=Message Text}}
-                                <input type="text" id="message-input" class="form-input" value="{{$message}}"
-                                       placeholder="Enter message text with optional color codes..." />
-                                <p class="form-hint">Colors: {RED}, {GREEN}, {#HEX}.</p>
-                                <div class="spacer-xs"></div>
-                                <p class="form-hint">Rich text: **bold**, *italic*, [label](https://example.com).</p>
-                                <div class="spacer-xs"></div>
-                                <p class="form-hint">Variables: {PlayerName}, {CitizenName}, {NpcX}, {NpcY}, {NpcZ}.</p>
+                                {{@sectionHeader:title=Message Text,description=The text to display to the player}}
+                                <div class="form-row" style="horizontal-align: center;">
+                                    <div class="form-col-fixed" style="anchor-width: 460;">
+                                        <input type="text" id="message-input" class="form-input" value="{{$message}}"
+                                               placeholder="Enter message text with optional color codes..." style="width: 100%;" />
+                                        <div class="spacer-xs"></div>
+                                        <p class="form-hint" style="text-align: center;">Colors: {RED}, {GREEN}, {#HEX}.</p>
+                                        <p class="form-hint" style="text-align: center;">Rich text: **bold**, *italic*, [label](https://example.com).</p>
+                                        <p class="form-hint" style="text-align: center;">Variables: {PlayerName}, {CitizenName}, {NpcX}, {NpcY}, {NpcZ}.</p>
+                                    </div>
+                                </div>
                             </div>
 
                             <div class="spacer-md"></div>
@@ -6878,12 +7122,12 @@ public class CitizensUI {
                             <!-- Interaction Trigger -->
                             <div class="section">
                                 {{@sectionHeader:title=Interaction Trigger,description=Which player action sends this message}}
-                                <div class="form-row">
-                                    <button id="trigger-left-click" class="{{#if isLeftClick}}secondary-button{{else}}secondary-button{{/if}}" style="flex-weight: 1; anchor-height: 38;">Left Click</button>
+                                <div class="form-row" style="horizontal-align: center;">
+                                    <button id="trigger-left-click" class="secondary-button" style="anchor-width: 150; anchor-height: 38;">Left Click</button>
                                     <div class="spacer-h-sm"></div>
-                                    <button id="trigger-f-key" class="{{#if isFKey}}secondary-button{{else}}secondary-button{{/if}}" style="flex-weight: 1; anchor-height: 38;">F Key</button>
+                                    <button id="trigger-f-key" class="secondary-button" style="anchor-width: 150; anchor-height: 38;">F Key</button>
                                     <div class="spacer-h-sm"></div>
-                                    <button id="trigger-both" class="{{#if isBoth}}secondary-button{{else}}secondary-button{{/if}}" style="flex-weight: 1; anchor-height: 38;">Both</button>
+                                    <button id="trigger-both" class="secondary-button" style="anchor-width: 150; anchor-height: 38;">Both</button>
                                 </div>
                                 <div class="spacer-xs"></div>
                                 {{#if isLeftClick}}
@@ -6902,40 +7146,51 @@ public class CitizensUI {
                             <!-- Delay -->
                             <div class="section">
                                 {{@sectionHeader:title=Delay,description=Wait before sending this message (especially useful in All mode)}}
-                                {{@numberField:id=delay-seconds,label=Delay Before Message (seconds),value={{$delaySeconds}},placeholder=0,min=0,max=60,step=0.5,decimals=1,hint=Delay before this message is sent. In All mode messages send one after another with each message's delay.}}
+                                <div class="form-row" style="horizontal-align: center;">
+                                    <div class="form-col-fixed" style="anchor-width: 250;">
+                                        {{@numberField:id=delay-seconds,label=Delay Before Message (seconds),value={{$delaySeconds}},placeholder=0,min=0,max=60,step=0.5,decimals=1,hint=Delay before this message is sent. In All mode messages send one after another with each message's delay.}}
+                                    </div>
+                                </div>
                             </div>
 
                             <div class="spacer-md"></div>
 
                             <div class="section">
-                                {{@sectionHeader:title=Chance}}
-                                {{@numberField:id=chance-percent,label=Chance %,value={{$chancePercent}},placeholder=100,min=0,max=100,step=1,decimals=1,hint=Percent chance this message is selected when it is otherwise eligible}}
+                                {{@sectionHeader:title=Chance,description=Execution probability}}
+                                <div class="form-row" style="horizontal-align: center;">
+                                    <div class="form-col-fixed" style="anchor-width: 250;">
+                                        {{@numberField:id=chance-percent,label=Chance %,value={{$chancePercent}},placeholder=100,min=0,max=100,step=1,decimals=1,hint=Percent chance this message is selected when it is otherwise eligible}}
+                                    </div>
+                                </div>
                             </div>
 
                         </div>
 
                         <!-- Footer -->
-                        <div class="footer">
-                            <button id="cancel-btn" class="secondary-button">Cancel</button>
+                        <div class="footer" style="layout: center; flex-weight: 0; padding: 26 16 26 16; border-top: 1 solid #1a293c; width: 100%; vertical-align: center;">
+                            <button id="cancel-btn" class="secondary-button" style="anchor-width: 150;">Cancel</button>
                             <div class="spacer-h-md"></div>
                             <button id="save-msg-btn" class="secondary-button" style="anchor-width: 200;">{{#if isNew}}Add Message{{else}}Save Changes{{/if}}</button>
                         </div>
 
                     </div>
-                </div>
-                """);
+                """;
+
+        String html = template.process(wrapSideBySideHtml(template, ctx, rightPanelHtml));
 
         PageBuilder page = PageBuilder.pageForPlayer(playerRef)
                 .withLifetime(CustomPageLifetime.CanDismiss)
                 .fromHtml(HtmlUtils.sanitizeHtmlForHyUI(html));
+
+        setupMainEventListeners(page, playerRef, store, Tab.MANAGE, ctx.unifiedList(), ctx.searchQuery(), ctx.normalizedViewingGroup(), citizen);
 
         final String[] messageText = {message.getMessage()};
         final float[] delaySeconds = {message.getDelaySeconds()};
         final float[] chancePercent = {message.getChancePercent()};
         final String[] interactionTrigger = {currentTrigger};
 
-        page.addEventListener("message-input", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
-            messageText[0] = ctx.getValue("message-input", String.class).orElse("");
+        page.addEventListener("message-input", CustomUIEventBindingType.ValueChanged, (event, uiCtx) -> {
+            messageText[0] = uiCtx.getValue("message-input", String.class).orElse("");
         });
 
         page.addEventListener("trigger-left-click", CustomUIEventBindingType.Activating, event -> {
@@ -6956,12 +7211,12 @@ public class CitizensUI {
                     new CitizenMessage(messageText[0], "BOTH", delaySeconds[0], chancePercent[0]), editIndex);
         });
 
-        page.addEventListener("delay-seconds", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
-            ctx.getValue("delay-seconds", Double.class)
+        page.addEventListener("delay-seconds", CustomUIEventBindingType.ValueChanged, (event, uiCtx) -> {
+            uiCtx.getValue("delay-seconds", Double.class)
                     .ifPresent(val -> delaySeconds[0] = val.floatValue());
 
             if (delaySeconds[0] == 0.0f) {
-                ctx.getValue("delay-seconds", String.class)
+                uiCtx.getValue("delay-seconds", String.class)
                         .ifPresent(val -> {
                             try {
                                 delaySeconds[0] = Float.parseFloat(val);
@@ -6971,8 +7226,8 @@ public class CitizensUI {
             }
         });
 
-        page.addEventListener("chance-percent", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
-            ctx.getValue("chance-percent", Double.class).ifPresent(val -> {
+        page.addEventListener("chance-percent", CustomUIEventBindingType.ValueChanged, (event, uiCtx) -> {
+            uiCtx.getValue("chance-percent", Double.class).ifPresent(val -> {
                 chancePercent[0] = Math.max(0.0f, Math.min(100.0f, val.floatValue()));
             });
         });
@@ -7017,6 +7272,8 @@ public class CitizensUI {
         }
         String messageMode = "ALL".equalsIgnoreCase(firstMsgConfig.getSelectionMode()) ? "ALL" : "RANDOM";
 
+        LeftPanelContext ctx = prepareLeftPanelContext(playerRef, "", citizen.getGroup(), citizen);
+
         TemplateProcessor template = createBaseTemplate()
                 .setVariable("enabled", citizen.isFirstInteractionEnabled())
                 .setVariable("runNormalOnFirst", citizen.isRunNormalOnFirstInteraction())
@@ -7030,20 +7287,20 @@ public class CitizensUI {
                 .setVariable("currentMessageMode", messageMode)
                 .setVariable("completedCount", citizen.getPlayersWhoCompletedFirstInteraction().size());
 
-        String html = template.process(getSharedStyles() + """
-                <div class="page-overlay">
+        String rightPanelHtml = """
+                    <!-- RIGHT PANEL: FIRST INTERACTION CONFIG -->
                     <div class="main-container decorated-container" style="anchor-width: 900; anchor-height: 900;">
                         <div class="header container-title">
                             <div class="header-content">
                                 <p class="header-title">First Interaction Config</p>
                             </div>
                         </div>
-                        <div class="body">
+                        <div class="body" data-hyui-scrollbar-style='"Common.ui" "DefaultScrollbarStyle"' style="layout-mode: TopScrolling; flex-weight: 1;">
                             <p class="page-description">Configure one-time actions for each player the first time they interact</p>
                             <div class="spacer-sm"></div>
 
                             <div class="section">
-                                {{@sectionHeader:title=Enable First Interaction}}
+                                {{@sectionHeader:title=Enable First Interaction,description=One-time actions per player}}
                                 <div style="layout: center;">
                                     <button id="toggle-first-enabled" class="secondary-button" style="anchor-width: 220; anchor-height: 40;">{{#if enabled}}Enabled{{else}}Disabled{{/if}}</button>
                                 </div>
@@ -7054,7 +7311,7 @@ public class CitizensUI {
                             <div class="spacer-md"></div>
 
                             <div class="section">
-                                {{@sectionHeader:title=Normal Actions On First Interaction}}
+                                {{@sectionHeader:title=Normal Actions On First Interaction,description=Also run standard interactions on first contact}}
                                 <div style="layout: center;">
                                     <button id="toggle-run-normal-first-btn" class="secondary-button" style="anchor-width: 320; anchor-height: 40;">{{#if runNormalOnFirst}}Enabled{{else}}Disabled{{/if}}</button>
                                 </div>
@@ -7065,52 +7322,61 @@ public class CitizensUI {
                             <div class="spacer-md"></div>
 
                             <div class="section">
-                                {{@sectionHeader:title=First Commands ({{$firstCommandCount}})}}
+                                {{@sectionHeader:title=First Commands ({{$firstCommandCount}}),description=Commands run once per player}}
                                 <p class="form-hint" style="text-align: center;">Current mode: {{$currentCommandMode}}</p>
                                 <div class="spacer-xs"></div>
-                                <div class="form-row">
-                                    <button id="first-cmd-mode-all" class="{{#if cmdModeAll}}secondary-button{{else}}secondary-button{{/if}}" style="flex-weight: 1; anchor-height: 38;">All</button>
+                                <div class="form-row" style="horizontal-align: center;">
+                                    <button id="first-cmd-mode-all" class="secondary-button" style="anchor-width: 150; anchor-height: 38;">All</button>
                                     <div class="spacer-h-sm"></div>
-                                    <button id="first-cmd-mode-random" class="{{#if cmdModeRandom}}secondary-button{{else}}secondary-button{{/if}}" style="flex-weight: 1; anchor-height: 38;">Random</button>
+                                    <button id="first-cmd-mode-random" class="secondary-button" style="anchor-width: 150; anchor-height: 38;">Random</button>
                                 </div>
                                 <div class="spacer-sm"></div>
-                                <button id="edit-first-commands-btn" class="secondary-button" style="anchor-width: 260; anchor-height: 40;">Edit First Commands</button>
+                                <div style="layout: center;">
+                                    <button id="edit-first-commands-btn" class="secondary-button" style="anchor-width: 260; anchor-height: 40;">Edit First Commands</button>
+                                </div>
                             </div>
 
                             <div class="spacer-md"></div>
 
                             <div class="section">
-                                {{@sectionHeader:title=First Messages ({{$firstMessageCount}})}}
+                                {{@sectionHeader:title=First Messages ({{$firstMessageCount}}),description=Messages sent once per player}}
                                 <p class="form-hint" style="text-align: center;">Current mode: {{$currentMessageMode}}</p>
                                 <div class="spacer-xs"></div>
-                                <div class="form-row">
-                                    <button id="first-msg-mode-all" class="{{#if msgModeAll}}secondary-button{{else}}secondary-button{{/if}}" style="flex-weight: 1; anchor-height: 38;">All</button>
+                                <div class="form-row" style="horizontal-align: center;">
+                                    <button id="first-msg-mode-all" class="secondary-button" style="anchor-width: 150; anchor-height: 38;">All</button>
                                     <div class="spacer-h-sm"></div>
-                                    <button id="first-msg-mode-random" class="{{#if msgModeRandom}}secondary-button{{else}}secondary-button{{/if}}" style="flex-weight: 1; anchor-height: 38;">Random</button>
+                                    <button id="first-msg-mode-random" class="secondary-button" style="anchor-width: 150; anchor-height: 38;">Random</button>
                                 </div>
                                 <div class="spacer-sm"></div>
-                                <button id="edit-first-messages-btn" class="secondary-button" style="anchor-width: 260; anchor-height: 40;">Edit First Messages</button>
+                                <div style="layout: center;">
+                                    <button id="edit-first-messages-btn" class="secondary-button" style="anchor-width: 260; anchor-height: 40;">Edit First Messages</button>
+                                </div>
                             </div>
 
                             <div class="spacer-md"></div>
 
                             <div class="section">
-                                {{@sectionHeader:title=Completion Tracking}}
+                                {{@sectionHeader:title=Completion Tracking,description=Reset the player history}}
                                 <p class="form-hint" style="text-align: center;">Players completed first interaction: {{$completedCount}}</p>
                                 <div class="spacer-xs"></div>
-                                <button id="reset-first-completed-btn" class="secondary-button" style="anchor-width: 320; anchor-height: 40;">Reset Completed Player List</button>
+                                <div style="layout: center;">
+                                    <button id="reset-first-completed-btn" class="secondary-button" style="anchor-width: 320; anchor-height: 40;">Reset Completed Player List</button>
+                                </div>
                             </div>
                         </div>
-                        <div class="footer">
-                            <button id="back-btn" class="secondary-button">Back</button>
+                        <div class="footer" style="layout: center; flex-weight: 0; padding: 26 16 26 16; border-top: 1 solid #1a293c; width: 100%; vertical-align: center;">
+                            <button id="back-btn" class="secondary-button" style="anchor-width: 150;">Back</button>
                         </div>
                     </div>
-                </div>
-                """);
+                """;
+
+        String html = template.process(wrapSideBySideHtml(template, ctx, rightPanelHtml));
 
         PageBuilder page = PageBuilder.pageForPlayer(playerRef)
                 .withLifetime(CustomPageLifetime.CanDismiss)
                 .fromHtml(HtmlUtils.sanitizeHtmlForHyUI(html));
+
+        setupMainEventListeners(page, playerRef, store, Tab.MANAGE, ctx.unifiedList(), ctx.searchQuery(), ctx.normalizedViewingGroup(), citizen);
 
         page.addEventListener("toggle-first-enabled", CustomUIEventBindingType.Activating, event -> {
             citizen.setFirstInteractionEnabled(!citizen.isFirstInteractionEnabled());
@@ -7177,6 +7443,9 @@ public class CitizensUI {
             citizen.setFirstInteractionCommandSelectionMode(commandMode);
             plugin.getCitizensManager().saveCitizen(citizen);
         }
+
+        LeftPanelContext ctx = prepareLeftPanelContext(playerRef, "", citizen.getGroup(), citizen);
+
         TemplateProcessor template = createBaseTemplate()
                 .setVariable("actions", indexedActions)
                 .setVariable("hasActions", !actions.isEmpty())
@@ -7185,31 +7454,33 @@ public class CitizensUI {
                 .setVariable("modeRandom", "RANDOM".equalsIgnoreCase(commandMode))
                 .setVariable("currentMode", commandMode);
 
-        String html = template.process(getSharedStyles() + """
-                <div class="page-overlay">
+        String rightPanelHtml = """
+                    <!-- RIGHT PANEL: FIRST INTERACTION COMMANDS -->
                     <div class="main-container decorated-container" style="anchor-width: 900; anchor-height: 900;">
                         <div class="header container-title">
                             <div class="header-content">
                                 <p class="header-title">First Interaction Commands</p>
                             </div>
                         </div>
-                        <div class="body">
+                        <div class="body" data-hyui-scrollbar-style='"Common.ui" "DefaultScrollbarStyle"' style="layout-mode: TopScrolling; flex-weight: 1;">
                             <p class="page-description">Commands that only run on a player's first interaction ({{$actionCount}} commands)</p>
                             <div class="spacer-sm"></div>
                             <div class="section">
-                                <button id="add-command-btn" class="secondary-button" style="anchor-width: 220; anchor-height: 38;">Add Command</button>
+                                <div style="layout: center;">
+                                    <button id="add-command-btn" class="secondary-button" style="anchor-width: 220; anchor-height: 38;">Add Command</button>
+                                </div>
                                 <div class="spacer-sm"></div>
-                                <p class="form-hint">Variables: {PlayerName}, {CitizenName}, {NpcX}, {NpcY}, {NpcZ}</p>
+                                <p class="form-hint" style="text-align: center;">Variables: {PlayerName}, {CitizenName}, {NpcX}, {NpcY}, {NpcZ}</p>
                             </div>
                             <div class="spacer-md"></div>
                             <div class="section">
-                                {{@sectionHeader:title=Selection Mode}}
+                                {{@sectionHeader:title=Selection Mode,description=How first-time commands are selected}}
                                 <p class="form-hint" style="text-align: center;">Current mode: {{$currentMode}}</p>
                                 <div class="spacer-xs"></div>
-                                <div class="form-row">
-                                    <button id="mode-all" class="{{#if modeAll}}secondary-button{{else}}secondary-button{{/if}}" style="flex-weight: 1; anchor-height: 38;">All</button>
+                                <div class="form-row" style="horizontal-align: center;">
+                                    <button id="mode-all" class="secondary-button" style="anchor-width: 150; anchor-height: 38;">All</button>
                                     <div class="spacer-h-sm"></div>
-                                    <button id="mode-random" class="{{#if modeRandom}}secondary-button{{else}}secondary-button{{/if}}" style="flex-weight: 1; anchor-height: 38;">Random</button>
+                                    <button id="mode-random" class="secondary-button" style="anchor-width: 150; anchor-height: 38;">Random</button>
                                 </div>
                             </div>
                             <div class="spacer-md"></div>
@@ -7242,18 +7513,21 @@ public class CitizensUI {
                             </div>
                             {{/if}}
                         </div>
-                        <div class="footer">
-                            <button id="back-btn" class="secondary-button">Back</button>
+                        <div class="footer" style="layout: center; flex-weight: 0; padding: 26 16 26 16; border-top: 1 solid #1a293c; width: 100%; vertical-align: center;">
+                            <button id="back-btn" class="secondary-button" style="anchor-width: 150;">Back</button>
                             <div class="spacer-h-md"></div>
-                            <button id="done-btn" class="secondary-button">Done</button>
+                            <button id="done-btn" class="secondary-button" style="anchor-width: 150;">Done</button>
                         </div>
                     </div>
-                </div>
-                """);
+                """;
+
+        String html = template.process(wrapSideBySideHtml(template, ctx, rightPanelHtml));
 
         PageBuilder page = PageBuilder.pageForPlayer(playerRef)
                 .withLifetime(CustomPageLifetime.CanDismiss)
                 .fromHtml(HtmlUtils.sanitizeHtmlForHyUI(html));
+
+        setupMainEventListeners(page, playerRef, store, Tab.MANAGE, ctx.unifiedList(), ctx.searchQuery(), ctx.normalizedViewingGroup(), citizen);
 
         page.addEventListener("mode-all", CustomUIEventBindingType.Activating, event -> {
             citizen.setFirstInteractionCommandSelectionMode("ALL");
@@ -7299,6 +7573,7 @@ public class CitizensUI {
                                                    @Nonnull CommandAction command, int editIndex) {
         boolean isNew = (editIndex == -1);
         String currentTrigger = command.getInteractionTrigger() != null ? command.getInteractionTrigger() : "BOTH";
+        LeftPanelContext ctx = prepareLeftPanelContext(playerRef, "", citizen.getGroup(), citizen);
 
         TemplateProcessor template = createBaseTemplate()
                 .setVariable("command", escapeHtml(command.getCommand()))
@@ -7310,65 +7585,83 @@ public class CitizensUI {
                 .setVariable("isFKey", "F_KEY".equals(currentTrigger))
                 .setVariable("isBoth", "BOTH".equals(currentTrigger));
 
-        String html = template.process(getSharedStyles() + """
-                <div class="page-overlay">
-                    <div class="main-container decorated-container" style="anchor-width: 680; anchor-height: 780;">
+        String rightPanelHtml = """
+                    <!-- RIGHT PANEL: EDIT FIRST COMMAND -->
+                    <div class="main-container decorated-container" style="anchor-width: 900; anchor-height: 900;">
                         <div class="header container-title">
                             <div class="header-content">
                                 <p class="header-title">{{#if isNew}}Add First Command{{else}}Edit First Command{{/if}}</p>
                             </div>
                         </div>
-                        <div class="body">
+                        <div class="body" data-hyui-scrollbar-style='"Common.ui" "DefaultScrollbarStyle"' style="layout-mode: TopScrolling; flex-weight: 1;">
                             <p class="page-description">Configure a command that only runs on first interaction</p>
                             <div class="spacer-sm"></div>
                             <div class="section">
-                                {{@sectionHeader:title=Command}}
-                                <input type="text" id="command-input" class="form-input" value="{{$command}}" placeholder="give {PlayerName} Rock_Gem_Diamond" />
-                                <p class="form-hint">Variables: {PlayerName}, {CitizenName}, {NpcX}, {NpcY}, {NpcZ}</p>
-                            </div>
-                            <div class="spacer-md"></div>
-                            <div class="section">
-                                {{@sectionHeader:title=Interaction Trigger}}
-                                <div class="form-row">
-                                    <button id="trigger-left-click" class="{{#if isLeftClick}}secondary-button{{else}}secondary-button{{/if}}" style="flex-weight: 1; anchor-height: 38;">Left Click</button>
-                                    <div class="spacer-h-sm"></div>
-                                    <button id="trigger-f-key" class="{{#if isFKey}}secondary-button{{else}}secondary-button{{/if}}" style="flex-weight: 1; anchor-height: 38;">F Key</button>
-                                    <div class="spacer-h-sm"></div>
-                                    <button id="trigger-both" class="{{#if isBoth}}secondary-button{{else}}secondary-button{{/if}}" style="flex-weight: 1; anchor-height: 38;">Both</button>
+                                {{@sectionHeader:title=Command,description=Enter command without leading slash}}
+                                <div class="form-row" style="horizontal-align: center;">
+                                    <div class="form-col-fixed" style="anchor-width: 460;">
+                                        <input type="text" id="command-input" class="form-input" value="{{$command}}" placeholder="give {PlayerName} Rock_Gem_Diamond" style="width: 100%;" />
+                                        <div class="spacer-xs"></div>
+                                        <p class="form-hint" style="text-align: center;">Variables: {PlayerName}, {CitizenName}, {NpcX}, {NpcY}, {NpcZ}</p>
+                                    </div>
                                 </div>
                             </div>
                             <div class="spacer-md"></div>
                             <div class="section">
-                                {{@sectionHeader:title=Delay}}
-                                {{@numberField:id=delay-seconds,label=Delay Before Command (seconds),value={{$delaySeconds}},placeholder=0,min=0,max=300,step=0.5,decimals=1}}
+                                {{@sectionHeader:title=Interaction Trigger,description=Which player action triggers this command}}
+                                <div class="form-row" style="horizontal-align: center;">
+                                    <button id="trigger-left-click" class="secondary-button" style="anchor-width: 150; anchor-height: 38;">Left Click</button>
+                                    <div class="spacer-h-sm"></div>
+                                    <button id="trigger-f-key" class="secondary-button" style="anchor-width: 150; anchor-height: 38;">F Key</button>
+                                    <div class="spacer-h-sm"></div>
+                                    <button id="trigger-both" class="secondary-button" style="anchor-width: 150; anchor-height: 38;">Both</button>
+                                </div>
                             </div>
                             <div class="spacer-md"></div>
                             <div class="section">
-                                {{@sectionHeader:title=Chance}}
-                                {{@numberField:id=chance-percent,label=Chance %,value={{$chancePercent}},placeholder=100,min=0,max=100,step=1,decimals=1}}
+                                {{@sectionHeader:title=Delay,description=Wait time before executing this command}}
+                                <div class="form-row" style="horizontal-align: center;">
+                                    <div class="form-col-fixed" style="anchor-width: 250;">
+                                        {{@numberField:id=delay-seconds,label=Delay Before Command (seconds),value={{$delaySeconds}},placeholder=0,min=0,max=300,step=0.5,decimals=1}}
+                                    </div>
+                                </div>
                             </div>
                             <div class="spacer-md"></div>
                             <div class="section">
-                                <div class="checkbox-row">
+                                {{@sectionHeader:title=Chance,description=Execution probability}}
+                                <div class="form-row" style="horizontal-align: center;">
+                                    <div class="form-col-fixed" style="anchor-width: 250;">
+                                        {{@numberField:id=chance-percent,label=Chance %,value={{$chancePercent}},placeholder=100,min=0,max=100,step=1,decimals=1}}
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="spacer-md"></div>
+                            <div class="section">
+                                {{@sectionHeader:title=Execution Mode,description=Run command as console or player}}
+                                <div class="checkbox-row" style="horizontal-align: center;">
                                     <input type="checkbox" id="run-as-server" {{#if runAsServer}}checked{{/if}} />
-                                    <div style="layout: top; flex-weight: 0;">
+                                    <div style="layout: top; flex-weight: 0; text-align: center;">
                                         <p class="checkbox-label">Run as Server</p>
+                                        <p class="checkbox-description">Execute as console command instead of player</p>
                                     </div>
                                 </div>
                             </div>
                         </div>
-                        <div class="footer">
-                            <button id="cancel-btn" class="secondary-button">Cancel</button>
+                        <div class="footer" style="layout: center; flex-weight: 0; padding: 26 16 26 16; border-top: 1 solid #1a293c; width: 100%; vertical-align: center;">
+                            <button id="cancel-btn" class="secondary-button" style="anchor-width: 150;">Cancel</button>
                             <div class="spacer-h-md"></div>
                             <button id="save-btn" class="secondary-button" style="anchor-width: 200;">{{#if isNew}}Add Command{{else}}Save Changes{{/if}}</button>
                         </div>
                     </div>
-                </div>
-                """);
+                """;
+
+        String html = template.process(wrapSideBySideHtml(template, ctx, rightPanelHtml));
 
         PageBuilder page = PageBuilder.pageForPlayer(playerRef)
                 .withLifetime(CustomPageLifetime.CanDismiss)
                 .fromHtml(HtmlUtils.sanitizeHtmlForHyUI(html));
+
+        setupMainEventListeners(page, playerRef, store, Tab.MANAGE, ctx.unifiedList(), ctx.searchQuery(), ctx.normalizedViewingGroup(), citizen);
 
         final String[] commandText = {command.getCommand()};
         final boolean[] runAsServer = {command.isRunAsServer()};
@@ -7376,8 +7669,8 @@ public class CitizensUI {
         final float[] chancePercent = {command.getChancePercent()};
         final String[] interactionTrigger = {currentTrigger};
 
-        page.addEventListener("command-input", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
-            commandText[0] = ctx.getValue("command-input", String.class).orElse("");
+        page.addEventListener("command-input", CustomUIEventBindingType.ValueChanged, (event, ctxEvent) -> {
+            commandText[0] = ctxEvent.getValue("command-input", String.class).orElse("");
         });
         page.addEventListener("trigger-left-click", CustomUIEventBindingType.Activating, event ->
                 openEditFirstInteractionCommandGUI(playerRef, store, citizen, actions,
@@ -7388,12 +7681,12 @@ public class CitizensUI {
         page.addEventListener("trigger-both", CustomUIEventBindingType.Activating, event ->
                 openEditFirstInteractionCommandGUI(playerRef, store, citizen, actions,
                         new CommandAction(commandText[0], runAsServer[0], delaySeconds[0], "BOTH", chancePercent[0]), editIndex));
-        page.addEventListener("delay-seconds", CustomUIEventBindingType.ValueChanged, (event, ctx) ->
-                ctx.getValue("delay-seconds", Double.class).ifPresent(v -> delaySeconds[0] = v.floatValue()));
-        page.addEventListener("chance-percent", CustomUIEventBindingType.ValueChanged, (event, ctx) ->
-                ctx.getValue("chance-percent", Double.class).ifPresent(v -> chancePercent[0] = Math.max(0.0f, Math.min(100.0f, v.floatValue()))));
-        page.addEventListener("run-as-server", CustomUIEventBindingType.ValueChanged, (event, ctx) ->
-                runAsServer[0] = ctx.getValue("run-as-server", Boolean.class).orElse(false));
+        page.addEventListener("delay-seconds", CustomUIEventBindingType.ValueChanged, (event, ctxEvent) ->
+                ctxEvent.getValue("delay-seconds", Double.class).ifPresent(v -> delaySeconds[0] = v.floatValue()));
+        page.addEventListener("chance-percent", CustomUIEventBindingType.ValueChanged, (event, ctxEvent) ->
+                ctxEvent.getValue("chance-percent", Double.class).ifPresent(v -> chancePercent[0] = Math.max(0.0f, Math.min(100.0f, v.floatValue()))));
+        page.addEventListener("run-as-server", CustomUIEventBindingType.ValueChanged, (event, ctxEvent) ->
+                runAsServer[0] = ctxEvent.getValue("run-as-server", Boolean.class).orElse(false));
 
         page.addEventListener("save-btn", CustomUIEventBindingType.Activating, event -> {
             String cmd = commandText[0].trim();
@@ -7439,6 +7732,8 @@ public class CitizensUI {
             indexed.add(new IndexedMessage(i, messages.get(i)));
         }
 
+        LeftPanelContext ctx = prepareLeftPanelContext(playerRef, "", citizen.getGroup(), citizen);
+
         TemplateProcessor template = createBaseTemplate()
                 .setVariable("messages", indexed)
                 .setVariable("hasMessages", !messages.isEmpty())
@@ -7447,27 +7742,32 @@ public class CitizensUI {
                 .setVariable("isAll", "ALL".equalsIgnoreCase(effectiveMode))
                 .setVariable("isRandom", "RANDOM".equalsIgnoreCase(effectiveMode));
 
-        String html = template.process(getSharedStyles() + """
-                <div class="page-overlay">
-                    <div class="main-container decorated-container" style="anchor-width: 900; anchor-height: 780;">
+        String rightPanelHtml = """
+                    <!-- RIGHT PANEL: FIRST INTERACTION MESSAGES -->
+                    <div class="main-container decorated-container" style="anchor-width: 900; anchor-height: 900;">
                         <div class="header container-title">
                             <div class="header-content">
                                 <p class="header-title">First Interaction Messages</p>
                             </div>
                         </div>
-                        <div class="body">
+                        <div class="body" data-hyui-scrollbar-style='"Common.ui" "DefaultScrollbarStyle"' style="layout-mode: TopScrolling; flex-weight: 1;">
                             <p class="page-description">Messages that only run on a player's first interaction ({{$messageCount}} messages)</p>
                             <div class="spacer-sm"></div>
-                            <button id="add-message-btn" class="secondary-button" style="anchor-width: 220; anchor-height: 38;">Add Message</button>
+                            <div style="layout: center;">
+                                <button id="add-message-btn" class="secondary-button" style="anchor-width: 220; anchor-height: 38;">Add Message</button>
+                            </div>
                             <div class="spacer-sm"></div>
-                            <p class="form-hint">Supports {RED}/{#HEX}, **bold**, *italic*, [label](https://example.com), {PlayerName}, {CitizenName}, {NpcX}, {NpcY}, {NpcZ}</p>
+                            <p class="form-hint" style="text-align: center;">Supports {RED}/{#HEX}, **bold**, *italic*, [label](https://example.com), {PlayerName}, {CitizenName}, {NpcX}, {NpcY}, {NpcZ}</p>
                             <div class="spacer-md"></div>
-                            <p class="form-hint" style="text-align: center;">Current mode: {{$currentMode}}</p>
-                            <div class="spacer-xs"></div>
-                            <div class="form-row">
-                                <button id="mode-all" class="{{#if isAll}}secondary-button{{else}}secondary-button{{/if}}" style="flex-weight: 1; anchor-height: 38;">All</button>
-                                <div class="spacer-h-sm"></div>
-                                <button id="mode-random" class="{{#if isRandom}}secondary-button{{else}}secondary-button{{/if}}" style="flex-weight: 1; anchor-height: 38;">Random</button>
+                            <div class="section">
+                                {{@sectionHeader:title=Selection Mode,description=How first-time messages are chosen}}
+                                <p class="form-hint" style="text-align: center;">Current mode: {{$currentMode}}</p>
+                                <div class="spacer-xs"></div>
+                                <div class="form-row" style="horizontal-align: center;">
+                                    <button id="mode-all" class="secondary-button" style="anchor-width: 150; anchor-height: 38;">All</button>
+                                    <div class="spacer-h-sm"></div>
+                                    <button id="mode-random" class="secondary-button" style="anchor-width: 150; anchor-height: 38;">Random</button>
+                                </div>
                             </div>
                             <div class="spacer-md"></div>
                             {{#if hasMessages}}
@@ -7499,18 +7799,21 @@ public class CitizensUI {
                             </div>
                             {{/if}}
                         </div>
-                        <div class="footer">
-                            <button id="back-btn" class="secondary-button">Back</button>
+                        <div class="footer" style="layout: center; flex-weight: 0; padding: 26 16 26 16; border-top: 1 solid #1a293c; width: 100%; vertical-align: center;">
+                            <button id="back-btn" class="secondary-button" style="anchor-width: 150;">Back</button>
                             <div class="spacer-h-md"></div>
-                            <button id="done-btn" class="secondary-button">Done</button>
+                            <button id="done-btn" class="secondary-button" style="anchor-width: 150;">Done</button>
                         </div>
                     </div>
-                </div>
-                """);
+                """;
+
+        String html = template.process(wrapSideBySideHtml(template, ctx, rightPanelHtml));
 
         PageBuilder page = PageBuilder.pageForPlayer(playerRef)
                 .withLifetime(CustomPageLifetime.CanDismiss)
                 .fromHtml(HtmlUtils.sanitizeHtmlForHyUI(html));
+
+        setupMainEventListeners(page, playerRef, store, Tab.MANAGE, ctx.unifiedList(), ctx.searchQuery(), ctx.normalizedViewingGroup(), citizen);
 
         page.addEventListener("mode-all", CustomUIEventBindingType.Activating, event -> {
             citizen.setFirstInteractionMessagesConfig(new MessagesConfig(messages, "ALL", currentConfig.isEnabled()));
@@ -7555,6 +7858,7 @@ public class CitizensUI {
                                                    @Nonnull CitizenMessage message, int editIndex) {
         boolean isNew = (editIndex == -1);
         String currentTrigger = message.getInteractionTrigger() != null ? message.getInteractionTrigger() : "BOTH";
+        LeftPanelContext ctx = prepareLeftPanelContext(playerRef, "", citizen.getGroup(), citizen);
 
         TemplateProcessor template = createBaseTemplate()
                 .setVariable("message", escapeHtml(message.getMessage()))
@@ -7565,68 +7869,82 @@ public class CitizensUI {
                 .setVariable("isFKey", "F_KEY".equals(currentTrigger))
                 .setVariable("isBoth", "BOTH".equals(currentTrigger));
 
-        String html = template.process(getSharedStyles() + """
-                <div class="page-overlay">
-                    <div class="main-container decorated-container" style="anchor-width: 680; anchor-height: 760;">
+        String rightPanelHtml = """
+                    <!-- RIGHT PANEL: EDIT FIRST MESSAGE -->
+                    <div class="main-container decorated-container" style="anchor-width: 900; anchor-height: 900;">
                         <div class="header container-title">
                             <div class="header-content">
                                 <p class="header-title">{{#if isNew}}Add First Message{{else}}Edit First Message{{/if}}</p>
                             </div>
                         </div>
-                        <div class="body">
+                        <div class="body" data-hyui-scrollbar-style='"Common.ui" "DefaultScrollbarStyle"' style="layout-mode: TopScrolling; flex-weight: 1;">
                             <p class="page-description">Configure a message that only runs on first interaction</p>
                             <div class="spacer-sm"></div>
                             <div class="section">
-                                {{@sectionHeader:title=Message Text}}
-                                <input type="text" id="message-input" class="form-input" value="{{$message}}" placeholder="Enter message..." />
-                                <p class="form-hint">Colors: {COLOR}, {RED}, {BLUE}, {#HEX}, {#FFA500}, etc.</p>
-                                <div class="spacer-xs"></div>
-                                <p class="form-hint">Rich text: **bold**, *italic*, [label](https://example.com).</p>
-                                <div class="spacer-xs"></div>
-                                <p class="form-hint">Variables: {PlayerName}, {CitizenName}, {NpcX}, {NpcY}, {NpcZ}.</p>
-                            </div>
-                            <div class="spacer-md"></div>
-                            <div class="section">
-                                {{@sectionHeader:title=Interaction Trigger}}
-                                <div class="form-row">
-                                    <button id="trigger-left-click" class="{{#if isLeftClick}}secondary-button{{else}}secondary-button{{/if}}" style="flex-weight: 1; anchor-height: 38;">Left Click</button>
-                                    <div class="spacer-h-sm"></div>
-                                    <button id="trigger-f-key" class="{{#if isFKey}}secondary-button{{else}}secondary-button{{/if}}" style="flex-weight: 1; anchor-height: 38;">F Key</button>
-                                    <div class="spacer-h-sm"></div>
-                                    <button id="trigger-both" class="{{#if isBoth}}secondary-button{{else}}secondary-button{{/if}}" style="flex-weight: 1; anchor-height: 38;">Both</button>
+                                {{@sectionHeader:title=Message Text,description=The text to send to the player}}
+                                <div class="form-row" style="horizontal-align: center;">
+                                    <div class="form-col-fixed" style="anchor-width: 460;">
+                                        <input type="text" id="message-input" class="form-input" value="{{$message}}" placeholder="Enter message..." style="width: 100%;" />
+                                        <div class="spacer-xs"></div>
+                                        <p class="form-hint" style="text-align: center;">Colors: {COLOR}, {RED}, {BLUE}, {#HEX}, {#FFA500}, etc.</p>
+                                        <p class="form-hint" style="text-align: center;">Rich text: **bold**, *italic*, [label](https://example.com).</p>
+                                        <p class="form-hint" style="text-align: center;">Variables: {PlayerName}, {CitizenName}, {NpcX}, {NpcY}, {NpcZ}.</p>
+                                    </div>
                                 </div>
                             </div>
                             <div class="spacer-md"></div>
                             <div class="section">
-                                {{@sectionHeader:title=Delay}}
-                                {{@numberField:id=delay-seconds,label=Delay Before Message (seconds),value={{$delaySeconds}},placeholder=0,min=0,max=60,step=0.5,decimals=1}}
+                                {{@sectionHeader:title=Interaction Trigger,description=Which player action sends this message}}
+                                <div class="form-row" style="horizontal-align: center;">
+                                    <button id="trigger-left-click" class="secondary-button" style="anchor-width: 150; anchor-height: 38;">Left Click</button>
+                                    <div class="spacer-h-sm"></div>
+                                    <button id="trigger-f-key" class="secondary-button" style="anchor-width: 150; anchor-height: 38;">F Key</button>
+                                    <div class="spacer-h-sm"></div>
+                                    <button id="trigger-both" class="secondary-button" style="anchor-width: 150; anchor-height: 38;">Both</button>
+                                </div>
                             </div>
                             <div class="spacer-md"></div>
                             <div class="section">
-                                {{@sectionHeader:title=Chance}}
-                                {{@numberField:id=chance-percent,label=Chance %,value={{$chancePercent}},placeholder=100,min=0,max=100,step=1,decimals=1}}
+                                {{@sectionHeader:title=Delay,description=Wait time before sending this message}}
+                                <div class="form-row" style="horizontal-align: center;">
+                                    <div class="form-col-fixed" style="anchor-width: 250;">
+                                        {{@numberField:id=delay-seconds,label=Delay Before Message (seconds),value={{$delaySeconds}},placeholder=0,min=0,max=60,step=0.5,decimals=1}}
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="spacer-md"></div>
+                            <div class="section">
+                                {{@sectionHeader:title=Chance,description=Execution probability}}
+                                <div class="form-row" style="horizontal-align: center;">
+                                    <div class="form-col-fixed" style="anchor-width: 250;">
+                                        {{@numberField:id=chance-percent,label=Chance %,value={{$chancePercent}},placeholder=100,min=0,max=100,step=1,decimals=1}}
+                                    </div>
+                                </div>
                             </div>
                         </div>
-                        <div class="footer">
-                            <button id="cancel-btn" class="secondary-button">Cancel</button>
+                        <div class="footer" style="layout: center; flex-weight: 0; padding: 26 16 26 16; border-top: 1 solid #1a293c; width: 100%; vertical-align: center;">
+                            <button id="cancel-btn" class="secondary-button" style="anchor-width: 150;">Cancel</button>
                             <div class="spacer-h-md"></div>
                             <button id="save-btn" class="secondary-button" style="anchor-width: 200;">{{#if isNew}}Add Message{{else}}Save Changes{{/if}}</button>
                         </div>
                     </div>
-                </div>
-                """);
+                """;
+
+        String html = template.process(wrapSideBySideHtml(template, ctx, rightPanelHtml));
 
         PageBuilder page = PageBuilder.pageForPlayer(playerRef)
                 .withLifetime(CustomPageLifetime.CanDismiss)
                 .fromHtml(HtmlUtils.sanitizeHtmlForHyUI(html));
+
+        setupMainEventListeners(page, playerRef, store, Tab.MANAGE, ctx.unifiedList(), ctx.searchQuery(), ctx.normalizedViewingGroup(), citizen);
 
         final String[] messageText = {message.getMessage()};
         final float[] delaySeconds = {message.getDelaySeconds()};
         final float[] chancePercent = {message.getChancePercent()};
         final String[] interactionTrigger = {currentTrigger};
 
-        page.addEventListener("message-input", CustomUIEventBindingType.ValueChanged, (event, ctx) ->
-                messageText[0] = ctx.getValue("message-input", String.class).orElse(""));
+        page.addEventListener("message-input", CustomUIEventBindingType.ValueChanged, (event, ctxEvent) ->
+                messageText[0] = ctxEvent.getValue("message-input", String.class).orElse(""));
         page.addEventListener("trigger-left-click", CustomUIEventBindingType.Activating, event ->
                 openEditFirstInteractionMessageGUI(playerRef, store, citizen, messages,
                         new CitizenMessage(messageText[0], "LEFT_CLICK", delaySeconds[0], chancePercent[0]), editIndex));
@@ -7636,10 +7954,10 @@ public class CitizensUI {
         page.addEventListener("trigger-both", CustomUIEventBindingType.Activating, event ->
                 openEditFirstInteractionMessageGUI(playerRef, store, citizen, messages,
                         new CitizenMessage(messageText[0], "BOTH", delaySeconds[0], chancePercent[0]), editIndex));
-        page.addEventListener("delay-seconds", CustomUIEventBindingType.ValueChanged, (event, ctx) ->
-                ctx.getValue("delay-seconds", Double.class).ifPresent(v -> delaySeconds[0] = v.floatValue()));
-        page.addEventListener("chance-percent", CustomUIEventBindingType.ValueChanged, (event, ctx) ->
-                ctx.getValue("chance-percent", Double.class).ifPresent(v -> chancePercent[0] = Math.max(0.0f, Math.min(100.0f, v.floatValue()))));
+        page.addEventListener("delay-seconds", CustomUIEventBindingType.ValueChanged, (event, ctxEvent) ->
+                ctxEvent.getValue("delay-seconds", Double.class).ifPresent(v -> delaySeconds[0] = v.floatValue()));
+        page.addEventListener("chance-percent", CustomUIEventBindingType.ValueChanged, (event, ctxEvent) ->
+                ctxEvent.getValue("chance-percent", Double.class).ifPresent(v -> chancePercent[0] = Math.max(0.0f, Math.min(100.0f, v.floatValue()))));
 
         page.addEventListener("save-btn", CustomUIEventBindingType.Activating, event -> {
             String text = messageText[0].trim();
@@ -7670,6 +7988,7 @@ public class CitizensUI {
     public void openCombatConfigGUI(@Nonnull PlayerRef playerRef, @Nonnull Store<EntityStore> store,
                                      @Nonnull CitizenData citizen) {
         CombatConfig cc = citizen.getCombatConfig();
+        LeftPanelContext ctx = prepareLeftPanelContext(playerRef, "", citizen.getGroup(), citizen);
 
         TemplateProcessor template = createBaseTemplate()
                 .setVariable("attackType", cc.getAttackType())
@@ -7709,9 +8028,9 @@ public class CitizensUI {
                 .setVariable("combatBackwardsRelativeSpeed", cc.getCombatBackwardsRelativeSpeed())
                 .setVariable("useCombatActionEvaluator", cc.isUseCombatActionEvaluator());
 
-        String html = template.process(getSharedStyles() + """
-                <div class="page-overlay">
-                    <div class="main-container decorated-container" style="anchor-width: 850; anchor-height: 900;">
+        String rightPanelHtml = """
+                    <!-- RIGHT PANEL: COMBAT CONFIG -->
+                    <div class="main-container decorated-container" style="anchor-width: 900; anchor-height: 900;">
 
                         <!-- Header -->
                         <div class="header container-title">
@@ -7721,7 +8040,7 @@ public class CitizensUI {
                         </div>
 
                         <!-- Body -->
-                        <div class="body" data-hyui-scrollbar-style='"Common.ui" "DefaultScrollbarStyle"' style="layout-mode: TopScrolling;">
+                        <div class="body" data-hyui-scrollbar-style='"Common.ui" "DefaultScrollbarStyle"' style="layout-mode: TopScrolling; flex-weight: 1;">
 
                             <p class="page-description">Advanced combat parameters for this citizen</p>
                             <div class="spacer-sm"></div>
@@ -7735,8 +8054,8 @@ public class CitizensUI {
                             <!-- Attack Settings -->
                             <div class="section">
                                 {{@sectionHeader:title=Attack Settings,description=Configure attack type, distance, and timing}}
-                                <div class="form-row">
-                                    <div style="flex-weight: 1;">
+                                <div class="form-row" style="horizontal-align: center;">
+                                    <div style="anchor-width: 320;">
                                         <div class="form-group">
                                             <div class="form-label-row">
                                                 <p class="form-label">Attack Type</p>
@@ -7744,63 +8063,64 @@ public class CitizensUI {
                                             <select id="attack-type" value="{{$attackType}}" data-hyui-showlabel="true">
                                                 {{$attackOptions}}
                                             </select>
-                                            <p class="form-hint">Attack: {{#if attackTypeManuallySet}}Manual{{else}}Automatic{{/if}} | Style: {{#if combatStyleManuallySet}}Manual{{else}}Automatic{{/if}}</p>
+                                            <p class="form-hint" style="text-align: center;">Attack: {{#if attackTypeManuallySet}}Manual{{else}}Automatic{{/if}} | Style: {{#if combatStyleManuallySet}}Manual{{else}}Automatic{{/if}}</p>
                                         </div>
                                     </div>
                                     <div class="spacer-h-sm"></div>
-                                    <div style="flex-weight: 0; anchor-width: 190;">
+                                    <div style="flex-weight: 0; anchor-width: 190; layout: bottom;">
                                         <button id="auto-resolve-btn" class="secondary-button" style="anchor-width: 180; anchor-height: 38;">Apply Model Preset</button>
                                     </div>
                                 </div>
-                                <div class="form-row">
-                                    <div style="flex-weight: 1;">
+                                <div class="spacer-xs"></div>
+                                <div class="form-row" style="horizontal-align: center;">
+                                    <div style="anchor-width: 160;">
                                         {{@numberField:id=attack-distance,label=Attack Distance,value={{$attackDistance}},placeholder=2.0,min=0,max=50,step=0.5,decimals=1}}
                                     </div>
                                     <div class="spacer-h-sm"></div>
-                                    <div style="flex-weight: 1;">
+                                    <div style="anchor-width: 160;">
                                         {{@numberField:id=chase-speed,label=Chase Speed,value={{$chaseSpeed}},placeholder=0.67,min=0,max=5,step=0.01,decimals=2}}
                                     </div>
                                     <div class="spacer-h-sm"></div>
-                                    <div style="flex-weight: 1;">
+                                    <div style="anchor-width: 160;">
                                         {{@numberField:id=target-range,label=Target Range,value={{$targetRange}},placeholder=4.0,min=0,max=100,step=0.5,decimals=1}}
                                     </div>
                                 </div>
                                 <div class="spacer-xs"></div>
-                                <div class="form-row">
-                                    <div style="flex-weight: 1;">
+                                <div class="form-row" style="horizontal-align: center;">
+                                    <div style="anchor-width: 250;">
                                         {{@numberField:id=desired-attack-dist-min,label=Desired Attack Dist Min,value={{$desiredAttackDistanceMin}},placeholder=1.5,min=0,max=50,step=0.1,decimals=1}}
                                     </div>
                                     <div class="spacer-h-sm"></div>
-                                    <div style="flex-weight: 1;">
+                                    <div style="anchor-width: 250;">
                                         {{@numberField:id=desired-attack-dist-max,label=Desired Attack Dist Max,value={{$desiredAttackDistanceMax}},placeholder=1.5,min=0,max=50,step=0.1,decimals=1}}
                                     </div>
                                 </div>
                                 <div class="spacer-xs"></div>
-                                <div class="form-row">
-                                    <div style="flex-weight: 1;">
+                                <div class="form-row" style="horizontal-align: center;">
+                                    <div style="anchor-width: 250;">
                                         {{@numberField:id=attack-pause-min,label=Attack Pause Min,value={{$attackPauseMin}},placeholder=1.5,min=0,max=30,step=0.1,decimals=1}}
                                     </div>
                                     <div class="spacer-h-sm"></div>
-                                    <div style="flex-weight: 1;">
+                                    <div style="anchor-width: 250;">
                                         {{@numberField:id=attack-pause-max,label=Attack Pause Max,value={{$attackPauseMax}},placeholder=2.0,min=0,max=30,step=0.1,decimals=1}}
                                     </div>
                                 </div>
                                 <div class="spacer-xs"></div>
-                                <div class="form-row">
-                                    <div style="flex-weight: 1;">
-                                        {{@numberField:id=attack-pre-delay-min,label=Pre-Delay Min,value={{$combatAttackPreDelayMin}},placeholder=0.2,min=0,max=10,step=0.1,decimals=1}}
+                                <div class="form-row" style="horizontal-align: center;">
+                                    <div style="anchor-width: 120;">
+                                        {{@numberField:id=attack-pre-delay-min,label=Pre Min,value={{$combatAttackPreDelayMin}},placeholder=0.2,min=0,max=10,step=0.1,decimals=1}}
                                     </div>
                                     <div class="spacer-h-sm"></div>
-                                    <div style="flex-weight: 1;">
-                                        {{@numberField:id=attack-pre-delay-max,label=Pre-Delay Max,value={{$combatAttackPreDelayMax}},placeholder=0.2,min=0,max=10,step=0.1,decimals=1}}
+                                    <div style="anchor-width: 120;">
+                                        {{@numberField:id=attack-pre-delay-max,label=Pre Max,value={{$combatAttackPreDelayMax}},placeholder=0.2,min=0,max=10,step=0.1,decimals=1}}
                                     </div>
                                     <div class="spacer-h-sm"></div>
-                                    <div style="flex-weight: 1;">
-                                        {{@numberField:id=attack-post-delay-min,label=Post-Delay Min,value={{$combatAttackPostDelayMin}},placeholder=0.2,min=0,max=10,step=0.1,decimals=1}}
+                                    <div style="anchor-width: 120;">
+                                        {{@numberField:id=attack-post-delay-min,label=Post Min,value={{$combatAttackPostDelayMin}},placeholder=0.2,min=0,max=10,step=0.1,decimals=1}}
                                     </div>
                                     <div class="spacer-h-sm"></div>
-                                    <div style="flex-weight: 1;">
-                                        {{@numberField:id=attack-post-delay-max,label=Post-Delay Max,value={{$combatAttackPostDelayMax}},placeholder=0.2,min=0,max=10,step=0.1,decimals=1}}
+                                    <div style="anchor-width: 120;">
+                                        {{@numberField:id=attack-post-delay-max,label=Post Max,value={{$combatAttackPostDelayMax}},placeholder=0.2,min=0,max=10,step=0.1,decimals=1}}
                                     </div>
                                 </div>
                             </div>
@@ -7810,58 +8130,58 @@ public class CitizensUI {
                             <!-- Combat Movement -->
                             <div class="section">
                                 {{@sectionHeader:title=Combat Movement,description=Movement behavior during combat}}
-                                <div class="form-row">
-                                    <div style="flex-weight: 1;">
+                                <div class="form-row" style="horizontal-align: center;">
+                                    <div style="anchor-width: 250;">
                                         {{@numberField:id=combat-behavior-distance,label=Behavior Distance,value={{$combatBehaviorDistance}},placeholder=5.0,min=0,max=100,step=0.5,decimals=1}}
                                     </div>
                                     <div class="spacer-h-sm"></div>
-                                    <div style="flex-weight: 1;">
+                                    <div style="anchor-width: 250;">
                                         {{@numberField:id=combat-turn-speed,label=Turn Speed,value={{$combatRelativeTurnSpeed}},placeholder=1.5,min=0,max=10,step=0.1,decimals=1}}
                                     </div>
                                 </div>
                                 <div class="spacer-xs"></div>
-                                <div class="form-row">
-                                    <div style="flex-weight: 1;">
+                                <div class="form-row" style="horizontal-align: center;">
+                                    <div style="anchor-width: 160;">
                                         {{@numberField:id=combat-direct-weight,label=Direct Weight,value={{$combatDirectWeight}},placeholder=10,min=0,max=100,step=1,decimals=0}}
                                     </div>
                                     <div class="spacer-h-sm"></div>
-                                    <div style="flex-weight: 1;">
+                                    <div style="anchor-width: 160;">
                                         {{@numberField:id=combat-strafe-weight,label=Strafe Weight,value={{$combatStrafeWeight}},placeholder=10,min=0,max=100,step=1,decimals=0}}
                                     </div>
                                     <div class="spacer-h-sm"></div>
-                                    <div style="flex-weight: 1;">
+                                    <div style="anchor-width: 160;">
                                         {{@numberField:id=combat-always-moving-weight,label=Always Moving,value={{$combatAlwaysMovingWeight}},placeholder=0,min=0,max=100,step=1,decimals=0}}
                                     </div>
                                 </div>
                                 <div class="spacer-xs"></div>
-                                <div class="form-row">
-                                    <div style="flex-weight: 1;">
-                                        {{@numberField:id=strafe-duration-min,label=Strafe Dur Min,value={{$combatStrafingDurationMin}},placeholder=1.0,min=0,max=30,step=0.1,decimals=1}}
+                                <div class="form-row" style="horizontal-align: center;">
+                                    <div style="anchor-width: 120;">
+                                        {{@numberField:id=strafe-duration-min,label=Dur Min,value={{$combatStrafingDurationMin}},placeholder=1.0,min=0,max=30,step=0.1,decimals=1}}
                                     </div>
                                     <div class="spacer-h-sm"></div>
-                                    <div style="flex-weight: 1;">
-                                        {{@numberField:id=strafe-duration-max,label=Strafe Dur Max,value={{$combatStrafingDurationMax}},placeholder=1.0,min=0,max=30,step=0.1,decimals=1}}
+                                    <div style="anchor-width: 120;">
+                                        {{@numberField:id=strafe-duration-max,label=Dur Max,value={{$combatStrafingDurationMax}},placeholder=1.0,min=0,max=30,step=0.1,decimals=1}}
                                     </div>
                                     <div class="spacer-h-sm"></div>
-                                    <div style="flex-weight: 1;">
-                                        {{@numberField:id=strafe-freq-min,label=Strafe Freq Min,value={{$combatStrafingFrequencyMin}},placeholder=2.0,min=0,max=30,step=0.1,decimals=1}}
+                                    <div style="anchor-width: 120;">
+                                        {{@numberField:id=strafe-freq-min,label=Freq Min,value={{$combatStrafingFrequencyMin}},placeholder=2.0,min=0,max=30,step=0.1,decimals=1}}
                                     </div>
                                     <div class="spacer-h-sm"></div>
-                                    <div style="flex-weight: 1;">
-                                        {{@numberField:id=strafe-freq-max,label=Strafe Freq Max,value={{$combatStrafingFrequencyMax}},placeholder=2.0,min=0,max=30,step=0.1,decimals=1}}
+                                    <div style="anchor-width: 120;">
+                                        {{@numberField:id=strafe-freq-max,label=Freq Max,value={{$combatStrafingFrequencyMax}},placeholder=2.0,min=0,max=30,step=0.1,decimals=1}}
                                     </div>
                                 </div>
                                 <div class="spacer-xs"></div>
-                                <div class="form-row">
-                                    <div style="flex-weight: 1;">
+                                <div class="form-row" style="horizontal-align: center;">
+                                    <div style="anchor-width: 160;">
                                         {{@numberField:id=combat-moving-speed,label=Moving Speed,value={{$combatMovingRelativeSpeed}},placeholder=0.6,min=0,max=5,step=0.05,decimals=2}}
                                     </div>
                                     <div class="spacer-h-sm"></div>
-                                    <div style="flex-weight: 1;">
+                                    <div style="anchor-width: 160;">
                                         {{@numberField:id=combat-backwards-speed,label=Backwards Speed,value={{$combatBackwardsRelativeSpeed}},placeholder=0.3,min=0,max=5,step=0.05,decimals=2}}
                                     </div>
                                     <div class="spacer-h-sm"></div>
-                                    <div style="flex-weight: 1;">
+                                    <div style="anchor-width: 160;">
                                         {{@numberField:id=flee-too-close,label=Flee If Close,value={{$combatFleeIfTooCloseDistance}},placeholder=0,min=0,max=50,step=0.5,decimals=1}}
                                     </div>
                                 </div>
@@ -7872,34 +8192,34 @@ public class CitizensUI {
                             <!-- Back Off & Blocking -->
                             <div class="section">
                                 {{@sectionHeader:title=Back Off & Blocking,description=Retreat and blocking behavior}}
-                                <div class="checkbox-row">
+                                <div class="checkbox-row" style="horizontal-align: center;">
                                     <input type="checkbox" id="back-off-toggle" {{#if backOffAfterAttack}}checked{{/if}} />
-                                    <div style="layout: top; flex-weight: 0;">
+                                    <div style="layout: top; flex-weight: 0; text-align: center;">
                                         <p class="checkbox-label">Back Off After Attack</p>
                                         <p class="checkbox-description">NPC retreats after attacking</p>
                                     </div>
                                 </div>
                                 <div class="spacer-xs"></div>
-                                <div class="form-row">
-                                    <div style="flex-weight: 1;">
+                                <div class="form-row" style="horizontal-align: center;">
+                                    <div style="anchor-width: 160;">
                                         {{@numberField:id=back-off-distance,label=Back Off Distance,value={{$backOffDistance}},placeholder=4.0,min=0,max=50,step=0.5,decimals=1}}
                                     </div>
                                     <div class="spacer-h-sm"></div>
-                                    <div style="flex-weight: 1;">
+                                    <div style="anchor-width: 160;">
                                         {{@numberField:id=back-off-dur-min,label=Back Off Dur Min,value={{$backOffDurationMin}},placeholder=2.0,min=0,max=30,step=0.1,decimals=1}}
                                     </div>
                                     <div class="spacer-h-sm"></div>
-                                    <div style="flex-weight: 1;">
+                                    <div style="anchor-width: 160;">
                                         {{@numberField:id=back-off-dur-max,label=Back Off Dur Max,value={{$backOffDurationMax}},placeholder=3.0,min=0,max=30,step=0.1,decimals=1}}
                                     </div>
                                 </div>
                                 <div class="spacer-xs"></div>
-                                <div class="form-row">
-                                    <div style="flex-weight: 1;">
+                                <div class="form-row" style="horizontal-align: center;">
+                                    <div style="anchor-width: 250;">
                                         {{@formField:id=block-ability,label=Block Ability,value={{$blockAbility}},placeholder=Shield_Block,hint=Ability used for blocking}}
                                     </div>
                                     <div class="spacer-h-sm"></div>
-                                    <div style="flex-weight: 1;">
+                                    <div style="anchor-width: 250;">
                                         {{@numberField:id=block-probability,label=Block Probability %,value={{$blockProbability}},placeholder=50,min=0,max=100,step=1,decimals=0}}
                                     </div>
                                 </div>
@@ -7910,19 +8230,19 @@ public class CitizensUI {
                             <!-- Target Switching -->
                             <div class="section">
                                 {{@sectionHeader:title=Target & Evaluator,description=Target switching and combat action evaluator}}
-                                <div class="form-row">
-                                    <div style="flex-weight: 1;">
+                                <div class="form-row" style="horizontal-align: center;">
+                                    <div style="anchor-width: 250;">
                                         {{@numberField:id=target-switch-min,label=Switch Timer Min,value={{$targetSwitchTimerMin}},placeholder=5.0,min=0,max=60,step=0.5,decimals=1}}
                                     </div>
                                     <div class="spacer-h-sm"></div>
-                                    <div style="flex-weight: 1;">
+                                    <div style="anchor-width: 250;">
                                         {{@numberField:id=target-switch-max,label=Switch Timer Max,value={{$targetSwitchTimerMax}},placeholder=5.0,min=0,max=60,step=0.5,decimals=1}}
                                     </div>
                                 </div>
                                 <div class="spacer-xs"></div>
-                                <div class="checkbox-row">
+                                <div class="checkbox-row" style="horizontal-align: center;">
                                     <input type="checkbox" id="use-combat-evaluator" {{#if useCombatActionEvaluator}}checked{{/if}} />
-                                    <div style="layout: top; flex-weight: 0;">
+                                    <div style="layout: top; flex-weight: 0; text-align: center;">
                                         <p class="checkbox-label">Use Combat Action Evaluator</p>
                                         <p class="checkbox-description">Enable advanced combat action evaluation</p>
                                     </div>
@@ -7932,20 +8252,22 @@ public class CitizensUI {
                         </div>
 
                         <!-- Footer -->
-                        <div class="footer">
-                            <button id="cancel-btn" class="secondary-button">Back</button>
+                        <div class="footer" style="layout: center; flex-weight: 0; padding: 26 16 26 16; border-top: 1 solid #1a293c; width: 100%; vertical-align: center;">
+                            <button id="cancel-btn" class="secondary-button" style="anchor-width: 150;">Back</button>
                             <div class="spacer-h-md"></div>
                             <button id="save-btn" class="secondary-button" style="anchor-width: 200;">Save Combat Config</button>
                         </div>
 
                     </div>
-                </div>
-                """);
+                """;
+
+        String html = template.process(wrapSideBySideHtml(template, ctx, rightPanelHtml));
 
         PageBuilder page = PageBuilder.pageForPlayer(playerRef)
                 .withLifetime(CustomPageLifetime.CanDismiss)
                 .fromHtml(HtmlUtils.sanitizeHtmlForHyUI(html));
 
+        setupMainEventListeners(page, playerRef, store, Tab.MANAGE, ctx.unifiedList(), ctx.searchQuery(), ctx.normalizedViewingGroup(), citizen);
         setupCombatConfigListeners(page, playerRef, store, citizen);
 
         page.open(store);
@@ -8202,6 +8524,7 @@ public class CitizensUI {
     public void openDetectionConfigGUI(@Nonnull PlayerRef playerRef, @Nonnull Store<EntityStore> store,
                                         @Nonnull CitizenData citizen) {
         DetectionConfig dc = citizen.getDetectionConfig();
+        LeftPanelContext ctx = prepareLeftPanelContext(playerRef, "", citizen.getGroup(), citizen);
 
         TemplateProcessor template = createBaseTemplate()
                 .setVariable("viewRange", dc.getViewRange())
@@ -8218,9 +8541,9 @@ public class CitizensUI {
                 .setVariable("searchTimeMax", dc.getSearchTimeMax())
                 .setVariable("investigateRange", dc.getInvestigateRange());
 
-        String html = template.process(getSharedStyles() + """
-                <div class="page-overlay">
-                    <div class="main-container decorated-container" style="anchor-width: 800; anchor-height: 800;">
+        String rightPanelHtml = """
+                    <!-- RIGHT PANEL: DETECTION CONFIG -->
+                    <div class="main-container decorated-container" style="anchor-width: 900; anchor-height: 900;">
 
                         <!-- Header -->
                         <div class="header container-title">
@@ -8230,7 +8553,7 @@ public class CitizensUI {
                         </div>
 
                         <!-- Body -->
-                        <div class="body" data-hyui-scrollbar-style='"Common.ui" "DefaultScrollbarStyle"' style="layout-mode: TopScrolling;">
+                        <div class="body" data-hyui-scrollbar-style='"Common.ui" "DefaultScrollbarStyle"' style="layout-mode: TopScrolling; flex-weight: 1;">
 
                             <p class="page-description">How this citizen detects and responds to threats</p>
                             <div class="spacer-sm"></div>
@@ -8244,26 +8567,26 @@ public class CitizensUI {
                             <!-- Primary Detection -->
                             <div class="section">
                                 {{@sectionHeader:title=Primary Detection,description=Vision and hearing ranges}}
-                                <div class="form-row">
-                                    <div style="flex-weight: 1;">
+                                <div class="form-row" style="horizontal-align: center;">
+                                    <div style="anchor-width: 160;">
                                         {{@numberField:id=view-range,label=View Range,value={{$viewRange}},placeholder=15,min=0,max=200,step=1,decimals=0}}
                                     </div>
                                     <div class="spacer-h-sm"></div>
-                                    <div style="flex-weight: 1;">
-                                        {{@numberField:id=view-sector,label=View Sector (degrees),value={{$viewSector}},placeholder=180,min=0,max=360,step=5,decimals=0}}
+                                    <div style="anchor-width: 160;">
+                                        {{@numberField:id=view-sector,label=View Sector (deg),value={{$viewSector}},placeholder=180,min=0,max=360,step=5,decimals=0}}
                                     </div>
                                     <div class="spacer-h-sm"></div>
-                                    <div style="flex-weight: 1;">
+                                    <div style="anchor-width: 160;">
                                         {{@numberField:id=hearing-range,label=Hearing Range,value={{$hearingRange}},placeholder=8,min=0,max=200,step=1,decimals=0}}
                                     </div>
                                 </div>
                                 <div class="spacer-xs"></div>
-                                <div class="form-row">
-                                    <div style="flex-weight: 1;">
+                                <div class="form-row" style="horizontal-align: center;">
+                                    <div style="anchor-width: 250;">
                                         {{@numberField:id=absolute-detection,label=Absolute Detection Range,value={{$absoluteDetectionRange}},placeholder=2,min=0,max=100,step=0.5,decimals=1}}
                                     </div>
                                     <div class="spacer-h-sm"></div>
-                                    <div style="flex-weight: 1;">
+                                    <div style="anchor-width: 250;">
                                         {{@numberField:id=investigate-range,label=Investigate Range,value={{$investigateRange}},placeholder=40,min=0,max=200,step=1,decimals=0}}
                                     </div>
                                 </div>
@@ -8274,16 +8597,16 @@ public class CitizensUI {
                             <!-- Alert Settings -->
                             <div class="section">
                                 {{@sectionHeader:title=Alert Settings,description=How the citizen reacts when alerted}}
-                                <div class="form-row">
-                                    <div style="flex-weight: 1;">
+                                <div class="form-row" style="horizontal-align: center;">
+                                    <div style="anchor-width: 160;">
                                         {{@numberField:id=alerted-range,label=Alerted Range,value={{$alertedRange}},placeholder=45,min=0,max=200,step=1,decimals=0}}
                                     </div>
                                     <div class="spacer-h-sm"></div>
-                                    <div style="flex-weight: 1;">
+                                    <div style="anchor-width: 160;">
                                         {{@numberField:id=alerted-time-min,label=Alerted Time Min,value={{$alertedTimeMin}},placeholder=1.0,min=0,max=30,step=0.1,decimals=1}}
                                     </div>
                                     <div class="spacer-h-sm"></div>
-                                    <div style="flex-weight: 1;">
+                                    <div style="anchor-width: 160;">
                                         {{@numberField:id=alerted-time-max,label=Alerted Time Max,value={{$alertedTimeMax}},placeholder=2.0,min=0,max=30,step=0.1,decimals=1}}
                                     </div>
                                 </div>
@@ -8300,22 +8623,22 @@ public class CitizensUI {
                             <!-- Search & Confusion -->
                             <div class="section">
                                 {{@sectionHeader:title=Search & Confusion,description=Behavior when target is lost}}
-                                <div class="form-row">
-                                    <div style="flex-weight: 1;">
+                                <div class="form-row" style="horizontal-align: center;">
+                                    <div style="anchor-width: 250;">
                                         {{@numberField:id=confused-time-min,label=Confused Time Min,value={{$confusedTimeMin}},placeholder=1.0,min=0,max=30,step=0.1,decimals=1}}
                                     </div>
                                     <div class="spacer-h-sm"></div>
-                                    <div style="flex-weight: 1;">
+                                    <div style="anchor-width: 250;">
                                         {{@numberField:id=confused-time-max,label=Confused Time Max,value={{$confusedTimeMax}},placeholder=2.0,min=0,max=30,step=0.1,decimals=1}}
                                     </div>
                                 </div>
                                 <div class="spacer-xs"></div>
-                                <div class="form-row">
-                                    <div style="flex-weight: 1;">
+                                <div class="form-row" style="horizontal-align: center;">
+                                    <div style="anchor-width: 250;">
                                         {{@numberField:id=search-time-min,label=Search Time Min,value={{$searchTimeMin}},placeholder=10.0,min=0,max=120,step=0.5,decimals=1}}
                                     </div>
                                     <div class="spacer-h-sm"></div>
-                                    <div style="flex-weight: 1;">
+                                    <div style="anchor-width: 250;">
                                         {{@numberField:id=search-time-max,label=Search Time Max,value={{$searchTimeMax}},placeholder=14.0,min=0,max=120,step=0.5,decimals=1}}
                                     </div>
                                 </div>
@@ -8325,20 +8648,22 @@ public class CitizensUI {
                         </div>
 
                         <!-- Footer -->
-                        <div class="footer">
-                            <button id="cancel-btn" class="secondary-button">Back</button>
+                        <div class="footer" style="layout: center; flex-weight: 0; padding: 26 16 26 16; border-top: 1 solid #1a293c; width: 100%; vertical-align: center;">
+                            <button id="cancel-btn" class="secondary-button" style="anchor-width: 150;">Back</button>
                             <div class="spacer-h-md"></div>
                             <button id="save-btn" class="secondary-button" style="anchor-width: 220;">Save Detection Config</button>
                         </div>
 
                     </div>
-                </div>
-                """);
+                """;
+
+        String html = template.process(wrapSideBySideHtml(template, ctx, rightPanelHtml));
 
         PageBuilder page = PageBuilder.pageForPlayer(playerRef)
                 .withLifetime(CustomPageLifetime.CanDismiss)
                 .fromHtml(HtmlUtils.sanitizeHtmlForHyUI(html));
 
+        setupMainEventListeners(page, playerRef, store, Tab.MANAGE, ctx.unifiedList(), ctx.searchQuery(), ctx.normalizedViewingGroup(), citizen);
         setupDetectionConfigListeners(page, playerRef, store, citizen);
 
         page.open(store);
@@ -8429,6 +8754,8 @@ public class CitizensUI {
 
     public void openAdvancedSettingsGUI(@Nonnull PlayerRef playerRef, @Nonnull Store<EntityStore> store,
                                         @Nonnull CitizenData citizen) {
+        LeftPanelContext ctx = prepareLeftPanelContext(playerRef, "", citizen.getGroup(), citizen);
+
         TemplateProcessor template = createBaseTemplate()
                 .setVariable("dropList", escapeHtml(citizen.getDropList()))
                 .setVariable("runThreshold", citizen.getRunThreshold())
@@ -8456,9 +8783,9 @@ public class CitizensUI {
                 .setVariable("flockArray", escapeHtml(String.join(", ", citizen.getFlockArray())))
                 .setVariable("disableDamageGroups", escapeHtml(String.join(", ", citizen.getDisableDamageGroups())));
 
-        String html = template.process(getSharedStyles() + """
-                <div class="page-overlay">
-                    <div class="main-container decorated-container" style="anchor-width: 850; anchor-height: 900;">
+        String rightPanelHtml = """
+                    <!-- RIGHT PANEL: ADVANCED SETTINGS -->
+                    <div class="main-container decorated-container" style="anchor-width: 900; anchor-height: 900;">
 
                         <!-- Header -->
                         <div class="header container-title">
@@ -8468,7 +8795,7 @@ public class CitizensUI {
                         </div>
 
                         <!-- Body -->
-                        <div class="body" data-hyui-scrollbar-style='"Common.ui" "DefaultScrollbarStyle"' style="layout-mode: TopScrolling;">
+                        <div class="body" data-hyui-scrollbar-style='"Common.ui" "DefaultScrollbarStyle"' style="layout-mode: TopScrolling; flex-weight: 1;">
                             <div>
                                 <p class="form-hint" style="text-align: center; color: #f85149;">Warning: Hytale has minimum and maximum values for all of these options. If you change something and the citizen disappears,</p>
                             </div>
@@ -8479,35 +8806,35 @@ public class CitizensUI {
                             <!-- General -->
                             <div class="section">
                                 {{@sectionHeader:title=General,description=Core identity and behavior settings}}
-                                <div class="form-row">
-                                    <div style="flex-weight: 1;">
+                                <div class="form-row" style="horizontal-align: center;">
+                                    <div style="anchor-width: 250;">
                                         {{@formField:id=name-translation-key,label=Name Translation Key,value={{$nameTranslationKey}},placeholder=Citizen}}
                                     </div>
                                     <div class="spacer-h-sm"></div>
-                                    <div style="flex-weight: 1;">
+                                    <div style="anchor-width: 250;">
                                         {{@formField:id=attitude-group,label=Attitude Group,value={{$attitudeGroup}},placeholder=Empty}}
                                     </div>
                                 </div>
                                 <div class="spacer-xs"></div>
-                                <div class="form-row">
-                                    <div style="flex-weight: 1;">
+                                <div class="form-row" style="horizontal-align: center;">
+                                    <div style="anchor-width: 250;">
                                         {{@formField:id=drop-list,label=Drop List,value={{$dropList}},placeholder=Empty,hint=Loot table reference}}
                                     </div>
                                     <div class="spacer-h-sm"></div>
-                                    <div style="flex-weight: 1;">
+                                    <div style="anchor-width: 250;">
                                         {{@numberField:id=run-threshold,label=Run Threshold,value={{$runThreshold}},placeholder=0.3,min=0,max=1,step=0.05,decimals=2}}
                                     </div>
                                 </div>
                                 <div class="spacer-xs"></div>
-                                <div class="form-row">
-                                    <div style="flex-weight: 1;">
+                                <div class="form-row" style="horizontal-align: center;">
+                                    <div style="anchor-width: 250;">
                                         {{@numberField:id=knockback-scale,label=Knockback Scale,value={{$knockbackScale}},placeholder=0.5,min=0,max=5,step=0.1,decimals=1}}
                                     </div>
                                 </div>
                                 <div class="spacer-xs"></div>
-                                <div class="checkbox-row">
+                                <div class="checkbox-row" style="horizontal-align: center;">
                                     <input type="checkbox" id="breathes-in-water" {{#if breathesInWater}}checked{{/if}} />
-                                    <div style="layout: top; flex-weight: 0;">
+                                    <div style="layout: top; flex-weight: 0; text-align: center;">
                                         <p class="checkbox-label">Breathes In Water</p>
                                         <p class="checkbox-description">Whether this NPC can breathe underwater</p>
                                     </div>
@@ -8519,24 +8846,24 @@ public class CitizensUI {
                             <!-- Animations -->
                             <div class="section">
                                 {{@sectionHeader:title=Idle Behavior,description=Idle and flavor animation settings}}
-                                <div class="form-row">
-                                    <div style="flex-weight: 1;">
+                                <div class="form-row" style="horizontal-align: center;">
+                                    <div style="anchor-width: 460;">
                                         {{@formField:id=waking-idle-behavior,label=Waking Idle Component,value={{$wakingIdleBehavior}},placeholder=Component_Instruction_Waking_Idle}}
                                     </div>
                                 </div>
                                 <div class="spacer-xs"></div>
-                                <div class="form-row">
-                                    <div style="flex-weight: 1;">
+                                <div class="form-row" style="horizontal-align: center;">
+                                    <div style="anchor-width: 460;">
                                         {{@formField:id=day-flavor-anim,label=Day Flavor Animation,value={{$dayFlavorAnimation}},placeholder=Leave empty for none}}
                                     </div>
                                 </div>
                                 <div class="spacer-xs"></div>
-                                <div class="form-row">
-                                    <div style="flex-weight: 1;">
+                                <div class="form-row" style="horizontal-align: center;">
+                                    <div style="anchor-width: 250;">
                                         {{@numberField:id=day-flavor-len-min,label=Flavor Anim Length Min,value={{$dayFlavorAnimLengthMin}},placeholder=3.0,min=0,max=120,step=0.5,decimals=1}}
                                     </div>
                                     <div class="spacer-h-sm"></div>
-                                    <div style="flex-weight: 1;">
+                                    <div style="anchor-width: 250;">
                                         {{@numberField:id=day-flavor-len-max,label=Flavor Anim Length Max,value={{$dayFlavorAnimLengthMax}},placeholder=5.0,min=0,max=120,step=0.5,decimals=1}}
                                     </div>
                                 </div>
@@ -8547,61 +8874,55 @@ public class CitizensUI {
                             <!-- Hotbar & Equipment -->
                             <div class="section">
                                 {{@sectionHeader:title=Hotbar & Equipment,description=Default equipment slot configuration}}
-                                <div class="form-row">
-                                    <div style="flex-weight: 1;">
-                                        {{@numberField:id=default-hotbar,label=Default Hotbar Slot,value={{$defaultHotbarSlot}},placeholder=0,min=-1,max=8,step=1,decimals=0}}
+                                <div class="form-row" style="horizontal-align: center;">
+                                    <div style="anchor-width: 160;">
+                                        {{@numberField:id=default-hotbar,label=Default Hotbar,value={{$defaultHotbarSlot}},placeholder=0,min=-1,max=8,step=1,decimals=0}}
                                     </div>
                                     <div class="spacer-h-sm"></div>
-                                    <div style="flex-weight: 1;">
-                                        {{@numberField:id=random-idle-hotbar,label=Idle Hotbar Slot,value={{$randomIdleHotbarSlot}},placeholder=-1,min=-1,max=8,step=1,decimals=0}}
+                                    <div style="anchor-width: 160;">
+                                        {{@numberField:id=random-idle-hotbar,label=Idle Hotbar,value={{$randomIdleHotbarSlot}},placeholder=-1,min=-1,max=8,step=1,decimals=0}}
                                     </div>
                                     <div class="spacer-h-sm"></div>
-                                    <div style="flex-weight: 1;">
-                                        {{@numberField:id=chance-equip-idle,label=Equip Idle Chance %,value={{$chanceEquipIdle}},placeholder=5,min=0,max=100,step=1,decimals=0}}
+                                    <div style="anchor-width: 160;">
+                                        {{@numberField:id=chance-equip-idle,label=Equip Idle %,value={{$chanceEquipIdle}},placeholder=5,min=0,max=100,step=1,decimals=0}}
                                     </div>
                                 </div>
                                 <div class="spacer-xs"></div>
-                                <div class="form-row">
-                                    <div style="flex-weight: 1;">
+                                <div class="form-row" style="horizontal-align: center;">
+                                    <div style="anchor-width: 250;">
                                         {{@numberField:id=default-offhand,label=Default OffHand Slot,value={{$defaultOffHandSlot}},placeholder=-1,min=-1,max=8,step=1,decimals=0}}
                                     </div>
                                     <div class="spacer-h-sm"></div>
-                                    <div style="flex-weight: 1;">
+                                    <div style="anchor-width: 250;">
                                         {{@numberField:id=nighttime-offhand,label=Nighttime OffHand Slot,value={{$nighttimeOffhandSlot}},placeholder=0,min=-1,max=8,step=1,decimals=0}}
                                     </div>
                                 </div>
-                                <!--
-                                <div class="spacer-xs"></div>
-                                {{@formField:id=weapons,label=Weapons (Hotbar Items),value={{$weapons}},placeholder=Weapon_Sword_Iron,hint=Comma-separated list of weapon/item identifiers}}
-                                <div class="spacer-xs"></div>
-                                {{@formField:id=offhand-items,label=OffHand Items,value={{$offHandItems}},placeholder=Furniture_Crude_Torch,hint=Comma-separated list of offhand item identifiers}}
-                                -->
                             </div>
 
                             <div class="spacer-md"></div>
 
                             <div class="section">
                                 {{@sectionHeader:title=Leash Settings,description=Control distance and leash timing behavior}}
-                                <div class="form-row">
-                                    <div style="flex-weight: 1;">
+                                <div class="form-row" style="horizontal-align: center;">
+                                    <div style="anchor-width: 160;">
                                         {{@numberField:id=leash-distance,label=Leash Distance,value={{$leashDistance}},placeholder=45,min=1,max=1000,step=1,decimals=1}}
                                     </div>
                                     <div class="spacer-h-sm"></div>
-                                    <div style="flex-weight: 1;">
-                                        {{@numberField:id=leash-min-player-distance,label=Leash Min Player Distance,value={{$leashMinPlayerDistance}},placeholder=4,min=0,max=500,step=0.5,decimals=1}}
+                                    <div style="anchor-width: 160;">
+                                        {{@numberField:id=leash-min-player-distance,label=Min Player Dist,value={{$leashMinPlayerDistance}},placeholder=4,min=0,max=500,step=0.5,decimals=1}}
                                     </div>
                                     <div class="spacer-h-sm"></div>
-                                    <div style="flex-weight: 1;">
-                                        {{@numberField:id=hard-leash-distance,label=Hard Leash Distance,value={{$hardLeashDistance}},placeholder=200,min=1,max=5000,step=1,decimals=1}}
+                                    <div style="anchor-width: 160;">
+                                        {{@numberField:id=hard-leash-distance,label=Hard Leash Dist,value={{$hardLeashDistance}},placeholder=200,min=1,max=5000,step=1,decimals=1}}
                                     </div>
                                 </div>
                                 <div class="spacer-xs"></div>
-                                <div class="form-row">
-                                    <div style="flex-weight: 1;">
+                                <div class="form-row" style="horizontal-align: center;">
+                                    <div style="anchor-width: 250;">
                                         {{@numberField:id=leash-timer-min,label=Leash Timer Min,value={{$leashTimerMin}},placeholder=3,min=0,max=600,step=0.5,decimals=1}}
                                     </div>
                                     <div class="spacer-h-sm"></div>
-                                    <div style="flex-weight: 1;">
+                                    <div style="anchor-width: 250;">
                                         {{@numberField:id=leash-timer-max,label=Leash Timer Max,value={{$leashTimerMax}},placeholder=5,min=0,max=600,step=0.5,decimals=1}}
                                     </div>
                                 </div>
@@ -8610,30 +8931,44 @@ public class CitizensUI {
                             <!-- Groups & Arrays -->
                             <div class="section">
                                 {{@sectionHeader:title=Groups & Arrays,description=Comma-separated lists for group memberships}}
-                                {{@formField:id=combat-msg-groups,label=Combat Message Target Groups,value={{$combatMessageTargetGroups}},placeholder=Comma-separated group names,hint=Groups notified during combat}}
+                                <div class="form-row" style="horizontal-align: center;">
+                                    <div style="anchor-width: 460;">
+                                        {{@formField:id=combat-msg-groups,label=Combat Message Target Groups,value={{$combatMessageTargetGroups}},placeholder=Comma-separated group names,hint=Groups notified during combat}}
+                                    </div>
+                                </div>
                                 <div class="spacer-xs"></div>
-                                {{@formField:id=flock-array,label=Flock Array,value={{$flockArray}},placeholder=Comma-separated flock entries,hint=Flocking behavior groups}}
+                                <div class="form-row" style="horizontal-align: center;">
+                                    <div style="anchor-width: 460;">
+                                        {{@formField:id=flock-array,label=Flock Array,value={{$flockArray}},placeholder=Comma-separated flock entries,hint=Flocking behavior groups}}
+                                    </div>
+                                </div>
                                 <div class="spacer-xs"></div>
-                                {{@formField:id=disable-damage-groups,label=Disable Damage Groups,value={{$disableDamageGroups}},placeholder=Self,hint=Groups this NPC cannot damage}}
+                                <div class="form-row" style="horizontal-align: center;">
+                                    <div style="anchor-width: 460;">
+                                        {{@formField:id=disable-damage-groups,label=Disable Damage Groups,value={{$disableDamageGroups}},placeholder=Self,hint=Groups this NPC cannot damage}}
+                                    </div>
+                                </div>
                             </div>
 
                         </div>
 
                         <!-- Footer -->
-                        <div class="footer">
-                            <button id="cancel-btn" class="secondary-button">Back</button>
+                        <div class="footer" style="layout: center; flex-weight: 0; padding: 26 16 26 16; border-top: 1 solid #1a293c; width: 100%; vertical-align: center;">
+                            <button id="cancel-btn" class="secondary-button" style="anchor-width: 150;">Back</button>
                             <div class="spacer-h-md"></div>
                             <button id="save-btn" class="secondary-button" style="anchor-width: 220;">Save Advanced Settings</button>
                         </div>
 
                     </div>
-                </div>
-                """);
+                """;
+
+        String html = template.process(wrapSideBySideHtml(template, ctx, rightPanelHtml));
 
         PageBuilder page = PageBuilder.pageForPlayer(playerRef)
                 .withLifetime(CustomPageLifetime.CanDismiss)
                 .fromHtml(HtmlUtils.sanitizeHtmlForHyUI(html));
 
+        setupMainEventListeners(page, playerRef, store, Tab.MANAGE, ctx.unifiedList(), ctx.searchQuery(), ctx.normalizedViewingGroup(), citizen);
         setupAdvancedSettingsListeners(page, playerRef, store, citizen);
 
         page.open(store);
@@ -8849,6 +9184,7 @@ public class CitizensUI {
 
     public void openDeathConfigGUI(@Nonnull PlayerRef playerRef, @Nonnull Store<EntityStore> store,
                                    @Nonnull CitizenData citizen) {
+        LeftPanelContext ctx = prepareLeftPanelContext(playerRef, "", citizen.getGroup(), citizen);
         DeathConfig dc = citizen.getDeathConfig();
         List<DeathDropItem> drops = dc.getDropItems();
         List<CommandAction> cmds = dc.getDeathCommands();
@@ -8947,9 +9283,9 @@ public class CitizensUI {
                 .setVariable("msgModeRandom", "RANDOM".equals(dc.getMessageSelectionMode()))
                 .setVariable("msgModeSequential", "SEQUENTIAL".equals(dc.getMessageSelectionMode()));
 
-        String html = template.process(getSharedStyles() + """
-                <div class="page-overlay">
-                    <div class="main-container decorated-container" style="anchor-width: 950; anchor-height: 1000;">
+        String rightPanelHtml = """
+                    <!-- RIGHT PANEL: DEATH CONFIG -->
+                    <div class="main-container decorated-container" style="anchor-width: 900; anchor-height: 900;">
 
                         <!-- Header -->
                         <div class="header container-title">
@@ -8959,33 +9295,33 @@ public class CitizensUI {
                         </div>
 
                         <!-- Body -->
-                        <div class="body" data-hyui-scrollbar-style='"Common.ui" "DefaultScrollbarStyle"' style="layout-mode: TopScrolling;">
+                        <div class="body" data-hyui-scrollbar-style='"Common.ui" "DefaultScrollbarStyle"' style="layout-mode: TopScrolling; flex-weight: 1;">
 
                             <p class="page-description">Configure what happens when this citizen dies</p>
-                            <div class="spacer-sm"></div>
-
                             <div class="spacer-sm"></div>
 
                             <!-- Drop Items Section -->
                             <div class="section">
                                 {{@sectionHeader:title=Drop Items ({{$dropCount}}),description=Items dropped at the citizen's position on death}}
 
-                                <button id="add-drop-btn" class="secondary-button" style="anchor-width: 200; anchor-height: 40;">Add Drop Item</button>
+                                <div style="layout: center; flex-weight: 0;">
+                                    <button id="add-drop-btn" class="secondary-button" style="anchor-width: 200; anchor-height: 40;">Add Drop Item</button>
+                                </div>
                                 <div class="spacer-sm"></div>
-                                <div class="form-row">
-                                    <div style="flex-weight: 1;">
+                                <div class="form-row" style="horizontal-align: center;">
+                                    <div style="anchor-width: 250;">
                                         {{@numberField:id=drop-count-min,label=Drops Min,value={{$dropCountMin}},placeholder=0,min=0,max=200,step=1,decimals=0}}
                                     </div>
                                     <div class="spacer-h-sm"></div>
-                                    <div style="flex-weight: 1;">
+                                    <div style="anchor-width: 250;">
                                         {{@numberField:id=drop-count-max,label=Drops Max,value={{$dropCountMax}},placeholder=0,min=0,max=200,step=1,decimals=0}}
                                     </div>
                                 </div>
-                                <p class="form-hint">Set both to 0 for default behavior (all eligible drops).</p>
+                                <p class="form-hint" style="text-align: center;">Set both to 0 for default behavior (all eligible drops).</p>
                                 <div class="spacer-sm"></div>
 
                                 {{#if hasDrops}}
-                                <div class="list-container" data-hyui-scrollbar-style='"Common.ui" "DefaultScrollbarStyle"' style="anchor-height: 200;">
+                                <div class="list-container" data-hyui-scrollbar-style='"Common.ui" "DefaultScrollbarStyle"' style="anchor-height: 180;">
                                 """ + dropsHtml.toString() + """
                                 </div>
                                 {{else}}
@@ -9001,30 +9337,30 @@ public class CitizensUI {
                             <div class="section">
                                 {{@sectionHeader:title=Death Commands ({{$cmdCount}}),description=Commands executed when the citizen dies}}
 
-                                <div class="form-row">
-                                    <button id="add-dcmd-btn" class="secondary-button" style="anchor-width: 200; anchor-height: 40;">Add Command</button>
+                                <div class="form-row" style="horizontal-align: center;">
+                                    <button id="add-dcmd-btn" class="secondary-button" style="anchor-width: 160; anchor-height: 40;">Add Command</button>
                                     <div class="spacer-h-sm"></div>
-                                    <button id="cmd-mode-all" class="{{#if cmdModeAll}}secondary-button{{else}}secondary-button{{/if}}" style="anchor-width: 120; anchor-height: 40;">All</button>
+                                    <button id="cmd-mode-all" class="secondary-button" style="anchor-width: 100; anchor-height: 40;">All</button>
                                     <div class="spacer-h-sm"></div>
-                                    <button id="cmd-mode-random" class="{{#if cmdModeRandom}}secondary-button{{else}}secondary-button{{/if}}" style="anchor-width: 120; anchor-height: 40;">Random</button>
+                                    <button id="cmd-mode-random" class="secondary-button" style="anchor-width: 100; anchor-height: 40;">Random</button>
                                     <div class="spacer-h-sm"></div>
-                                    <button id="cmd-mode-sequential" class="{{#if cmdModeSequential}}secondary-button{{else}}secondary-button{{/if}}" style="anchor-width: 120; anchor-height: 40;">Sequential</button>
+                                    <button id="cmd-mode-sequential" class="secondary-button" style="anchor-width: 110; anchor-height: 40;">Sequential</button>
                                 </div>
                                 <div class="spacer-sm"></div>
-                                <div class="form-row">
-                                    <div style="flex-weight: 1;">
+                                <div class="form-row" style="horizontal-align: center;">
+                                    <div style="anchor-width: 250;">
                                         {{@numberField:id=command-count-min,label=Commands Min,value={{$commandCountMin}},placeholder=0,min=0,max=200,step=1,decimals=0}}
                                     </div>
                                     <div class="spacer-h-sm"></div>
-                                    <div style="flex-weight: 1;">
+                                    <div style="anchor-width: 250;">
                                         {{@numberField:id=command-count-max,label=Commands Max,value={{$commandCountMax}},placeholder=0,min=0,max=200,step=1,decimals=0}}
                                     </div>
                                 </div>
-                                <p class="form-hint">Set both to 0 for default behavior (All mode: all eligible, Random/Sequential: one).</p>
+                                <p class="form-hint" style="text-align: center;">Set both to 0 for default behavior (All mode: all eligible, Random/Sequential: one).</p>
                                 <div class="spacer-sm"></div>
 
                                 {{#if hasCmds}}
-                                <div class="list-container" data-hyui-scrollbar-style='"Common.ui" "DefaultScrollbarStyle"' style="anchor-height: 200;">
+                                <div class="list-container" data-hyui-scrollbar-style='"Common.ui" "DefaultScrollbarStyle"' style="anchor-height: 180;">
                                 """ + cmdsHtml.toString() + """
                                 </div>
                                 {{else}}
@@ -9040,30 +9376,30 @@ public class CitizensUI {
                             <div class="section">
                                 {{@sectionHeader:title=Death Messages ({{$msgCount}}),description=Messages sent to the killer when the citizen dies}}
 
-                                <div class="form-row">
-                                    <button id="add-dmsg-btn" class="secondary-button" style="anchor-width: 200; anchor-height: 40;">Add Message</button>
+                                <div class="form-row" style="horizontal-align: center;">
+                                    <button id="add-dmsg-btn" class="secondary-button" style="anchor-width: 160; anchor-height: 40;">Add Message</button>
                                     <div class="spacer-h-sm"></div>
-                                    <button id="msg-mode-all" class="{{#if msgModeAll}}secondary-button{{else}}secondary-button{{/if}}" style="anchor-width: 120; anchor-height: 40;">All</button>
+                                    <button id="msg-mode-all" class="secondary-button" style="anchor-width: 100; anchor-height: 40;">All</button>
                                     <div class="spacer-h-sm"></div>
-                                    <button id="msg-mode-random" class="{{#if msgModeRandom}}secondary-button{{else}}secondary-button{{/if}}" style="anchor-width: 120; anchor-height: 40;">Random</button>
+                                    <button id="msg-mode-random" class="secondary-button" style="anchor-width: 100; anchor-height: 40;">Random</button>
                                     <div class="spacer-h-sm"></div>
-                                    <button id="msg-mode-sequential" class="{{#if msgModeSequential}}secondary-button{{else}}secondary-button{{/if}}" style="anchor-width: 120; anchor-height: 40;">Sequential</button>
+                                    <button id="msg-mode-sequential" class="secondary-button" style="anchor-width: 110; anchor-height: 40;">Sequential</button>
                                 </div>
                                 <div class="spacer-sm"></div>
-                                <div class="form-row">
-                                    <div style="flex-weight: 1;">
+                                <div class="form-row" style="horizontal-align: center;">
+                                    <div style="anchor-width: 250;">
                                         {{@numberField:id=message-count-min,label=Messages Min,value={{$messageCountMin}},placeholder=0,min=0,max=200,step=1,decimals=0}}
                                     </div>
                                     <div class="spacer-h-sm"></div>
-                                    <div style="flex-weight: 1;">
+                                    <div style="anchor-width: 250;">
                                         {{@numberField:id=message-count-max,label=Messages Max,value={{$messageCountMax}},placeholder=0,min=0,max=200,step=1,decimals=0}}
                                     </div>
                                 </div>
-                                <p class="form-hint">Set both to 0 for default behavior (All mode: all eligible, Random/Sequential: one).</p>
+                                <p class="form-hint" style="text-align: center;">Set both to 0 for default behavior (All mode: all eligible, Random/Sequential: one).</p>
                                 <div class="spacer-sm"></div>
 
                                 {{#if hasMsgs}}
-                                <div class="list-container" data-hyui-scrollbar-style='"Common.ui" "DefaultScrollbarStyle"' style="anchor-height: 200;">
+                                <div class="list-container" data-hyui-scrollbar-style='"Common.ui" "DefaultScrollbarStyle"' style="anchor-height: 180;">
                                 """ + msgsHtml.toString() + """
                                 </div>
                                 {{else}}
@@ -9075,21 +9411,21 @@ public class CitizensUI {
 
                         </div>
 
-                        <div class="spacer-sm"></div>
-
                         <!-- Footer -->
-                        <div class="footer">
-                            <button id="back-btn" class="secondary-button">Back</button>
+                        <div class="footer" style="layout: center; flex-weight: 0; padding: 26 16 26 16; border-top: 1 solid #1a293c; width: 100%; vertical-align: center;">
+                            <button id="back-btn" class="secondary-button" style="anchor-width: 150;">Back</button>
                         </div>
 
                     </div>
-                </div>
-                """);
+                """;
+
+        String html = template.process(wrapSideBySideHtml(template, ctx, rightPanelHtml));
 
         PageBuilder page = PageBuilder.pageForPlayer(playerRef)
                 .withLifetime(CustomPageLifetime.CanDismiss)
                 .fromHtml(HtmlUtils.sanitizeHtmlForHyUI(html));
 
+        setupMainEventListeners(page, playerRef, store, Tab.MANAGE, ctx.unifiedList(), ctx.searchQuery(), ctx.normalizedViewingGroup(), citizen);
         setupDeathConfigListeners(page, playerRef, store, citizen, dc, drops, cmds, msgs);
 
         page.open(store);
@@ -9254,6 +9590,7 @@ public class CitizensUI {
     private void openDeathItemSelectionGUI(@Nonnull PlayerRef playerRef, @Nonnull Store<EntityStore> store,
                                            @Nonnull CitizenData citizen, @Nonnull String searchFilter,
                                            int pageNum, int editDropIndex) {
+        LeftPanelContext ctx = prepareLeftPanelContext(playerRef, "", citizen.getGroup(), citizen);
         Map<String, Item> itemMap = Item.getAssetMap().getAssetMap();
         String lowerFilter = searchFilter.toLowerCase().trim();
 
@@ -9337,9 +9674,10 @@ public class CitizensUI {
                 """);
         }
 
-        String html = getSharedStyles() + """
-                <div class="page-overlay">
-                    <div class="main-container decorated-container" style="anchor-width: 850; anchor-height: 750;">
+        TemplateProcessor template = createBaseTemplate();
+        String rightPanelHtml = """
+                    <!-- RIGHT PANEL: SELECT DROP ITEM -->
+                    <div class="main-container decorated-container" style="anchor-width: 900; anchor-height: 900;">
 
                         <div class="header container-title">
                             <div class="header-content">
@@ -9364,8 +9702,8 @@ public class CitizensUI {
                             %s
                         </div>
 
-                        <div class="footer">
-                            <button id="back-btn" class="secondary-button">Back</button>
+                        <div class="footer" style="layout: center; flex-weight: 0; padding: 26 16 26 16; border-top: 1 solid #1a293c; width: 100%; vertical-align: center;">
+                            <button id="back-btn" class="secondary-button" style="anchor-width: 150;">Back</button>
                             <div style="flex-weight: 1;"></div>
                             <button id="prev-page-btn" class="secondary-button small-secondary-button" %s>Prev</button>
                             <div style="flex-weight: 0; anchor-width: 8;"></div>
@@ -9375,7 +9713,6 @@ public class CitizensUI {
                         </div>
 
                     </div>
-                </div>
                 """.formatted(
                 currentPage + 1, totalPages, totalItems,
                 searchFilter,
@@ -9385,14 +9722,18 @@ public class CitizensUI {
                 currentPage >= totalPages - 1 ? "disabled" : ""
         );
 
+        String html = template.process(wrapSideBySideHtml(template, ctx, rightPanelHtml));
+
         PageBuilder page = PageBuilder.pageForPlayer(playerRef)
                 .withLifetime(CustomPageLifetime.CanDismiss)
                 .fromHtml(HtmlUtils.sanitizeHtmlForHyUI(html));
 
+        setupMainEventListeners(page, playerRef, store, Tab.MANAGE, ctx.unifiedList(), ctx.searchQuery(), ctx.normalizedViewingGroup(), citizen);
+
         final String[] searchText = {searchFilter};
 
-        page.addEventListener("item-search", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
-            searchText[0] = ctx.getValue("item-search", String.class).orElse("");
+        page.addEventListener("item-search", CustomUIEventBindingType.ValueChanged, (event, eventCtx) -> {
+            searchText[0] = eventCtx.getValue("item-search", String.class).orElse("");
         });
 
         page.addEventListener("search-btn", CustomUIEventBindingType.Activating, event -> {
@@ -9427,6 +9768,7 @@ public class CitizensUI {
 
     private void openDeathItemQuantityGUI(@Nonnull PlayerRef playerRef, @Nonnull Store<EntityStore> store,
                                           @Nonnull CitizenData citizen, @Nonnull String itemId, int editDropIndex) {
+        LeftPanelContext ctx = prepareLeftPanelContext(playerRef, "", citizen.getGroup(), citizen);
         DeathConfig dc = citizen.getDeathConfig();
         int currentQty = 1;
         float currentChance = 100.0f;
@@ -9453,9 +9795,9 @@ public class CitizensUI {
                 .setVariable("currentQty", currentQty)
                 .setVariable("currentChance", currentChance);
 
-        String html = template.process(getSharedStyles() + """
-                <div class="page-overlay">
-                    <div class="main-container decorated-container" style="anchor-width: 500; anchor-height: 500;">
+        String rightPanelHtml = """
+                    <!-- RIGHT PANEL: SET DROP QUANTITY -->
+                    <div class="main-container decorated-container" style="anchor-width: 900; anchor-height: 900;">
 
                         <div class="header container-title">
                             <div class="header-content">
@@ -9463,7 +9805,7 @@ public class CitizensUI {
                             </div>
                         </div>
 
-                        <div class="body">
+                        <div class="body" data-hyui-scrollbar-style='"Common.ui" "DefaultScrollbarStyle"' style="layout-mode: TopScrolling; flex-weight: 1;">
 
                             <p class="page-description">How many of this item to drop</p>
                             <div class="spacer-sm"></div>
@@ -9486,31 +9828,34 @@ public class CitizensUI {
                             </div>
                         </div>
 
-                        <div class="footer">
-                            <button id="qty-back-btn" class="secondary-button">Back</button>
-                            <div style="flex-weight: 0; anchor-width: 8;"></div>
-                            <button id="qty-confirm-btn" class="secondary-button" style="anchor-width: 160;">Confirm</button>
+                        <div class="footer" style="layout: center; flex-weight: 0; padding: 26 16 26 16; border-top: 1 solid #1a293c; width: 100%; vertical-align: center;">
+                            <button id="qty-back-btn" class="secondary-button" style="anchor-width: 150;">Back</button>
+                            <div class="spacer-h-md"></div>
+                            <button id="qty-confirm-btn" class="secondary-button" style="anchor-width: 180;">Confirm</button>
                         </div>
 
                     </div>
-                </div>
-                """);
+                """;
+
+        String html = template.process(wrapSideBySideHtml(template, ctx, rightPanelHtml));
 
         PageBuilder page = PageBuilder.pageForPlayer(playerRef)
                 .withLifetime(CustomPageLifetime.CanDismiss)
                 .fromHtml(HtmlUtils.sanitizeHtmlForHyUI(html));
 
+        setupMainEventListeners(page, playerRef, store, Tab.MANAGE, ctx.unifiedList(), ctx.searchQuery(), ctx.normalizedViewingGroup(), citizen);
+
         final int[] quantity = {currentQty};
         final float[] chancePercent = {currentChance};
 
-        page.addEventListener("quantity-input", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
-            ctx.getValue("quantity-input", Double.class).ifPresent(val -> {
+        page.addEventListener("quantity-input", CustomUIEventBindingType.ValueChanged, (event, eventCtx) -> {
+            eventCtx.getValue("quantity-input", Double.class).ifPresent(val -> {
                 quantity[0] = Math.max(1, val.intValue());
             });
         });
 
-        page.addEventListener("chance-input", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
-            ctx.getValue("chance-input", Double.class).ifPresent(val -> {
+        page.addEventListener("chance-input", CustomUIEventBindingType.ValueChanged, (event, eventCtx) -> {
+            eventCtx.getValue("chance-input", Double.class).ifPresent(val -> {
                 chancePercent[0] = Math.max(0.0f, Math.min(100.0f, val.floatValue()));
             });
         });
@@ -9541,6 +9886,7 @@ public class CitizensUI {
 
     public void openEditDeathCommandGUI(@Nonnull PlayerRef playerRef, @Nonnull Store<EntityStore> store,
                                         @Nonnull CitizenData citizen, @Nonnull CommandAction command, int editIndex) {
+        LeftPanelContext ctx = prepareLeftPanelContext(playerRef, "", citizen.getGroup(), citizen);
         boolean isNew = (editIndex == -1);
 
         TemplateProcessor template = createBaseTemplate()
@@ -9550,9 +9896,9 @@ public class CitizensUI {
                 .setVariable("chancePercent", command.getChancePercent())
                 .setVariable("isNew", isNew);
 
-        String html = template.process(getSharedStyles() + """
-                <div class="page-overlay">
-                    <div class="main-container decorated-container" style="anchor-width: 680; anchor-height: 680;">
+        String rightPanelHtml = """
+                    <!-- RIGHT PANEL: EDIT DEATH COMMAND -->
+                    <div class="main-container decorated-container" style="anchor-width: 900; anchor-height: 900;">
 
                         <div class="header container-title">
                             <div class="header-content">
@@ -9560,38 +9906,50 @@ public class CitizensUI {
                             </div>
                         </div>
 
-                        <div class="body" data-hyui-scrollbar-style='"Common.ui" "DefaultScrollbarStyle"' style="layout-mode: TopScrolling;">
+                        <div class="body" data-hyui-scrollbar-style='"Common.ui" "DefaultScrollbarStyle"' style="layout-mode: TopScrolling; flex-weight: 1;">
 
                             <p class="page-description">Command to execute when the citizen dies</p>
                             <div class="spacer-sm"></div>
                             <div class="section">
                                 {{@sectionHeader:title=Command}}
-                                <input type="text" id="command-input" class="form-input" value="{{$command}}"
-                                       placeholder="give {PlayerName} Rock_Gem_Diamond" />
-                                <p class="form-hint">Do not include the leading /. Variables: {PlayerName}, {CitizenName}, {NpcX}, {NpcY}, {NpcZ}.</p>
+                                <div class="form-row" style="horizontal-align: center;">
+                                    <div style="anchor-width: 460;">
+                                        <input type="text" id="command-input" class="form-input" value="{{$command}}"
+                                               placeholder="give {PlayerName} Rock_Gem_Diamond" />
+                                    </div>
+                                </div>
+                                <p class="form-hint" style="text-align: center;">Do not include the leading /. Variables: {PlayerName}, {CitizenName}, {NpcX}, {NpcY}, {NpcZ}.</p>
                             </div>
 
                             <div class="spacer-md"></div>
 
                             <div class="section">
                                 {{@sectionHeader:title=Delay}}
-                                {{@numberField:id=delay-seconds,label=Delay Before Command (seconds),value={{$delaySeconds}},placeholder=0,min=0,max=300,step=0.5,decimals=1}}
+                                <div class="form-row" style="horizontal-align: center;">
+                                    <div style="anchor-width: 350;">
+                                        {{@numberField:id=delay-seconds,label=Delay Before Command (seconds),value={{$delaySeconds}},placeholder=0,min=0,max=300,step=0.5,decimals=1}}
+                                    </div>
+                                </div>
                             </div>
 
                             <div class="spacer-md"></div>
 
                             <div class="section">
                                 {{@sectionHeader:title=Chance}}
-                                {{@numberField:id=chance-percent,label=Chance %,value={{$chancePercent}},placeholder=100,min=0,max=100,step=1,decimals=1}}
+                                <div class="form-row" style="horizontal-align: center;">
+                                    <div style="anchor-width: 350;">
+                                        {{@numberField:id=chance-percent,label=Chance %,value={{$chancePercent}},placeholder=100,min=0,max=100,step=1,decimals=1}}
+                                    </div>
+                                </div>
                             </div>
 
                             <div class="spacer-md"></div>
 
                             <div class="section">
                                 {{@sectionHeader:title=Execution Mode}}
-                                <div class="checkbox-row">
+                                <div class="checkbox-row" style="horizontal-align: center;">
                                     <input type="checkbox" id="run-as-server" {{#if runAsServer}}checked{{/if}} />
-                                    <div style="layout: top; flex-weight: 0;">
+                                    <div style="layout: top; flex-weight: 0; text-align: center;">
                                         <p class="checkbox-label">Run as Server</p>
                                         <p class="checkbox-description">Execute as console command instead of player</p>
                                     </div>
@@ -9599,44 +9957,47 @@ public class CitizensUI {
                             </div>
                         </div>
 
-                        <div class="footer">
-                            <button id="cancel-btn" class="secondary-button">Cancel</button>
-                            <div style="flex-weight: 0; anchor-width: 16;"></div>
+                        <div class="footer" style="layout: center; flex-weight: 0; padding: 26 16 26 16; border-top: 1 solid #1a293c; width: 100%; vertical-align: center;">
+                            <button id="cancel-btn" class="secondary-button" style="anchor-width: 150;">Cancel</button>
+                            <div class="spacer-h-md"></div>
                             <button id="save-dcmd-btn" class="secondary-button" style="anchor-width: 200;">{{#if isNew}}Add Command{{else}}Save Changes{{/if}}</button>
                         </div>
 
                     </div>
-                </div>
-                """);
+                """;
+
+        String html = template.process(wrapSideBySideHtml(template, ctx, rightPanelHtml));
 
         PageBuilder page = PageBuilder.pageForPlayer(playerRef)
                 .withLifetime(CustomPageLifetime.CanDismiss)
                 .fromHtml(HtmlUtils.sanitizeHtmlForHyUI(html));
+
+        setupMainEventListeners(page, playerRef, store, Tab.MANAGE, ctx.unifiedList(), ctx.searchQuery(), ctx.normalizedViewingGroup(), citizen);
 
         final String[] commandText = {command.getCommand()};
         final boolean[] runAsServer = {command.isRunAsServer()};
         final float[] delaySeconds = {command.getDelaySeconds()};
         final float[] chancePercent = {command.getChancePercent()};
 
-        page.addEventListener("command-input", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
-            commandText[0] = ctx.getValue("command-input", String.class).orElse("");
+        page.addEventListener("command-input", CustomUIEventBindingType.ValueChanged, (event, eventCtx) -> {
+            commandText[0] = eventCtx.getValue("command-input", String.class).orElse("");
         });
 
-        page.addEventListener("delay-seconds", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
-            ctx.getValue("delay-seconds", Double.class).ifPresent(val -> delaySeconds[0] = val.floatValue());
+        page.addEventListener("delay-seconds", CustomUIEventBindingType.ValueChanged, (event, eventCtx) -> {
+            eventCtx.getValue("delay-seconds", Double.class).ifPresent(val -> delaySeconds[0] = val.floatValue());
             if (delaySeconds[0] == 0.0f) {
-                ctx.getValue("delay-seconds", String.class).ifPresent(val -> {
+                eventCtx.getValue("delay-seconds", String.class).ifPresent(val -> {
                     try { delaySeconds[0] = Float.parseFloat(val); } catch (NumberFormatException ignored) {}
                 });
             }
         });
 
-        page.addEventListener("run-as-server", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
-            runAsServer[0] = ctx.getValue("run-as-server", Boolean.class).orElse(false);
+        page.addEventListener("run-as-server", CustomUIEventBindingType.ValueChanged, (event, eventCtx) -> {
+            runAsServer[0] = eventCtx.getValue("run-as-server", Boolean.class).orElse(false);
         });
 
-        page.addEventListener("chance-percent", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
-            ctx.getValue("chance-percent", Double.class).ifPresent(val -> {
+        page.addEventListener("chance-percent", CustomUIEventBindingType.ValueChanged, (event, eventCtx) -> {
+            eventCtx.getValue("chance-percent", Double.class).ifPresent(val -> {
                 chancePercent[0] = Math.max(0.0f, Math.min(100.0f, val.floatValue()));
             });
         });
@@ -9649,8 +10010,8 @@ public class CitizensUI {
             }
             if (cmd.startsWith("/")) cmd = cmd.substring(1);
 
-            DeathConfig dc = citizen.getDeathConfig();
-            List<CommandAction> cmds = new ArrayList<>(dc.getDeathCommands());
+            DeathConfig deathConfig = citizen.getDeathConfig();
+            List<CommandAction> cmds = new ArrayList<>(deathConfig.getDeathCommands());
             CommandAction saved = new CommandAction(cmd, runAsServer[0], delaySeconds[0], "BOTH", chancePercent[0]);
 
             if (isNew) {
@@ -9661,8 +10022,8 @@ public class CitizensUI {
                 playerRef.sendMessage(Message.raw("Death command updated!").color(Color.GREEN));
             }
 
-            dc.setDeathCommands(cmds);
-            citizen.setDeathConfig(dc);
+            deathConfig.setDeathCommands(cmds);
+            citizen.setDeathConfig(deathConfig);
             plugin.getCitizensManager().saveCitizen(citizen);
             openDeathConfigGUI(playerRef, store, citizen);
         });
@@ -9674,12 +10035,144 @@ public class CitizensUI {
         page.open(store);
     }
 
-    private void openScheduleGUI(@Nonnull PlayerRef playerRef, @Nonnull Store<EntityStore> store,
+    public void openEditDeathMessageGUI(@Nonnull PlayerRef playerRef, @Nonnull Store<EntityStore> store,
+                                        @Nonnull CitizenData citizen, @Nonnull CitizenMessage message, int editIndex) {
+        LeftPanelContext ctx = prepareLeftPanelContext(playerRef, "", citizen.getGroup(), citizen);
+        boolean isNew = (editIndex == -1);
+
+        TemplateProcessor template = createBaseTemplate()
+                .setVariable("message", escapeHtml(message.getMessage()))
+                .setVariable("delaySeconds", message.getDelaySeconds())
+                .setVariable("chancePercent", message.getChancePercent())
+                .setVariable("isNew", isNew);
+
+        String rightPanelHtml = """
+                    <!-- RIGHT PANEL: EDIT DEATH MESSAGE -->
+                    <div class="main-container decorated-container" style="anchor-width: 900; anchor-height: 900;">
+
+                        <div class="header container-title">
+                            <div class="header-content">
+                                <p class="header-title">{{#if isNew}}Add Death Message{{else}}Edit Death Message{{/if}}</p>
+                            </div>
+                        </div>
+
+                        <div class="body" data-hyui-scrollbar-style='"Common.ui" "DefaultScrollbarStyle"' style="layout-mode: TopScrolling; flex-weight: 1;">
+
+                            <p class="page-description">Message sent to the killer when the citizen dies</p>
+                            <div class="spacer-sm"></div>
+                            <div class="section">
+                                {{@sectionHeader:title=Message}}
+                                <div class="form-row" style="horizontal-align: center;">
+                                    <div style="anchor-width: 460;">
+                                        <input type="text" id="message-input" class="form-input" value="{{$message}}"
+                                               placeholder="You have slain {CitizenName}!" />
+                                    </div>
+                                </div>
+                                <p class="form-hint" style="text-align: center;">Variables: {PlayerName}, {CitizenName}, {NpcX}, {NpcY}, {NpcZ}.</p>
+                            </div>
+
+                            <div class="spacer-md"></div>
+
+                            <div class="section">
+                                {{@sectionHeader:title=Delay}}
+                                <div class="form-row" style="horizontal-align: center;">
+                                    <div style="anchor-width: 350;">
+                                        {{@numberField:id=delay-seconds,label=Delay Before Message (seconds),value={{$delaySeconds}},placeholder=0,min=0,max=300,step=0.5,decimals=1}}
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="spacer-md"></div>
+
+                            <div class="section">
+                                {{@sectionHeader:title=Chance}}
+                                <div class="form-row" style="horizontal-align: center;">
+                                    <div style="anchor-width: 350;">
+                                        {{@numberField:id=chance-percent,label=Chance %,value={{$chancePercent}},placeholder=100,min=0,max=100,step=1,decimals=1}}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="footer" style="layout: center; flex-weight: 0; padding: 26 16 26 16; border-top: 1 solid #1a293c; width: 100%; vertical-align: center;">
+                            <button id="cancel-btn" class="secondary-button" style="anchor-width: 150;">Cancel</button>
+                            <div class="spacer-h-md"></div>
+                            <button id="save-dmsg-btn" class="secondary-button" style="anchor-width: 200;">{{#if isNew}}Add Message{{else}}Save Changes{{/if}}</button>
+                        </div>
+
+                    </div>
+                """;
+
+        String html = template.process(wrapSideBySideHtml(template, ctx, rightPanelHtml));
+
+        PageBuilder page = PageBuilder.pageForPlayer(playerRef)
+                .withLifetime(CustomPageLifetime.CanDismiss)
+                .fromHtml(HtmlUtils.sanitizeHtmlForHyUI(html));
+
+        setupMainEventListeners(page, playerRef, store, Tab.MANAGE, ctx.unifiedList(), ctx.searchQuery(), ctx.normalizedViewingGroup(), citizen);
+
+        final String[] msgText = {message.getMessage()};
+        final float[] delaySeconds = {message.getDelaySeconds()};
+        final float[] chancePercent = {message.getChancePercent()};
+
+        page.addEventListener("message-input", CustomUIEventBindingType.ValueChanged, (event, eventCtx) -> {
+            msgText[0] = eventCtx.getValue("message-input", String.class).orElse("");
+        });
+
+        page.addEventListener("delay-seconds", CustomUIEventBindingType.ValueChanged, (event, eventCtx) -> {
+            eventCtx.getValue("delay-seconds", Double.class).ifPresent(val -> delaySeconds[0] = val.floatValue());
+            if (delaySeconds[0] == 0.0f) {
+                eventCtx.getValue("delay-seconds", String.class).ifPresent(val -> {
+                    try { delaySeconds[0] = Float.parseFloat(val); } catch (NumberFormatException ignored) {}
+                });
+            }
+        });
+
+        page.addEventListener("chance-percent", CustomUIEventBindingType.ValueChanged, (event, eventCtx) -> {
+            eventCtx.getValue("chance-percent", Double.class).ifPresent(val -> {
+                chancePercent[0] = Math.max(0.0f, Math.min(100.0f, val.floatValue()));
+            });
+        });
+
+        page.addEventListener("save-dmsg-btn", CustomUIEventBindingType.Activating, event -> {
+            String msg = msgText[0].trim();
+            if (msg.isEmpty()) {
+                playerRef.sendMessage(Message.raw("Message cannot be empty!").color(Color.RED));
+                return;
+            }
+
+            DeathConfig deathConfig = citizen.getDeathConfig();
+            List<CitizenMessage> msgs = new ArrayList<>(deathConfig.getDeathMessages());
+            CitizenMessage saved = new CitizenMessage(msg, null, delaySeconds[0], chancePercent[0]);
+
+            if (isNew) {
+                msgs.add(saved);
+                playerRef.sendMessage(Message.raw("Death message added!").color(Color.GREEN));
+            } else {
+                msgs.set(editIndex, saved);
+                playerRef.sendMessage(Message.raw("Death message updated!").color(Color.GREEN));
+            }
+
+            deathConfig.setDeathMessages(msgs);
+            citizen.setDeathConfig(deathConfig);
+            plugin.getCitizensManager().saveCitizen(citizen);
+            openDeathConfigGUI(playerRef, store, citizen);
+        });
+
+        page.addEventListener("cancel-btn", CustomUIEventBindingType.Activating, event -> {
+            openDeathConfigGUI(playerRef, store, citizen);
+        });
+
+        page.open(store);
+    }
+
+    public void openScheduleGUI(@Nonnull PlayerRef playerRef, @Nonnull Store<EntityStore> store,
                                  @Nonnull CitizenData citizen) {
         if (citizen.getScheduleConfig() == null) {
             citizen.setScheduleConfig(new ScheduleConfig());
         }
         final ScheduleConfig scheduleConfig = citizen.getScheduleConfig();
+        LeftPanelContext ctx = prepareLeftPanelContext(playerRef, "", citizen.getGroup(), citizen);
         Double scheduleTime24 = getScheduleWorldTime24(citizen);
 
         Map<String, String> locationNames = new HashMap<>();
@@ -9803,9 +10296,9 @@ public class CitizensUI {
                 .setVariable("hasLocations", !locations.isEmpty())
                 .setVariable("hasEntries", !entries.isEmpty());
 
-        String html = template.process(getSharedStyles() + """
-                <div class="page-overlay">
-                    <div class="main-container decorated-container" style="anchor-width: 1180; anchor-height: 1040;">
+        String rightPanelHtml = """
+                    <!-- RIGHT PANEL: DAILY SCHEDULE -->
+                    <div class="main-container decorated-container" style="anchor-width: 900; anchor-height: 900;">
 
                         <div class="header container-title">
                             <div class="header-content">
@@ -9813,13 +10306,13 @@ public class CitizensUI {
                             </div>
                         </div>
 
-                        <div class="body" data-hyui-scrollbar-style='"Common.ui" "DefaultScrollbarStyle"' style="layout-mode: TopScrolling;">
+                        <div class="body" data-hyui-scrollbar-style='"Common.ui" "DefaultScrollbarStyle"' style="layout-mode: TopScrolling; flex-weight: 1;">
                             <p class="page-description">Plan what {{$citizenName}} does throughout the day. Times use Hytale's 0-24 hour clock.</p>
                             <div class="spacer-sm"></div>
 
                             <div class="section">
                                 {{@sectionHeader:title=Runtime State,description=Live schedule status for this citizen}}
-                                <div class="stats-grid" style="layout: left;">
+                                <div class="stats-grid" style="layout: center;">
                                     {{@statCard:value={{$runtimeState}},label=State}}
                                     {{@statCard:value={{$currentEntryName}},label=Current Entry}}
                                     {{@statCard:value={{$scheduleTimeText}},label=Hytale Time}}
@@ -9851,12 +10344,12 @@ public class CitizensUI {
                                     </div>
                                 </div>
                                 <div class="spacer-sm"></div>
-                                <div class="form-row">
-                                    <button id="schedule-fallback-base" class="secondary-button" style="anchor-width: 190;">Use Base</button>
+                                <div class="form-row" style="horizontal-align: center;">
+                                    <button id="schedule-fallback-base" class="secondary-button" style="anchor-width: 170;">Use Base</button>
                                     <div class="spacer-h-sm"></div>
-                                    <button id="schedule-fallback-default" class="secondary-button" style="anchor-width: 220;">Go To Default Location</button>
+                                    <button id="schedule-fallback-default" class="secondary-button" style="anchor-width: 200;">Default Location</button>
                                     <div class="spacer-h-sm"></div>
-                                    <button id="schedule-fallback-hold" class="secondary-button" style="anchor-width: 190;">Hold Last State</button>
+                                    <button id="schedule-fallback-hold" class="secondary-button" style="anchor-width: 170;">Hold Last State</button>
                                 </div>
                             </div>
 
@@ -9885,24 +10378,27 @@ public class CitizensUI {
                                 <p style="color: #8b949e; font-size: 12; text-align: center;">No schedule entries yet. Create one to start using the system.</p>
                                 <div class="spacer-xs"></div>
                                 {{/if}}
-                                <div class="form-row">
+                                <div class="form-row" style="horizontal-align: center;">
                                     <button id="schedule-add-entry" class="secondary-button" style="anchor-width: 210;">Add Schedule Entry</button>
                                 </div>
                             </div>
                         </div>
 
-                        <div class="footer">
+                        <div class="footer" style="layout: center; flex-weight: 0; padding: 26 16 26 16; border-top: 1 solid #1a293c; width: 100%; vertical-align: center;">
                             <button id="schedule-back-btn" class="secondary-button" style="anchor-width: 180;">Back To Citizen</button>
                         </div>
                     </div>
-                </div>
-                """)
+                """
                 .replace("<!--SCHEDULE_LOCATIONS-->", locationsHtml.toString())
                 .replace("<!--SCHEDULE_ENTRIES-->", entriesHtml.toString());
+
+        String html = template.process(wrapSideBySideHtml(template, ctx, rightPanelHtml));
 
         PageBuilder page = PageBuilder.pageForPlayer(playerRef)
                 .withLifetime(CustomPageLifetime.CanDismiss)
                 .fromHtml(HtmlUtils.sanitizeHtmlForHyUI(html));
+
+        setupMainEventListeners(page, playerRef, store, Tab.MANAGE, ctx.unifiedList(), ctx.searchQuery(), ctx.normalizedViewingGroup(), citizen);
 
         page.addEventListener("schedule-toggle-enabled", CustomUIEventBindingType.Activating, event -> {
             scheduleConfig.setEnabled(!scheduleConfig.isEnabled());
@@ -10111,6 +10607,7 @@ public class CitizensUI {
 
     private void openScheduleLocationRenameGUI(@Nonnull PlayerRef playerRef, @Nonnull Store<EntityStore> store,
                                                @Nonnull CitizenData citizen, int locationIndex) {
+        LeftPanelContext ctx = prepareLeftPanelContext(playerRef, "", citizen.getGroup(), citizen);
         ScheduleConfig scheduleConfig = citizen.getScheduleConfig();
         if (locationIndex < 0 || locationIndex >= scheduleConfig.getLocations().size()) {
             openScheduleGUI(playerRef, store, citizen);
@@ -10122,37 +10619,44 @@ public class CitizensUI {
         TemplateProcessor template = createBaseTemplate()
                 .setVariable("locationName", escapeHtml(location.getName()));
 
-        String html = template.process(getSharedStyles() + """
-                <div class="page-overlay">
-                    <div class="main-container decorated-container" style="anchor-width: 620; anchor-height: 360;">
+        String rightPanelHtml = """
+                    <!-- RIGHT PANEL: RENAME SCHEDULE LOCATION -->
+                    <div class="main-container decorated-container" style="anchor-width: 900; anchor-height: 900;">
                         <div class="header container-title">
                             <div class="header-content">
                                 <p class="header-title">Rename Schedule Location</p>
                             </div>
                         </div>
-                        <div class="body">
+                        <div class="body" data-hyui-scrollbar-style='"Common.ui" "DefaultScrollbarStyle"' style="layout-mode: TopScrolling; flex-weight: 1;">
                             <p class="page-description">Change the display name used by schedule entries and fallback settings.</p>
                             <div class="spacer-sm"></div>
                             <div class="section">
-                                {{@formField:id=schedule-location-name,label=Location Name,value={{$locationName}},placeholder=Enter a location name...}}
+                                <div class="form-row" style="horizontal-align: center;">
+                                    <div style="anchor-width: 460;">
+                                        {{@formField:id=schedule-location-name,label=Location Name,value={{$locationName}},placeholder=Enter a location name...}}
+                                    </div>
+                                </div>
                             </div>
                         </div>
-                        <div class="footer">
-                            <button id="schedule-location-cancel-btn" class="secondary-button">Cancel</button>
+                        <div class="footer" style="layout: center; flex-weight: 0; padding: 26 16 26 16; border-top: 1 solid #1a293c; width: 100%; vertical-align: center;">
+                            <button id="schedule-location-cancel-btn" class="secondary-button" style="anchor-width: 150;">Cancel</button>
                             <div class="spacer-h-md"></div>
                             <button id="schedule-location-save-btn" class="secondary-button" style="anchor-width: 200;">Save Name</button>
                         </div>
                     </div>
-                </div>
-                """);
+                """;
+
+        String html = template.process(wrapSideBySideHtml(template, ctx, rightPanelHtml));
 
         PageBuilder page = PageBuilder.pageForPlayer(playerRef)
                 .withLifetime(CustomPageLifetime.CanDismiss)
                 .fromHtml(HtmlUtils.sanitizeHtmlForHyUI(html));
 
+        setupMainEventListeners(page, playerRef, store, Tab.MANAGE, ctx.unifiedList(), ctx.searchQuery(), ctx.normalizedViewingGroup(), citizen);
+
         final String[] locationName = {location.getName()};
-        page.addEventListener("schedule-location-name", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
-            locationName[0] = ctx.getValue("schedule-location-name", String.class).orElse(location.getName()).trim();
+        page.addEventListener("schedule-location-name", CustomUIEventBindingType.ValueChanged, (event, eventCtx) -> {
+            locationName[0] = eventCtx.getValue("schedule-location-name", String.class).orElse(location.getName()).trim();
         });
 
         page.addEventListener("schedule-location-save-btn", CustomUIEventBindingType.Activating, event -> {
@@ -10175,6 +10679,7 @@ public class CitizensUI {
     private void openScheduleEntryEditorGUI(@Nonnull PlayerRef playerRef, @Nonnull Store<EntityStore> store,
                                             @Nonnull CitizenData citizen, @Nonnull ScheduleEntry draftEntry,
                                             boolean isNew, int editIndex) {
+        LeftPanelContext ctx = prepareLeftPanelContext(playerRef, "", citizen.getGroup(), citizen);
         ScheduleConfig scheduleConfig = citizen.getScheduleConfig();
 
         TemplateProcessor template = createBaseTemplate()
@@ -10194,9 +10699,9 @@ public class CitizensUI {
                 .setVariable("arrivalAnimationSlot", draftEntry.getArrivalAnimationSlot())
                 .setVariable("priority", draftEntry.getPriority());
 
-        String html = template.process(getSharedStyles() + """
-                <div class="page-overlay">
-                    <div class="main-container decorated-container" style="anchor-width: 860; anchor-height: 980;">
+        String rightPanelHtml = """
+                    <!-- RIGHT PANEL: SCHEDULE ENTRY EDITOR -->
+                    <div class="main-container decorated-container" style="anchor-width: 900; anchor-height: 900;">
 
                         <div class="header container-title">
                             <div class="header-content">
@@ -10204,25 +10709,29 @@ public class CitizensUI {
                             </div>
                         </div>
 
-                        <div class="body" data-hyui-scrollbar-style='"Common.ui" "DefaultScrollbarStyle"' style="layout-mode: TopScrolling;">
+                        <div class="body" data-hyui-scrollbar-style='"Common.ui" "DefaultScrollbarStyle"' style="layout-mode: TopScrolling; flex-weight: 1;">
                             <p class="page-description">Schedule entries use Hytale's 0-24 hour clock. Set start and end to the same time for an all-day entry.</p>
                             <div class="spacer-sm"></div>
 
                             <div class="section">
                                 {{@sectionHeader:title=Entry Identity}}
-                                {{@formField:id=schedule-entry-name,label=Entry Name,value={{$entryName}},placeholder=Morning Patrol}}
+                                <div class="form-row" style="horizontal-align: center;">
+                                    <div style="anchor-width: 460;">
+                                        {{@formField:id=schedule-entry-name,label=Entry Name,value={{$entryName}},placeholder=Morning Patrol}}
+                                    </div>
+                                </div>
                             </div>
 
                             <div class="spacer-sm"></div>
 
                             <div class="section">
                                 {{@sectionHeader:title=Time Block}}
-                                <div class="form-row">
-                                    <div style="flex-weight: 1;">
+                                <div class="form-row" style="horizontal-align: center;">
+                                    <div style="anchor-width: 250;">
                                         {{@numberField:id=schedule-start-time,label=Start Time,value={{$startTime24}},placeholder=8.0,min=0,max=24,step=0.25,decimals=2,hint=Use 0-24 time, such as 6.5 for 06:30}}
                                     </div>
                                     <div class="spacer-h-sm"></div>
-                                    <div style="flex-weight: 1;">
+                                    <div style="anchor-width: 250;">
                                         {{@numberField:id=schedule-end-time,label=End Time,value={{$endTime24}},placeholder=12.0,min=0,max=24,step=0.25,decimals=2,hint=If end is earlier than start, the entry runs overnight}}
                                     </div>
                                 </div>
@@ -10232,10 +10741,12 @@ public class CitizensUI {
 
                             <div class="section">
                                 {{@sectionHeader:title=Destination}}
-                                <div class="form-row">
-                                    <select id="schedule-location-id" data-hyui-showlabel="true">
-                                        {{{$locationOptions}}}
-                                    </select>
+                                <div class="form-row" style="horizontal-align: center;">
+                                    <div style="anchor-width: 460;">
+                                        <select id="schedule-location-id" data-hyui-showlabel="true">
+                                            {{{$locationOptions}}}
+                                        </select>
+                                    </div>
                                 </div>
                             </div>
 
@@ -10243,10 +10754,12 @@ public class CitizensUI {
 
                             <div class="section">
                                 {{@sectionHeader:title=Activity}}
-                                <div class="form-row">
-                                    <select id="schedule-activity-type" data-hyui-showlabel="true">
-                                        {{{$activityOptions}}}
-                                    </select>
+                                <div class="form-row" style="horizontal-align: center;">
+                                    <div style="anchor-width: 460;">
+                                        <select id="schedule-activity-type" data-hyui-showlabel="true">
+                                            {{{$activityOptions}}}
+                                        </select>
+                                    </div>
                                 </div>
                                 <div class="spacer-xs"></div>
                                 <p class="form-hint" style="text-align: center;">Patrol uses the path below after the citizen reaches the destination.</p>
@@ -10256,22 +10769,22 @@ public class CitizensUI {
 
                             <div class="section">
                                 {{@sectionHeader:title=Travel And Activity Settings}}
-                                <div class="form-row">
-                                    <div style="flex-weight: 1;">
+                                <div class="form-row" style="horizontal-align: center;">
+                                    <div style="anchor-width: 250;">
                                         {{@numberField:id=schedule-arrival-radius,label=Arrival Radius,value={{$arrivalRadius}},placeholder=1.5,min=0.25,max=50,step=0.25,decimals=2}}
                                     </div>
                                     <div class="spacer-h-sm"></div>
-                                    <div style="flex-weight: 1;">
+                                    <div style="anchor-width: 250;">
                                         {{@numberField:id=schedule-travel-speed,label=Travel Speed,value={{$travelSpeed}},placeholder=10,min=1,max=100,step=1,decimals=0}}
                                     </div>
                                 </div>
                                 <div class="spacer-xs"></div>
-                                <div class="form-row">
-                                    <div style="flex-weight: 1;">
+                                <div class="form-row" style="horizontal-align: center;">
+                                    <div style="anchor-width: 250;">
                                         {{@numberField:id=schedule-wander-radius,label=Wander Radius,value={{$wanderRadius}},placeholder=5,min=1,max=100,step=1,decimals=0}}
                                     </div>
                                     <div class="spacer-h-sm"></div>
-                                    <div style="flex-weight: 1;">
+                                    <div style="anchor-width: 250;">
                                         {{@numberField:id=schedule-priority,label=Priority,value={{$priority}},placeholder=0,min=0,max=1000,step=1,decimals=0,hint=Higher priority wins if entries overlap}}
                                     </div>
                                 </div>
@@ -10281,10 +10794,12 @@ public class CitizensUI {
 
                             <div class="section">
                                 {{@sectionHeader:title=Patrol Path}}
-                                <div class="form-row">
-                                    <select id="schedule-patrol-path" data-hyui-showlabel="true">
-                                        {{{$patrolPathOptions}}}
-                                    </select>
+                                <div class="form-row" style="horizontal-align: center;">
+                                    <div style="anchor-width: 460;">
+                                        <select id="schedule-patrol-path" data-hyui-showlabel="true">
+                                            {{{$patrolPathOptions}}}
+                                        </select>
+                                    </div>
                                 </div>
                                 <div class="spacer-xs"></div>
                                 <p class="form-hint" style="text-align: center;">Used only when Activity is Patrol.</p>
@@ -10294,14 +10809,18 @@ public class CitizensUI {
 
                             <div class="section">
                                 {{@sectionHeader:title=Follow Target}}
-                                <div class="form-row">
-                                    <select id="schedule-follow-citizen-id" data-hyui-showlabel="true">
-                                        {{{$followCitizenOptions}}}
-                                    </select>
+                                <div class="form-row" style="horizontal-align: center;">
+                                    <div style="anchor-width: 460;">
+                                        <select id="schedule-follow-citizen-id" data-hyui-showlabel="true">
+                                            {{{$followCitizenOptions}}}
+                                        </select>
+                                    </div>
                                 </div>
                                 <div class="spacer-xs"></div>
-                                <div class="form-row">
-                                    {{@numberField:id=schedule-follow-distance,label=Follow Distance,value={{$followDistance}},placeholder=2.0,min=0.1,max=20,step=0.1,decimals=1}}
+                                <div class="form-row" style="horizontal-align: center;">
+                                    <div style="anchor-width: 460;">
+                                        {{@numberField:id=schedule-follow-distance,label=Follow Distance,value={{$followDistance}},placeholder=2.0,min=0.1,max=20,step=0.1,decimals=1}}
+                                    </div>
                                 </div>
                                 <div class="spacer-xs"></div>
                                 <p class="form-hint" style="text-align: center;">Used only when Activity is Follow Citizen.</p>
@@ -10311,30 +10830,33 @@ public class CitizensUI {
 
                             <div class="section">
                                 {{@sectionHeader:title=Arrival Animation,description=Optional one-time animation to play after arriving}}
-                                <div class="form-row">
-                                    <div style="flex-weight: 1;">
+                                <div class="form-row" style="horizontal-align: center;">
+                                    <div style="anchor-width: 250;">
                                         {{@formField:id=schedule-arrival-animation-name,label=Animation Name,value={{$arrivalAnimationName}},placeholder=Leave blank for none}}
                                     </div>
                                     <div class="spacer-h-sm"></div>
-                                    <div style="flex-weight: 1;">
+                                    <div style="anchor-width: 250;">
                                         {{@numberField:id=schedule-arrival-animation-slot,label=Animation Slot,value={{$arrivalAnimationSlot}},placeholder=0,min=0,max=12,step=1,decimals=0}}
                                     </div>
                                 </div>
                             </div>
                         </div>
 
-                        <div class="footer">
-                            <button id="schedule-entry-cancel-btn" class="secondary-button">Cancel</button>
+                        <div class="footer" style="layout: center; flex-weight: 0; padding: 26 16 26 16; border-top: 1 solid #1a293c; width: 100%; vertical-align: center;">
+                            <button id="schedule-entry-cancel-btn" class="secondary-button" style="anchor-width: 150;">Cancel</button>
                             <div class="spacer-h-md"></div>
                             <button id="schedule-entry-save-btn" class="secondary-button" style="anchor-width: 220;">{{#if isNew}}Create Entry{{else}}Save Changes{{/if}}</button>
                         </div>
                     </div>
-                </div>
-                """);
+                """;
+
+        String html = template.process(wrapSideBySideHtml(template, ctx, rightPanelHtml));
 
         PageBuilder page = PageBuilder.pageForPlayer(playerRef)
                 .withLifetime(CustomPageLifetime.CanDismiss)
                 .fromHtml(HtmlUtils.sanitizeHtmlForHyUI(html));
+
+        setupMainEventListeners(page, playerRef, store, Tab.MANAGE, ctx.unifiedList(), ctx.searchQuery(), ctx.normalizedViewingGroup(), citizen);
 
         final String[] entryName = {draftEntry.getName()};
         final double[] startTime24 = {draftEntry.getStartTime24()};
@@ -10351,26 +10873,26 @@ public class CitizensUI {
         final int[] arrivalAnimationSlot = {draftEntry.getArrivalAnimationSlot()};
         final int[] priority = {draftEntry.getPriority()};
 
-        page.addEventListener("schedule-entry-name", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
-            entryName[0] = ctx.getValue("schedule-entry-name", String.class).orElse(draftEntry.getName()).trim();
+        page.addEventListener("schedule-entry-name", CustomUIEventBindingType.ValueChanged, (event, eventCtx) -> {
+            entryName[0] = eventCtx.getValue("schedule-entry-name", String.class).orElse(draftEntry.getName()).trim();
         });
 
-        page.addEventListener("schedule-start-time", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
-            ctx.getValue("schedule-start-time", Double.class).ifPresent(v ->
+        page.addEventListener("schedule-start-time", CustomUIEventBindingType.ValueChanged, (event, eventCtx) -> {
+            eventCtx.getValue("schedule-start-time", Double.class).ifPresent(v ->
                     startTime24[0] = Math.max(0.0, Math.min(24.0, v)));
         });
 
-        page.addEventListener("schedule-end-time", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
-            ctx.getValue("schedule-end-time", Double.class).ifPresent(v ->
+        page.addEventListener("schedule-end-time", CustomUIEventBindingType.ValueChanged, (event, eventCtx) -> {
+            eventCtx.getValue("schedule-end-time", Double.class).ifPresent(v ->
                     endTime24[0] = Math.max(0.0, Math.min(24.0, v)));
         });
 
-        page.addEventListener("schedule-location-id", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
-            locationId[0] = ctx.getValue("schedule-location-id", String.class).orElse("");
+        page.addEventListener("schedule-location-id", CustomUIEventBindingType.ValueChanged, (event, eventCtx) -> {
+            locationId[0] = eventCtx.getValue("schedule-location-id", String.class).orElse("");
         });
 
-        page.addEventListener("schedule-activity-type", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
-            String value = ctx.getValue("schedule-activity-type", String.class).orElse(ScheduleActivityType.IDLE.name());
+        page.addEventListener("schedule-activity-type", CustomUIEventBindingType.ValueChanged, (event, eventCtx) -> {
+            String value = eventCtx.getValue("schedule-activity-type", String.class).orElse(ScheduleActivityType.IDLE.name());
             try {
                 activityType[0] = ScheduleActivityType.valueOf(value);
             } catch (IllegalArgumentException ignored) {
@@ -10378,45 +10900,45 @@ public class CitizensUI {
             }
         });
 
-        page.addEventListener("schedule-arrival-radius", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
-            ctx.getValue("schedule-arrival-radius", Double.class).ifPresent(v ->
+        page.addEventListener("schedule-arrival-radius", CustomUIEventBindingType.ValueChanged, (event, eventCtx) -> {
+            eventCtx.getValue("schedule-arrival-radius", Double.class).ifPresent(v ->
                     arrivalRadius[0] = Math.max(0.25f, v.floatValue()));
         });
 
-        page.addEventListener("schedule-travel-speed", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
-            ctx.getValue("schedule-travel-speed", Double.class).ifPresent(v ->
+        page.addEventListener("schedule-travel-speed", CustomUIEventBindingType.ValueChanged, (event, eventCtx) -> {
+            eventCtx.getValue("schedule-travel-speed", Double.class).ifPresent(v ->
                     travelSpeed[0] = Math.max(1.0f, v.floatValue()));
         });
 
-        page.addEventListener("schedule-wander-radius", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
-            ctx.getValue("schedule-wander-radius", Double.class).ifPresent(v ->
+        page.addEventListener("schedule-wander-radius", CustomUIEventBindingType.ValueChanged, (event, eventCtx) -> {
+            eventCtx.getValue("schedule-wander-radius", Double.class).ifPresent(v ->
                     wanderRadius[0] = Math.max(1.0f, v.floatValue()));
         });
 
-        page.addEventListener("schedule-priority", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
-            ctx.getValue("schedule-priority", Double.class).ifPresent(v ->
+        page.addEventListener("schedule-priority", CustomUIEventBindingType.ValueChanged, (event, eventCtx) -> {
+            eventCtx.getValue("schedule-priority", Double.class).ifPresent(v ->
                     priority[0] = Math.max(0, v.intValue()));
         });
 
-        page.addEventListener("schedule-patrol-path", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
-            patrolPathName[0] = ctx.getValue("schedule-patrol-path", String.class).orElse("");
+        page.addEventListener("schedule-patrol-path", CustomUIEventBindingType.ValueChanged, (event, eventCtx) -> {
+            patrolPathName[0] = eventCtx.getValue("schedule-patrol-path", String.class).orElse("");
         });
 
-        page.addEventListener("schedule-follow-citizen-id", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
-            followCitizenId[0] = ctx.getValue("schedule-follow-citizen-id", String.class).orElse("");
+        page.addEventListener("schedule-follow-citizen-id", CustomUIEventBindingType.ValueChanged, (event, eventCtx) -> {
+            followCitizenId[0] = eventCtx.getValue("schedule-follow-citizen-id", String.class).orElse("");
         });
 
-        page.addEventListener("schedule-follow-distance", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
-            ctx.getValue("schedule-follow-distance", Double.class).ifPresent(v ->
+        page.addEventListener("schedule-follow-distance", CustomUIEventBindingType.ValueChanged, (event, eventCtx) -> {
+            eventCtx.getValue("schedule-follow-distance", Double.class).ifPresent(v ->
                     followDistance[0] = Math.max(0.1f, v.floatValue()));
         });
 
-        page.addEventListener("schedule-arrival-animation-name", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
-            arrivalAnimationName[0] = ctx.getValue("schedule-arrival-animation-name", String.class).orElse("").trim();
+        page.addEventListener("schedule-arrival-animation-name", CustomUIEventBindingType.ValueChanged, (event, eventCtx) -> {
+            arrivalAnimationName[0] = eventCtx.getValue("schedule-arrival-animation-name", String.class).orElse("").trim();
         });
 
-        page.addEventListener("schedule-arrival-animation-slot", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
-            ctx.getValue("schedule-arrival-animation-slot", Double.class).ifPresent(v ->
+        page.addEventListener("schedule-arrival-animation-slot", CustomUIEventBindingType.ValueChanged, (event, eventCtx) -> {
+            eventCtx.getValue("schedule-arrival-animation-slot", Double.class).ifPresent(v ->
                     arrivalAnimationSlot[0] = Math.max(0, v.intValue()));
         });
 
@@ -10470,126 +10992,9 @@ public class CitizensUI {
         page.open(store);
     }
 
-    public void openEditDeathMessageGUI(@Nonnull PlayerRef playerRef, @Nonnull Store<EntityStore> store,
-                                        @Nonnull CitizenData citizen, @Nonnull CitizenMessage message, int editIndex) {
-        boolean isNew = (editIndex == -1);
-
-        TemplateProcessor template = createBaseTemplate()
-                .setVariable("message", escapeHtml(message.getMessage()))
-                .setVariable("delaySeconds", message.getDelaySeconds())
-                .setVariable("chancePercent", message.getChancePercent())
-                .setVariable("isNew", isNew);
-
-        String html = template.process(getSharedStyles() + """
-                <div class="page-overlay">
-                    <div class="main-container decorated-container" style="anchor-width: 680; anchor-height: 580;">
-
-                        <div class="header container-title">
-                            <div class="header-content">
-                                <p class="header-title">{{#if isNew}}Add Death Message{{else}}Edit Death Message{{/if}}</p>
-                            </div>
-                        </div>
-
-                        <div class="body">
-
-                            <p class="page-description">Message sent to the killer when the citizen dies</p>
-                            <div class="spacer-sm"></div>
-                            <div class="section">
-                                {{@sectionHeader:title=Message Text}}
-                                <input type="text" id="message-input" class="form-input" value="{{$message}}"
-                                       placeholder="Enter message with optional color codes..." />
-                                <p class="form-hint">Colors: {COLOR}, {RED}, {BLUE}, {#HEX}, {#FFA500}, etc.</p>
-                                <div class="spacer-xs"></div>
-                                <p class="form-hint">Rich text: **bold**, *italic*, [label](https://example.com).</p>
-                                <div class="spacer-xs"></div>
-                                <p class="form-hint">Variables: {PlayerName}, {CitizenName}, {NpcX}, {NpcY}, {NpcZ}.</p>
-                            </div>
-
-                            <div class="spacer-md"></div>
-
-                            <div class="section">
-                                {{@sectionHeader:title=Delay}}
-                                {{@numberField:id=delay-seconds,label=Delay Before Message (seconds),value={{$delaySeconds}},placeholder=0,min=0,max=60,step=0.5,decimals=1}}
-                            </div>
-
-                            <div class="spacer-md"></div>
-
-                            <div class="section">
-                                {{@sectionHeader:title=Chance}}
-                                {{@numberField:id=chance-percent,label=Chance %,value={{$chancePercent}},placeholder=100,min=0,max=100,step=1,decimals=1}}
-                            </div>
-                        </div>
-
-                        <div class="footer">
-                            <button id="cancel-btn" class="secondary-button">Cancel</button>
-                            <div style="flex-weight: 0; anchor-width: 16;"></div>
-                            <button id="save-dmsg-btn" class="secondary-button" style="anchor-width: 200;">{{#if isNew}}Add Message{{else}}Save Changes{{/if}}</button>
-                        </div>
-
-                    </div>
-                </div>
-                """);
-
-        PageBuilder page = PageBuilder.pageForPlayer(playerRef)
-                .withLifetime(CustomPageLifetime.CanDismiss)
-                .fromHtml(HtmlUtils.sanitizeHtmlForHyUI(html));
-
-        final String[] messageText = {message.getMessage()};
-        final float[] delaySeconds = {message.getDelaySeconds()};
-        final float[] chancePercent = {message.getChancePercent()};
-
-        page.addEventListener("message-input", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
-            messageText[0] = ctx.getValue("message-input", String.class).orElse("");
-        });
-
-        page.addEventListener("delay-seconds", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
-            ctx.getValue("delay-seconds", Double.class).ifPresent(val -> delaySeconds[0] = val.floatValue());
-            if (delaySeconds[0] == 0.0f) {
-                ctx.getValue("delay-seconds", String.class).ifPresent(val -> {
-                    try { delaySeconds[0] = Float.parseFloat(val); } catch (NumberFormatException ignored) {}
-                });
-            }
-        });
-
-        page.addEventListener("chance-percent", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
-            ctx.getValue("chance-percent", Double.class).ifPresent(val -> {
-                chancePercent[0] = Math.max(0.0f, Math.min(100.0f, val.floatValue()));
-            });
-        });
-
-        page.addEventListener("save-dmsg-btn", CustomUIEventBindingType.Activating, event -> {
-            if (messageText[0].trim().isEmpty()) {
-                playerRef.sendMessage(Message.raw("Message cannot be empty!").color(Color.RED));
-                return;
-            }
-
-            DeathConfig dc = citizen.getDeathConfig();
-            List<CitizenMessage> msgs = new ArrayList<>(dc.getDeathMessages());
-            CitizenMessage saved = new CitizenMessage(messageText[0].trim(), null, delaySeconds[0], chancePercent[0]);
-
-            if (isNew) {
-                msgs.add(saved);
-                playerRef.sendMessage(Message.raw("Death message added!").color(Color.GREEN));
-            } else {
-                msgs.set(editIndex, saved);
-                playerRef.sendMessage(Message.raw("Death message updated!").color(Color.GREEN));
-            }
-
-            dc.setDeathMessages(msgs);
-            citizen.setDeathConfig(dc);
-            plugin.getCitizensManager().saveCitizen(citizen);
-            openDeathConfigGUI(playerRef, store, citizen);
-        });
-
-        page.addEventListener("cancel-btn", CustomUIEventBindingType.Activating, event -> {
-            openDeathConfigGUI(playerRef, store, citizen);
-        });
-
-        page.open(store);
-    }
-
     public void openPatrolPathsGUI(@Nonnull PlayerRef playerRef, @Nonnull Store<EntityStore> store,
                                    @Nonnull CitizenData citizen) {
+        LeftPanelContext ctx = prepareLeftPanelContext(playerRef, "", citizen.getGroup(), citizen);
         List<PatrolPath> allPaths = new ArrayList<>(plugin.getCitizensManager().getPatrolManager().getAllPaths());
         allPaths.sort(Comparator.comparing(PatrolPath::getName));
 
@@ -10606,11 +11011,11 @@ public class CitizensUI {
                                                 <p style="font-size: 12; color: #888888;">%s | %d waypoints</p>
                                             </div>
                                         </div>
-                                        <button id="edit-path-%d" class="secondary-button" style="anchor-width: 100;">Edit</button>
+                                        <button id="edit-path-%d" class="secondary-button small-secondary-button" style="anchor-width: 80;">Edit</button>
                                         <div class="spacer-h-xs"></div>
-                                        <button id="rename-path-%d" class="secondary-button" style="anchor-width: 110;">Rename</button>
+                                        <button id="rename-path-%d" class="secondary-button small-secondary-button" style="anchor-width: 90;">Rename</button>
                                         <div class="spacer-h-xs"></div>
-                                        <button id="delete-path-%d" class="secondary-button" style="anchor-width: 120;">Delete</button>
+                                        <button id="delete-path-%d" class="secondary-button small-secondary-button" style="anchor-width: 90;">Delete</button>
                                     </div>
                                     <div class="spacer-xs"></div>
                                     """.formatted(
@@ -10626,9 +11031,9 @@ public class CitizensUI {
         TemplateProcessor template = createBaseTemplate()
                 .setVariable("hasPaths", !allPaths.isEmpty());
 
-        String html = template.process(getSharedStyles() + """
-                <div class="page-overlay">
-                    <div class="main-container decorated-container" style="anchor-width: 750; anchor-height: 700;">
+        String rightPanelHtml = """
+                    <!-- RIGHT PANEL: PATROL PATHS -->
+                    <div class="main-container decorated-container" style="anchor-width: 900; anchor-height: 900;">
 
                         <div class="header container-title">
                             <div class="header-content">
@@ -10636,20 +11041,20 @@ public class CitizensUI {
                             </div>
                         </div>
 
-                        <div class="body">
+                        <div class="body" data-hyui-scrollbar-style='"Common.ui" "DefaultScrollbarStyle"' style="layout-mode: TopScrolling; flex-weight: 1;">
 
                             <p class="page-description">Manage plugin-managed patrol paths</p>
                             <div class="spacer-sm"></div>
 
                             <div class="section">
                                 {{@sectionHeader:title=Create New Path,description=Create a new named patrol path}}
-                                <div class="form-row">
-                                    <div style="flex-weight: 1;">
+                                <div class="form-row" style="horizontal-align: center;">
+                                    <div style="anchor-width: 350;">
                                         {{@formField:id=new-path-name,label=Path Name,value=,placeholder=Enter path name...}}
                                     </div>
                                     <div class="spacer-h-sm"></div>
                                     <div style="flex-weight: 0; layout: center; padding-top: 18;">
-                                        <button id="create-path-btn" class="secondary-button">Create</button>
+                                        <button id="create-path-btn" class="secondary-button" style="anchor-width: 120;">Create</button>
                                     </div>
                                 </div>
                             </div>
@@ -10663,24 +11068,26 @@ public class CitizensUI {
                 """ + pathsHtml + """
                                 </div>
                                 {{else}}
-                                <p style="color: #888888; font-size: 13;">No patrol paths created yet.</p>
+                                <p style="color: #888888; font-size: 13; text-align: center;">No patrol paths created yet.</p>
                                 {{/if}}
                             </div>
 
                         </div>
 
-                        <div class="footer">
-                            <button id="back-btn" class="secondary-button">Back</button>
+                        <div class="footer" style="layout: center; flex-weight: 0; padding: 26 16 26 16; border-top: 1 solid #1a293c; width: 100%; vertical-align: center;">
+                            <button id="back-btn" class="secondary-button" style="anchor-width: 150;">Back</button>
                         </div>
 
                     </div>
-                </div>
-                """);
+                """;
+
+        String html = template.process(wrapSideBySideHtml(template, ctx, rightPanelHtml));
 
         PageBuilder page = PageBuilder.pageForPlayer(playerRef)
                 .withLifetime(CustomPageLifetime.CanDismiss)
                 .fromHtml(HtmlUtils.sanitizeHtmlForHyUI(html));
 
+        setupMainEventListeners(page, playerRef, store, Tab.MANAGE, ctx.unifiedList(), ctx.searchQuery(), ctx.normalizedViewingGroup(), citizen);
         setupPatrolPathsListeners(page, playerRef, store, citizen, allPaths);
 
         page.open(store);
@@ -10739,43 +11146,51 @@ public class CitizensUI {
 
     private void openRenamePatrolPathGUI(@Nonnull PlayerRef playerRef, @Nonnull Store<EntityStore> store,
                                          @Nonnull CitizenData citizen, @Nonnull String oldPathName) {
+        LeftPanelContext ctx = prepareLeftPanelContext(playerRef, "", citizen.getGroup(), citizen);
         TemplateProcessor template = createBaseTemplate()
                 .setVariable("oldName", escapeHtml(oldPathName))
                 .setVariable("newName", escapeHtml(oldPathName));
 
-        String html = template.process(getSharedStyles() + """
-                <div class="page-overlay">
-                    <div class="main-container decorated-container" style="anchor-width: 620; anchor-height: 360;">
+        String rightPanelHtml = """
+                    <!-- RIGHT PANEL: RENAME PATROL PATH -->
+                    <div class="main-container decorated-container" style="anchor-width: 900; anchor-height: 900;">
                         <div class="header container-title">
                             <div class="header-content">
                                 <p class="header-title">Rename Patrol Path</p>
                             </div>
                         </div>
-                        <div class="body">
+                        <div class="body" data-hyui-scrollbar-style='"Common.ui" "DefaultScrollbarStyle"' style="layout-mode: TopScrolling; flex-weight: 1;">
                             <p class="page-description">Rename this path and update all citizen references</p>
                             <div class="spacer-sm"></div>
                             <div class="section">
-                                {{@formField:id=new-path-name,label=New Path Name,value={{$newName}},placeholder=Enter a new path name...}}
+                                <div class="form-row" style="horizontal-align: center;">
+                                    <div style="anchor-width: 460;">
+                                        {{@formField:id=new-path-name,label=New Path Name,value={{$newName}},placeholder=Enter a new path name...}}
+                                    </div>
+                                </div>
                                 <div class="spacer-xs"></div>
-                                <p class="form-hint">Current name: {{$oldName}}</p>
+                                <p class="form-hint" style="text-align: center;">Current name: {{$oldName}}</p>
                             </div>
                         </div>
-                        <div class="footer">
-                            <button id="cancel-btn" class="secondary-button">Cancel</button>
+                        <div class="footer" style="layout: center; flex-weight: 0; padding: 26 16 26 16; border-top: 1 solid #1a293c; width: 100%; vertical-align: center;">
+                            <button id="cancel-btn" class="secondary-button" style="anchor-width: 150;">Cancel</button>
                             <div class="spacer-h-md"></div>
                             <button id="save-btn" class="secondary-button" style="anchor-width: 210;">Rename Path</button>
                         </div>
                     </div>
-                </div>
-                """);
+                """;
+
+        String html = template.process(wrapSideBySideHtml(template, ctx, rightPanelHtml));
 
         PageBuilder page = PageBuilder.pageForPlayer(playerRef)
                 .withLifetime(CustomPageLifetime.CanDismiss)
                 .fromHtml(HtmlUtils.sanitizeHtmlForHyUI(html));
 
+        setupMainEventListeners(page, playerRef, store, Tab.MANAGE, ctx.unifiedList(), ctx.searchQuery(), ctx.normalizedViewingGroup(), citizen);
+
         final String[] newName = {oldPathName};
-        page.addEventListener("new-path-name", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
-            newName[0] = ctx.getValue("new-path-name", String.class).orElse(oldPathName).trim();
+        page.addEventListener("new-path-name", CustomUIEventBindingType.ValueChanged, (event, eventCtx) -> {
+            newName[0] = eventCtx.getValue("new-path-name", String.class).orElse(oldPathName).trim();
         });
 
         page.addEventListener("save-btn", CustomUIEventBindingType.Activating, event -> {
@@ -10807,6 +11222,7 @@ public class CitizensUI {
 
     public void openPatrolPathEditorGUI(@Nonnull PlayerRef playerRef, @Nonnull Store<EntityStore> store,
                                         @Nonnull CitizenData citizen, @Nonnull String pathName) {
+        LeftPanelContext ctx = prepareLeftPanelContext(playerRef, "", citizen.getGroup(), citizen);
         PatrolPath path = plugin.getCitizensManager().getPatrolManager().getPath(pathName);
         if (path == null) {
             openPatrolPathsGUI(playerRef, store, citizen);
@@ -10826,9 +11242,9 @@ public class CitizensUI {
                 .setVariable("hasWaypoints", !indexedWaypoints.isEmpty())
                 .setVariable("waypointCount", indexedWaypoints.size());
 
-        String html = template.process(getSharedStyles() + """
-                <div class="page-overlay">
-                    <div class="main-container decorated-container" style="anchor-width: 900; anchor-height: 750;">
+        String rightPanelHtml = """
+                    <!-- RIGHT PANEL: EDIT PATROL PATH -->
+                    <div class="main-container decorated-container" style="anchor-width: 900; anchor-height: 900;">
 
                         <div class="header container-title">
                             <div class="header-content">
@@ -10836,18 +11252,18 @@ public class CitizensUI {
                             </div>
                         </div>
 
-                        <div class="body">
+                        <div class="body" data-hyui-scrollbar-style='"Common.ui" "DefaultScrollbarStyle"' style="layout-mode: TopScrolling; flex-weight: 1;">
 
                             <p class="page-description">Manage waypoints and loop mode</p>
                             <div class="spacer-sm"></div>
 
                             <div class="section">
                                 {{@sectionHeader:title=Loop Mode,description=How the citizen loops through waypoints}}
-                                <div class="button-group">
+                                <div class="button-group" style="layout: center;">
                                     {{#if isLoop}}
-                                    <button id="mode-loop" class="secondary-button" style="anchor-width: 140;">Loop</button>
+                                    <button id="mode-loop" class="secondary-button" style="anchor-width: 160;">Loop</button>
                                     {{else}}
-                                    <button id="mode-loop" class="secondary-button" style="anchor-width: 140;">Ping Pong</button>
+                                    <button id="mode-loop" class="secondary-button" style="anchor-width: 160;">Ping Pong</button>
                                     {{/if}}
                                 </div>
                             </div>
@@ -10857,7 +11273,7 @@ public class CitizensUI {
                             <div class="section">
                                 {{@sectionHeader:title=Waypoints ({{$waypointCount}}),description=Waypoints the citizen follows in order}}
                                 {{#if hasWaypoints}}
-                                <div class="list-container" data-hyui-scrollbar-style='"Common.ui" "DefaultScrollbarStyle"' style="anchor-height: 350;">
+                                <div class="list-container" data-hyui-scrollbar-style='"Common.ui" "DefaultScrollbarStyle"' style="anchor-height: 300;">
                                     {{#each waypoints}}
                                     <div class="list-item">
                                         <div style="flex-weight: 1;">
@@ -10867,41 +11283,46 @@ public class CitizensUI {
                                             {{@numberField:id=pause-{{$index}},label=Pause (s),value={{$pauseSeconds}},min=0,max=300,step=0.5,decimals=1}}
                                         </div>
                                         <div class="spacer-h-xs"></div>
-                                        <button id="move-up-{{$index}}" class="secondary-button" style="anchor-width: 80; flex-weight: 0;">Up</button>
+                                        <button id="move-up-{{$index}}" class="secondary-button small-secondary-button" style="anchor-width: 70; flex-weight: 0;">Up</button>
                                         <div class="spacer-h-xs"></div>
-                                        <button id="move-down-{{$index}}" class="secondary-button" style="anchor-width: 100; flex-weight: 0;">Down</button>
+                                        <button id="move-down-{{$index}}" class="secondary-button small-secondary-button" style="anchor-width: 80; flex-weight: 0;">Down</button>
                                         <div class="spacer-h-xs"></div>
-                                        <button id="tp-wp-{{$index}}" class="secondary-button" style="anchor-width: 80; flex-weight: 0;">TP</button>
+                                        <button id="tp-wp-{{$index}}" class="secondary-button small-secondary-button" style="anchor-width: 70; flex-weight: 0;">TP</button>
                                         <div class="spacer-h-xs"></div>
-                                        <button id="delete-wp-{{$index}}" class="secondary-button" style="anchor-width: 110; flex-weight: 0;">Delete</button>
+                                        <button id="delete-wp-{{$index}}" class="secondary-button small-secondary-button" style="anchor-width: 90; flex-weight: 0;">Delete</button>
                                     </div>
                                     <div class="spacer-xs"></div>
                                     {{/each}}
                                 </div>
                                 {{else}}
-                                <p style="color: #888888; font-size: 13;">No waypoints yet. Stand where you want a waypoint and click Add.</p>
+                                <p style="color: #888888; font-size: 13; text-align: center;">No waypoints yet. Stand where you want a waypoint and click Add.</p>
                                 {{/if}}
                                 <div class="spacer-sm"></div>
-                                <button id="add-waypoint-btn" class="secondary-button" style="anchor-width: 250;">Add Waypoint at my position</button>
-                                <button id="get-waypoint-item-btn" class="secondary-button" style="anchor-width: 225;">Get Waypoint item</button>
+                                <div class="form-row" style="horizontal-align: center;">
+                                    <button id="add-waypoint-btn" class="secondary-button" style="anchor-width: 250;">Add Waypoint at my position</button>
+                                    <div class="spacer-h-sm"></div>
+                                    <button id="get-waypoint-item-btn" class="secondary-button" style="anchor-width: 225;">Get Waypoint item</button>
+                                </div>
                             </div>
 
                         </div>
 
-                        <div class="footer">
-                            <button id="back-btn" class="secondary-button">Back</button>
+                        <div class="footer" style="layout: center; flex-weight: 0; padding: 26 16 26 16; border-top: 1 solid #1a293c; width: 100%; vertical-align: center;">
+                            <button id="back-btn" class="secondary-button" style="anchor-width: 150;">Back</button>
                             <div class="spacer-h-md"></div>
                             <button id="save-btn" class="secondary-button" style="anchor-width: 180;">Save Changes</button>
                         </div>
 
                     </div>
-                </div>
-                """);
+                """;
+
+        String html = template.process(wrapSideBySideHtml(template, ctx, rightPanelHtml));
 
         PageBuilder page = PageBuilder.pageForPlayer(playerRef)
                 .withLifetime(CustomPageLifetime.CanDismiss)
                 .fromHtml(HtmlUtils.sanitizeHtmlForHyUI(html));
 
+        setupMainEventListeners(page, playerRef, store, Tab.MANAGE, ctx.unifiedList(), ctx.searchQuery(), ctx.normalizedViewingGroup(), citizen);
         setupPatrolPathEditorListeners(page, playerRef, store, citizen, path, indexedWaypoints);
 
         page.open(store);
@@ -11048,7 +11469,7 @@ public class CitizensUI {
             }
         });
 
-        page.addEventListener("get-waypoint-item-btn", CustomUIEventBindingType.Activating, (event, ctx) -> {
+        page.addEventListener("get-waypoint-item-btn", CustomUIEventBindingType.Activating, (event, eventCtx) -> {
             Ref<EntityStore> ref = playerRef.getReference();
             if (ref == null || !ref.isValid()) {
                 playerRef.sendMessage(Message.raw("An error occurred.").color(Color.RED));
@@ -11090,7 +11511,7 @@ public class CitizensUI {
                 playerRef.sendMessage(Message.raw("Your inventory is full.").color(Color.RED));
             }
 
-            ctx.getPage().ifPresent(newPage -> newPage.close());
+            eventCtx.getPage().ifPresent(newPage -> newPage.close());
         });
 
         page.addEventListener("save-btn", CustomUIEventBindingType.Activating, event -> {
@@ -11114,6 +11535,7 @@ public class CitizensUI {
     }
 
     public void openDialogConfigGUI(@Nonnull PlayerRef playerRef, @Nonnull Store<EntityStore> store, @Nonnull CitizenData citizen) {
+        LeftPanelContext ctx = prepareLeftPanelContext(playerRef, "", citizen.getGroup(), citizen);
         List<IDialogue> dialoguesListStable = new ArrayList<>(DialogueManager.get().getDialogues().values());
         List<Map<String, Object>> dialogueList = new ArrayList<>();
         int dialogueListIndex = 0;
@@ -11142,9 +11564,9 @@ public class CitizensUI {
                 .setVariable("dialogues", dialogueList)
                 .setVariable("hasDialogues", !dialogueList.isEmpty());
 
-        String html = template.process(getSharedStyles() + """
-                <div class="page-overlay">
-                    <div class="main-container decorated-container" style="anchor-width: 1000; anchor-height: 720;">
+        String rightPanelHtml = """
+                    <!-- RIGHT PANEL: CITIZEN DIALOGS -->
+                    <div class="main-container decorated-container" style="anchor-width: 900; anchor-height: 900;">
 
                         <!-- Header -->
                         <div class="header container-title">
@@ -11154,7 +11576,7 @@ public class CitizensUI {
                         </div>
 
                         <!-- Body -->
-                        <div class="body">
+                        <div class="body" data-hyui-scrollbar-style='"Common.ui" "DefaultScrollbarStyle"' style="layout-mode: TopScrolling; flex-weight: 1;">
 
                             <p class="page-description">Manage and test dialog trees for {{$citizenName}}</p>
                             <div class="spacer-sm"></div>
@@ -11164,7 +11586,7 @@ public class CitizensUI {
                                 {{@sectionHeader:title=Dialog Presets}}
                                 
                                 <div style="layout: center; flex-direction: row; justify-content: center; gap: 16;">
-                                    <button id="new-dialog-btn" class="primary-button" style="anchor-width: 200; anchor-height: 38;">+ New Dialog</button>
+                                    <button id="new-dialog-btn" class="primary-button" style="anchor-width: 180; anchor-height: 38;">+ New Dialog</button>
                                     <div class="spacer-h-sm"></div>
                                     <button id="reload-presets-btn" class="secondary-button" style="anchor-width: 180; anchor-height: 38;">Reload Presets</button>
                                 </div>
@@ -11173,9 +11595,9 @@ public class CitizensUI {
 
                                 <div class="card">
                                     <div class="card-body">
-                                        <p style="color: #8b949e; font-size: 12;"><span style="color: #58a6ff;">Info:</span> Dialogs are saved automatically to <span style="color: #58a6ff;">mods/HyCitizensData/Dialogs/</span> when you edit them.</p>
+                                        <p style="color: #8b949e; font-size: 12; text-align: center;"><span style="color: #58a6ff;">Info:</span> Dialogs are saved automatically to <span style="color: #58a6ff;">mods/HyCitizensData/Dialogs/</span> when you edit them.</p>
                                         <div class="spacer-xs"></div>
-                                        <p style="color: #8b949e; font-size: 12;">Use the "Edit in Browser" button to launch the visual editor. Use "Test Dialog" to execute and test.</p>
+                                        <p style="color: #8b949e; font-size: 12; text-align: center;">Use the "Edit in Browser" button to launch the visual editor. Use "Test Dialog" to execute and test.</p>
                                     </div>
                                 </div>
                             </div>
@@ -11184,7 +11606,7 @@ public class CitizensUI {
 
                             <!-- Dialogs List -->
                             {{#if hasDialogues}}
-                            <div class="list-container" data-hyui-scrollbar-style='"Common.ui" "DefaultScrollbarStyle"' style="anchor-height: 280;">
+                            <div class="list-container" data-hyui-scrollbar-style='"Common.ui" "DefaultScrollbarStyle"' style="anchor-height: 350;">
                                 {{#each dialogues}}
                                 <div class="command-item">
                                     <div class="command-icon command-icon-player" style="background-color: rgba(56, 139, 253, 0.15);">
@@ -11194,7 +11616,7 @@ public class CitizensUI {
                                         <p class="command-text" style="color: #ffd075; font-weight: bold;">{{$title}} ({{$id}})</p>
                                         <p class="command-type">Start Node: {{$startNode}} | Total Nodes: {{$nodeCount}}</p>
                                     </div>
-                                    <div class="command-actions" style="anchor-width: 500;">
+                                    <div class="command-actions" style="anchor-width: 480;">
                                         <button id="interact-dialog-{{$index}}" class="{{$interactButtonClass}} small-secondary-button" style="anchor-width: 140;">{{$interactButtonText}}</button>
                                         <div class="spacer-h-sm"></div>
                                         <button id="run-dialog-{{$index}}" class="secondary-button small-secondary-button" style="anchor-width: 120;">Test Dialog</button>
@@ -11217,19 +11639,22 @@ public class CitizensUI {
                         </div>
 
                         <!-- Footer -->
-                        <div class="footer">
-                            <button id="back-btn" class="secondary-button" style="anchor-width: 130;">Back</button>
+                        <div class="footer" style="layout: center; flex-weight: 0; padding: 26 16 26 16; border-top: 1 solid #1a293c; width: 100%; vertical-align: center;">
+                            <button id="back-btn" class="secondary-button" style="anchor-width: 150;">Back</button>
                         </div>
 
                     </div>
-                </div>
-                """);
+                """;
+
+        String html = template.process(wrapSideBySideHtml(template, ctx, rightPanelHtml));
 
         PageBuilder page = PageBuilder.pageForPlayer(playerRef)
                 .withLifetime(CustomPageLifetime.CanDismiss)
                 .fromHtml(HtmlUtils.sanitizeHtmlForHyUI(html));
 
-        page.addEventListener("new-dialog-btn", CustomUIEventBindingType.Activating, (event, ctx) -> {
+        setupMainEventListeners(page, playerRef, store, Tab.MANAGE, ctx.unifiedList(), ctx.searchQuery(), ctx.normalizedViewingGroup(), citizen);
+
+        page.addEventListener("new-dialog-btn", CustomUIEventBindingType.Activating, (event, eventCtx) -> {
             String newId = "dialog_" + UUID.randomUUID().toString().replace("-", "").substring(0, 8);
             String newTitle = "New Dialog (" + newId + ")";
 
@@ -11256,7 +11681,7 @@ public class CitizensUI {
                 playerRef.sendMessage(Message.raw("[HyCitizens] Failed to create blank dialog file: " + e.getMessage()).color(Color.RED));
             }
 
-            ctx.getPage().ifPresent(p -> p.close());
+            eventCtx.getPage().ifPresent(p -> p.close());
             DialogEditorManager.get().startEditSession(playerRef, newId);
         });
 
@@ -11275,12 +11700,12 @@ public class CitizensUI {
             final IDialogue finalD = d;
             final int index = runIndex++;
             
-            page.addEventListener("interact-dialog-" + index, CustomUIEventBindingType.Activating, (event, ctx) -> {
+            page.addEventListener("interact-dialog-" + index, CustomUIEventBindingType.Activating, (event, eventCtx) -> {
                 openDialogInteractionGUI(playerRef, store, citizen, finalD);
             });
 
-            page.addEventListener("run-dialog-" + index, CustomUIEventBindingType.Activating, (event, ctx) -> {
-                ctx.getPage().ifPresent(p -> p.close());
+            page.addEventListener("run-dialog-" + index, CustomUIEventBindingType.Activating, (event, eventCtx) -> {
+                eventCtx.getPage().ifPresent(p -> p.close());
                 playerRef.sendMessage(Message.raw("Launching dialog '" + finalD.getTitle() + "' in manual test mode...").color(Color.YELLOW));
                 ScriptContext scriptCtx = new ScriptContext(
                         citizen,
@@ -11293,8 +11718,8 @@ public class CitizensUI {
                 DialogueManager.get().startDialogueSession(playerRef, finalD, scriptCtx, citizen.getId());
             });
 
-            page.addEventListener("edit-dialog-" + index, CustomUIEventBindingType.Activating, (event, ctx) -> {
-                ctx.getPage().ifPresent(p -> p.close());
+            page.addEventListener("edit-dialog-" + index, CustomUIEventBindingType.Activating, (event, eventCtx) -> {
+                eventCtx.getPage().ifPresent(p -> p.close());
                 DialogEditorManager.get().startEditSession(playerRef, finalD.getId());
             });
         }
@@ -11303,6 +11728,7 @@ public class CitizensUI {
 
     private void openDialogInteractionGUI(@Nonnull PlayerRef playerRef, @Nonnull Store<EntityStore> store,
                                           @Nonnull CitizenData citizen, @Nonnull IDialogue dialogue) {
+        LeftPanelContext ctx = prepareLeftPanelContext(playerRef, "", citizen.getGroup(), citizen);
         boolean isActive = dialogue.getId().equals(citizen.getInteractDialogueId());
         String currentTrigger = isActive ? citizen.getInteractDialogueTrigger() : "BOTH";
 
@@ -11313,44 +11739,51 @@ public class CitizensUI {
                 .setVariable("isFKey", "F_KEY".equals(currentTrigger))
                 .setVariable("isBoth", "BOTH".equals(currentTrigger));
 
-        String html = template.process(getSharedStyles() + """
-                <div class="page-overlay">
-                    <div class="main-container decorated-container" style="anchor-width: 680; anchor-height: 500;">
+        String rightPanelHtml = """
+                    <!-- RIGHT PANEL: DIALOG INTERACTION -->
+                    <div class="main-container decorated-container" style="anchor-width: 900; anchor-height: 900;">
                         <div class="header container-title">
                             <div class="header-content">
                                 <p class="header-title">Dialog Interaction</p>
                             </div>
                         </div>
 
-                        <div class="body">
+                        <div class="body" data-hyui-scrollbar-style='"Common.ui" "DefaultScrollbarStyle"' style="layout-mode: TopScrolling; flex-weight: 1;">
                             <p class="page-description">Choose how players start "{{$dialogTitle}}".</p>
                             <div class="spacer-md"></div>
 
                             <div class="section">
                                 {{@sectionHeader:title=Interaction Trigger,description=Which player action opens this dialog}}
-                                <button id="dialog-trigger-left" class="{{#if isLeftClick}}primary-button{{else}}secondary-button{{/if}}" style="anchor-height: 42;">Left Click</button>
-                                <div class="spacer-sm"></div>
-                                <button id="dialog-trigger-f-key" class="{{#if isFKey}}primary-button{{else}}secondary-button{{/if}}" style="anchor-height: 42;">F Key</button>
-                                <div class="spacer-sm"></div>
-                                <button id="dialog-trigger-both" class="{{#if isBoth}}primary-button{{else}}secondary-button{{/if}}" style="anchor-height: 42;">Both</button>
+                                <div style="layout: center; flex-direction: column; align-items: center; gap: 10;">
+                                    <button id="dialog-trigger-left" class="{{#if isLeftClick}}primary-button{{else}}secondary-button{{/if}}" style="anchor-width: 250; anchor-height: 42;">Left Click</button>
+                                    <div class="spacer-sm"></div>
+                                    <button id="dialog-trigger-f-key" class="{{#if isFKey}}primary-button{{else}}secondary-button{{/if}}" style="anchor-width: 250; anchor-height: 42;">F Key</button>
+                                    <div class="spacer-sm"></div>
+                                    <button id="dialog-trigger-both" class="{{#if isBoth}}primary-button{{else}}secondary-button{{/if}}" style="anchor-width: 250; anchor-height: 42;">Both</button>
+                                </div>
                             </div>
 
                             {{#if isActive}}
                             <div class="spacer-md"></div>
-                            <button id="clear-dialog-interaction" class="secondary-button" style="anchor-height: 38;">Clear Interaction Dialog</button>
+                            <div style="layout: center;">
+                                <button id="clear-dialog-interaction" class="secondary-button" style="anchor-width: 250; anchor-height: 38;">Clear Interaction Dialog</button>
+                            </div>
                             {{/if}}
                         </div>
 
-                        <div class="footer">
-                            <button id="cancel-dialog-interaction" class="secondary-button" style="anchor-width: 140;">Cancel</button>
+                        <div class="footer" style="layout: center; flex-weight: 0; padding: 26 16 26 16; border-top: 1 solid #1a293c; width: 100%; vertical-align: center;">
+                            <button id="cancel-dialog-interaction" class="secondary-button" style="anchor-width: 150;">Cancel</button>
                         </div>
                     </div>
-                </div>
-                """);
+                """;
+
+        String html = template.process(wrapSideBySideHtml(template, ctx, rightPanelHtml));
 
         PageBuilder page = PageBuilder.pageForPlayer(playerRef)
                 .withLifetime(CustomPageLifetime.CanDismiss)
                 .fromHtml(HtmlUtils.sanitizeHtmlForHyUI(html));
+
+        setupMainEventListeners(page, playerRef, store, Tab.MANAGE, ctx.unifiedList(), ctx.searchQuery(), ctx.normalizedViewingGroup(), citizen);
 
         page.addEventListener("dialog-trigger-left", CustomUIEventBindingType.Activating,
                 event -> saveDialogInteraction(playerRef, store, citizen, dialogue, "LEFT_CLICK"));

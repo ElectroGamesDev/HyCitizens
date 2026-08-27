@@ -36,6 +36,8 @@ public class ScriptingUI {
     }
 
     public void openScriptsGUI(@Nonnull PlayerRef playerRef, @Nonnull Store<EntityStore> store, @Nonnull CitizenData citizen) {
+        CitizensUI.LeftPanelContext ctx = plugin.getCitizensUI().prepareLeftPanelContext(playerRef, "", citizen.getGroup(), citizen);
+
         // Prepare list variables or summary for templates
         List<Map<String, Object>> scriptList = new ArrayList<>();
         if (citizen.getScripts() != null) {
@@ -61,9 +63,9 @@ public class ScriptingUI {
                 .setVariable("scripts", scriptList)
                 .setVariable("scriptCount", scriptList.size());
 
-        String html = template.process(plugin.getCitizensUI().getSharedStyles() + """
-                <div class="page-overlay">
-                    <div class="main-container decorated-container" style="anchor-width: 800; anchor-height: 600;">
+        String rightPanelHtml = """
+                    <!-- RIGHT PANEL: SCRIPTS CONFIGURATION -->
+                    <div class="main-container decorated-container" style="anchor-width: 900; anchor-height: 900;">
                         <!-- Header -->
                         <div class="header container-title">
                             <div class="header-content">
@@ -72,8 +74,8 @@ public class ScriptingUI {
                         </div>
 
                         <!-- Body -->
-                        <div class="body" data-hyui-scrollbar-style='"Common.ui" "DefaultScrollbarStyle"' style="layout-mode: TopScrolling; padding: 20; gap: 15;">
-                            <p class="page-description" style="color: #8b949e; font-size: 14;">Manage scripts for {{$citizen.name}} ({{$citizen.id}})</p>
+                        <div class="body" data-hyui-scrollbar-style='"Common.ui" "DefaultScrollbarStyle"' style="layout-mode: TopScrolling; flex-weight: 1; padding: 20; gap: 15;">
+                            <p class="page-description" style="color: #8b949e; font-size: 14; text-align: center;">Manage scripts for {{$citizen.name}} ({{$citizen.id}})</p>
                             
                             <div class="section">
                                 {{@sectionHeader:title=Configured Scripts ({{$scriptCount}}),description=Scripts configured for this NPC}}
@@ -100,8 +102,8 @@ public class ScriptingUI {
                                 </div>
                                 {{else}}
                                 <div class="empty-state">
-                                    <p class="empty-state-description" style="color: #8b949e; font-size: 14;">No scripts configured for this citizen.</p>
-                                    <p class="empty-state-description" style="color: #8b949e; font-size: 12;">Add script blocks to the citizen's JSON configuration under "scripts".</p>
+                                    <p class="empty-state-description" style="color: #8b949e; font-size: 14; text-align: center;">No scripts configured for this citizen.</p>
+                                    <p class="empty-state-description" style="color: #8b949e; font-size: 12; text-align: center;">Add script blocks to the citizen's JSON configuration under "scripts".</p>
                                 </div>
                                 {{/if}}
                             </div>
@@ -109,27 +111,31 @@ public class ScriptingUI {
                             <div class="spacer-md"></div>
                             
                             <div class="section">
-                                <div style="layout: top;">
-                                    <p style="font-size: 13; color: #8b949e;">Create a new blank script and open the web editor to configure it.</p>
+                                <div style="layout: center; flex-direction: column; align-items: center;">
+                                    <p style="font-size: 13; color: #8b949e; text-align: center;">Create a new blank script and open the web editor to configure it.</p>
                                     <div class="spacer-sm"></div>
-                                    <button id="new-script-btn" class="primary-button" style="anchor-width: 220; anchor-height: 40;">+ New Script + Edit in Browser</button>
+                                    <div class="form-row" style="horizontal-align: center; gap: 15;">
+                                        <button id="new-script-btn" class="primary-button" style="anchor-width: 250; anchor-height: 40;">+ New Script + Edit in Browser</button>
+                                        <button id="reload-scripts-btn" class="secondary-button" style="anchor-width: 180; anchor-height: 40;">Reload From Disk</button>
+                                    </div>
                                 </div>
                             </div>
+                        </div>
 
-                            <div class="spacer-md"></div>
-
-                            <div class="form-row" style="justify-content: center; gap: 15;">
-                                <button id="reload-scripts-btn" class="secondary-button" style="anchor-width: 180; anchor-height: 44;">Reload From Disk</button>
-                                <button id="back-btn" class="secondary-button" style="anchor-width: 150; anchor-height: 44;">Back</button>
-                            </div>
+                        <!-- Footer -->
+                        <div class="footer" style="layout: center; flex-weight: 0; padding: 26 16 26 16; border-top: 1 solid #1a293c; width: 100%; vertical-align: center;">
+                            <button id="back-btn" class="secondary-button" style="anchor-width: 150;">Back</button>
                         </div>
                     </div>
-                </div>
-                """);
+                """;
+
+        String html = template.process(plugin.getCitizensUI().wrapSideBySideHtml(template, ctx, rightPanelHtml));
 
         PageBuilder page = PageBuilder.pageForPlayer(playerRef)
                 .withLifetime(CustomPageLifetime.CanDismiss)
                 .fromHtml(HtmlUtils.sanitizeHtmlForHyUI(html));
+
+        plugin.getCitizensUI().setupMainEventListeners(page, playerRef, store, CitizensUI.Tab.MANAGE, ctx.unifiedList(), ctx.searchQuery(), ctx.normalizedViewingGroup(), citizen);
 
         page.addEventListener("back-btn", CustomUIEventBindingType.Activating, event -> {
             plugin.getCitizensUI().openEditCitizenGUI(playerRef, store, citizen);
@@ -155,8 +161,8 @@ public class ScriptingUI {
                     openScriptsGUI(playerRef, store, citizen);
                 });
 
-                page.addEventListener("web-edit-btn-" + index, CustomUIEventBindingType.Activating, (event, ctx) -> {
-                    ctx.getPage().ifPresent(p -> p.close());
+                page.addEventListener("web-edit-btn-" + index, CustomUIEventBindingType.Activating, (event, uiCtx) -> {
+                    uiCtx.getPage().ifPresent(p -> p.close());
                     ScriptEditorManager.get().startEditSession(playerRef, citizen.getId());
                 });
 
@@ -167,7 +173,7 @@ public class ScriptingUI {
                         return;
                     }
                     playerRef.sendMessage(Message.raw("Triggering script '" + sb.getName() + "' for test...").color(Color.YELLOW));
-                    ScriptContext ctx = new ScriptContext(
+                    ScriptContext scriptContext = new ScriptContext(
                             citizen,
                             playerRef,
                             Universe.get().getWorld(citizen.getWorldUUID()),
@@ -176,13 +182,13 @@ public class ScriptingUI {
                             null
                     );
                     ScriptBlock compiled = ScriptManager.get().compileScript(sb);
-                    ScriptManager.get().executeScript(compiled, ctx);
+                    ScriptManager.get().executeScript(compiled, scriptContext);
                     playerRef.sendMessage(Message.raw("Script triggered successfully!").color(Color.GREEN));
                 });
             }
         }
 
-        page.addEventListener("new-script-btn", CustomUIEventBindingType.Activating, (event, ctx) -> {
+        page.addEventListener("new-script-btn", CustomUIEventBindingType.Activating, (event, uiCtx) -> {
             String newId = "script_" + UUID.randomUUID().toString().replace("-", "").substring(0, 8);
             String newName = newId;
 
@@ -198,7 +204,7 @@ public class ScriptingUI {
             citizen.setScripts(scripts);
             plugin.getCitizensManager().saveCitizen(citizen);
 
-            ctx.getPage().ifPresent(p -> p.close());
+            uiCtx.getPage().ifPresent(p -> p.close());
             ScriptEditorManager.get().startEditSession(playerRef, citizen.getId());
         });
 

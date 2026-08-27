@@ -105,15 +105,15 @@ public class HyCitizensPlugin extends JavaPlugin {
         this.chunkPreLoadListener = new ChunkPreLoadListener(this);
         this.connectionListener = new PlayerConnectionListener(this);
 
-        // Register event listeners
-        registerEventListeners();
-
         this.citizensManager = new CitizensManager(this);
         CitizenMapMarkerAsset.ensureMarkerFilesForCitizens(citizensManager.getAllCitizens());
         this.citizenMapMarkerProvider = new CitizenMapMarkerProvider(this);
         this.citizensUI = new CitizensUI(this);
         this.skinCustomizerUI = new SkinCustomizerUI(this);
         this.scriptingUI = new ScriptingUI(this);
+
+        // Register event listeners
+        registerEventListeners();
 
         // Initialize scripting engine
         ScriptManager.get().init();
@@ -133,6 +133,12 @@ public class HyCitizensPlugin extends JavaPlugin {
     protected void start() {
         if (citizensManager == null) {
             return;
+        }
+
+        if (Universe.get() != null) {
+            for (World world : Universe.get().getWorlds().values()) {
+                registerCitizenMapMarkerProvider(world);
+            }
         }
 
         UpdateChecker.checkAsync();

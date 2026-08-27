@@ -616,11 +616,66 @@ public class SkinUtilities {
 
             try {
                 cosmeticsModule.validateSkin(sanitized);
-            } catch (Exception ignored) {
+            } catch (Exception e) {
+                // If anything still fails validation, repair or clear optional attachments
+                if (!isValidAttachment(registry.getHeadAccessories(), sanitized.headAccessory, registry)) sanitized.headAccessory = null;
+                if (!isValidAttachment(registry.getFaceAccessories(), sanitized.faceAccessory, registry)) sanitized.faceAccessory = null;
+                if (!isValidAttachment(registry.getEarAccessories(), sanitized.earAccessory, registry)) sanitized.earAccessory = null;
+                if (!isValidAttachment(registry.getSkinFeatures(), sanitized.skinFeature, registry)) sanitized.skinFeature = null;
+                if (!isValidAttachment(registry.getGloves(), sanitized.gloves, registry)) sanitized.gloves = null;
+                if (!isValidAttachment(registry.getCapes(), sanitized.cape, registry)) sanitized.cape = null;
+                if (!isValidAttachment(registry.getFacialHairs(), sanitized.facialHair, registry)) sanitized.facialHair = null;
+                if (!isValidAttachment(registry.getOverpants(), sanitized.overpants, registry)) sanitized.overpants = null;
+                if (!isValidAttachment(registry.getOvertops(), sanitized.overtop, registry)) sanitized.overtop = null;
+
+                try {
+                    cosmeticsModule.validateSkin(sanitized);
+                } catch (Exception fallbackEx) {
+                    sanitized = createDefaultSkin();
+                }
             }
         }
 
         return sanitized;
+    }
+
+    public static boolean isValidAttachment(
+            @Nonnull Map<String, PlayerSkinPart> map,
+            @Nullable String id,
+            @Nonnull CosmeticRegistry registry) {
+        if (id == null) return true;
+
+        String[] idParts = id.split("\\.", -1);
+        PlayerSkinPart skinPart = map.get(idParts[0]);
+        if (skinPart == null) return false;
+
+        String variantId = idParts.length > 2 && !idParts[2].isEmpty() ? idParts[2] : null;
+        if (skinPart.getVariants() != null && !skinPart.getVariants().isEmpty()) {
+            if (variantId == null || !skinPart.getVariants().containsKey(variantId)) {
+                return false;
+            }
+        }
+
+        String textureId = idParts.length > 1 && !idParts[1].isEmpty() ? idParts[1] : null;
+        if (textureId == null) {
+            return true;
+        }
+
+        if (skinPart.getGradientSet() != null) {
+            PlayerSkinGradientSet gradSet = (PlayerSkinGradientSet) registry.getGradientSets().get(skinPart.getGradientSet());
+            if (gradSet != null && gradSet.getGradients() != null && gradSet.getGradients().containsKey(textureId)) {
+                return true;
+            }
+        }
+
+        if (skinPart.getVariants() != null && variantId != null && skinPart.getVariants().containsKey(variantId)) {
+            PlayerSkinPart.Variant variant = skinPart.getVariants().get(variantId);
+            return variant.getTextures() != null && variant.getTextures().containsKey(textureId);
+        } else if (skinPart.getTextures() != null) {
+            return skinPart.getTextures().containsKey(textureId);
+        }
+
+        return false;
     }
 
     @Nonnull
@@ -634,6 +689,14 @@ public class SkinUtilities {
 
     @Nonnull
     public static List<String> getValidColorsForPart(@Nonnull PlayerSkinPart part, @Nonnull CosmeticRegistry registry) {
+        return getValidColorsForPartAndVariant(part, null, registry);
+    }
+
+    @Nonnull
+    public static List<String> getValidColorsForPartAndVariant(
+            @Nonnull PlayerSkinPart part,
+            @Nullable String variantId,
+            @Nonnull CosmeticRegistry registry) {
         List<String> colors = new ArrayList<>();
         if (part.getGradientSet() != null) {
             PlayerSkinGradientSet gradSet = (PlayerSkinGradientSet) registry.getGradientSets().get(part.getGradientSet());
@@ -641,13 +704,17 @@ public class SkinUtilities {
                 colors.addAll(gradSet.getGradients().keySet());
             }
         }
-        if (part.getTextures() != null) {
+        if (variantId != null && part.getVariants() != null && part.getVariants().containsKey(variantId)) {
+            PlayerSkinPart.Variant variant = part.getVariants().get(variantId);
+            if (variant != null && variant.getTextures() != null) {
+                colors.addAll(variant.getTextures().keySet());
+            }
+        } else if (part.getTextures() != null) {
             colors.addAll(part.getTextures().keySet());
-        }
-        if (part.getVariants() != null) {
-            for (PlayerSkinPart.Variant variant : part.getVariants().values()) {
-                if (variant.getTextures() != null) {
-                    colors.addAll(variant.getTextures().keySet());
+        } else if (part.getVariants() != null) {
+            for (PlayerSkinPart.Variant v : part.getVariants().values()) {
+                if (v.getTextures() != null) {
+                    colors.addAll(v.getTextures().keySet());
                 }
             }
         }
@@ -673,20 +740,37 @@ public class SkinUtilities {
             return null;
         }
 
-        List<String> validColors = getValidColorsForPart(part, registry);
+        String requestedTexture = parts.length > 1 && !parts[1].isBlank() ? parts[1] : null;
+        String requestedVariant = parts.length > 2 && !parts[2].isBlank() ? parts[2] : null;
+
+        boolean hasVariants = part.getVariants() != null && !part.getVariants().isEmpty();
+        String resolvedVariant = null;
+
+        if (hasVariants) {
+            if (requestedVariant != null && part.getVariants().containsKey(requestedVariant)) {
+                resolvedVariant = requestedVariant;
+            } else {
+                resolvedVariant = part.getVariants().keySet().iterator().next();
+            }
+        }
+
+        List<String> validColors = getValidColorsForPartAndVariant(part, resolvedVariant, registry);
         if (validColors.isEmpty()) {
-            return partId;
+            return resolvedVariant != null ? (partId + "." + fallbackColor + "." + resolvedVariant) : partId;
         }
 
-        String textureId = parts.length > 1 && !parts[1].isBlank() ? parts[1] : null;
-        String variantId = parts.length > 2 && !parts[2].isBlank() ? parts[2] : null;
-
-        if (textureId != null && validColors.contains(textureId)) {
-            return variantId != null ? (partId + "." + textureId + "." + variantId) : (partId + "." + textureId);
+        String resolvedTexture;
+        if (requestedTexture != null && validColors.contains(requestedTexture)) {
+            resolvedTexture = requestedTexture;
+        } else if (validColors.contains(fallbackColor)) {
+            resolvedTexture = fallbackColor;
+        } else {
+            resolvedTexture = validColors.get(0);
         }
 
-        String resolvedColor = validColors.contains(fallbackColor) ? fallbackColor : validColors.get(0);
-        return variantId != null ? (partId + "." + resolvedColor + "." + variantId) : (partId + "." + resolvedColor);
+        return resolvedVariant != null
+                ? (partId + "." + resolvedTexture + "." + resolvedVariant)
+                : (partId + "." + resolvedTexture);
     }
 
     public static boolean isValidSkin(@Nullable PlayerSkin skin) {
@@ -881,6 +965,14 @@ public class SkinUtilities {
     }
 
     @Nonnull
+    public static String getHeadshotRenderUrlForUsername(@Nonnull String username, int size, int rotation) {
+        String cleanUser = username.trim();
+        return "https://api.hytl.skin/headshot/" + cleanUser 
+                + "?size=" + size 
+                + "&rotation=" + rotation;
+    }
+
+    @Nonnull
     public static CompletableFuture<String> cacheHeadshotAndGetUrl(@Nonnull String npcId, @Nonnull PlayerSkin skin) {
         String skinJson = new Gson().toJson(skin);
         String hash = String.format("%08x", skinJson.hashCode());
@@ -888,7 +980,7 @@ public class SkinUtilities {
         
         String assetPathRelative = "Common/UI/custom/headshots/" + fileName;
         Path localDiskPath = Paths.get("mods", "HyCitizensData", "Common", "UI", "custom", "headshots", fileName);
-        String virtualUrl = "asset://electro/UI/custom/headshots/" + fileName;
+        String relativeUrl = "HyCitizensData/Common/UI/custom/headshots/" + fileName;
 
         if (Files.exists(localDiskPath)) {
             CommonAssetModule commonAssetModule = CommonAssetModule.get();
@@ -899,7 +991,7 @@ public class SkinUtilities {
                     commonAssetModule.addCommonAsset("electro:HyCitizensData", asset);
                 } catch (IOException ignored) {}
             }
-            return CompletableFuture.completedFuture(virtualUrl);
+            return CompletableFuture.completedFuture(relativeUrl);
         }
 
         String renderUrl = getHeadshotRenderUrl(skin, 250, 20);
@@ -922,7 +1014,7 @@ public class SkinUtilities {
                                 MemoryCommonAsset asset = new MemoryCommonAsset(assetPathRelative, response.body());
                                 commonAssetModule.addCommonAsset("electro:HyCitizensData", asset);
                             }
-                            return virtualUrl;
+                            return relativeUrl;
                         } catch (Exception e) {
                             getLogger().atWarning().log("[HyCitizens] Failed to save headshot to disk: " + e.getMessage());
                         }
@@ -936,4 +1028,32 @@ public class SkinUtilities {
                     return "";
                 });
     }
+
+    @Nullable
+    public static String getHeadshotUrlSync(@Nonnull String npcId, @Nonnull PlayerSkin skin) {
+        String skinJson = new Gson().toJson(skin);
+        String hash = String.format("%08x", skinJson.hashCode());
+        String fileName = npcId + "_" + hash + ".png";
+
+        String assetPathRelative = "Common/UI/custom/headshots/" + fileName;
+        Path localDiskPath = Paths.get("mods", "HyCitizensData", "Common", "UI", "custom", "headshots", fileName);
+        String relativeUrl = "HyCitizensData/Common/UI/custom/headshots/" + fileName;
+
+        if (Files.exists(localDiskPath)) {
+            CommonAssetModule commonAssetModule = CommonAssetModule.get();
+            if (commonAssetModule != null) {
+                try {
+                    byte[] bytes = Files.readAllBytes(localDiskPath);
+                    MemoryCommonAsset asset = new MemoryCommonAsset(assetPathRelative, bytes);
+                    commonAssetModule.addCommonAsset("electro:HyCitizensData", asset);
+                } catch (IOException ignored) {}
+            }
+            return relativeUrl;
+        }
+
+        // Trigger background download/cache for future renders
+        cacheHeadshotAndGetUrl(npcId, skin);
+        return null;
+    }
 }
+

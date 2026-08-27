@@ -86,10 +86,14 @@ public class SkinCustomizerUI {
     }
 
     private void buildAndOpen(PlayerRef playerRef, Store<EntityStore> store, CustomizerState state) {
-        String html = buildHTML(state);
+        CitizensUI.LeftPanelContext ctx = plugin.getCitizensUI().prepareLeftPanelContext(playerRef, "", state.citizen.getGroup(), state.citizen);
+        TemplateProcessor template = plugin.getCitizensUI().createBaseTemplate();
+        String rightPanelHtml = buildHTML(state);
+        String html = template.process(getStyles() + plugin.getCitizensUI().wrapSideBySideHtml(template, ctx, rightPanelHtml));
         PageBuilder page = PageBuilder.pageForPlayer(playerRef)
                 .withLifetime(CustomPageLifetime.CanDismiss)
                 .fromHtml(HtmlUtils.sanitizeHtmlForHyUI(html));
+        plugin.getCitizensUI().setupMainEventListeners(page, playerRef, store, CitizensUI.Tab.MANAGE, ctx.unifiedList(), ctx.searchQuery(), ctx.normalizedViewingGroup(), state.citizen);
         setupListeners(page, playerRef, store, state);
         page.open(store);
     }
@@ -117,9 +121,9 @@ public class SkinCustomizerUI {
         String currentDisplay  = formatCosmeticValue(currentValue);
         String slotDisplayName = SkinUtilities.slotDisplayName(state.selectedSlot);
 
-        return new TemplateProcessor().process(getStyles() + """
-                <div class="page-overlay">
-                    <div class="main-container decorated-container" style="anchor-width: 980; anchor-height: 900;">
+        return """
+                    <!-- RIGHT PANEL: SKIN CUSTOMIZER -->
+                    <div class="main-container decorated-container" style="anchor-width: 900; anchor-height: 900;">
 
                         <div class="header container-title">
                             <div class="header-content">
@@ -128,7 +132,7 @@ public class SkinCustomizerUI {
                             </div>
                         </div>
 
-                        <div class="body">
+                        <div class="body" data-hyui-scrollbar-style='"Common.ui" "DefaultScrollbarStyle"' style="layout-mode: TopScrolling; flex-weight: 1;">
                             <div class="editor-row">
 
                                 <div class="cat-sidebar">
@@ -186,7 +190,7 @@ public class SkinCustomizerUI {
                             </div>
                         </div>
 
-                        <div class="footer">
+                        <div class="footer" style="layout: center; flex-weight: 0; padding: 26 16 26 16; border-top: 1 solid #1a293c; width: 100%; vertical-align: center;">
                             <button id="randomize-all-btn" class="secondary-button" style="anchor-width: 160; anchor-height: 40;">Randomize</button>
                             <div style="flex-weight: 1;"></div>
                             <button id="cancel-btn" class="secondary-button" style="anchor-width: 130; anchor-height: 40;">Cancel</button>
@@ -195,7 +199,6 @@ public class SkinCustomizerUI {
                         </div>
 
                     </div>
-                </div>
                 """.formatted(
                 "Editing " + escapeHtml(state.citizen.getName()),
                 categorySidebar,
@@ -204,7 +207,7 @@ public class SkinCustomizerUI {
                 slotTabs,
                 partGrid,
                 colorStrip
-        ));
+        );
     }
 
     private String buildCategorySidebar(CustomizerState state) {

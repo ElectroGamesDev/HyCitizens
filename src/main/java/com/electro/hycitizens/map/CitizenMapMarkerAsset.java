@@ -1,6 +1,7 @@
 package com.electro.hycitizens.map;
 
 import com.electro.hycitizens.models.CitizenData;
+import com.electro.hycitizens.util.SkinUtilities;
 import com.hypixel.hytale.server.core.asset.common.CommonAssetModule;
 
 import javax.annotation.Nonnull;
@@ -40,6 +41,7 @@ public final class CitizenMapMarkerAsset {
     public static final String DEFAULT_MARKER_IMAGE = "hycitizens-pin.png";
     public static final String ASSET_PACK_NAME = "electro:HyCitizensData";
     public static final Path CUSTOM_MARKERS_PATH = Paths.get("mods", "HyCitizensData", "MapMarkers");
+    // public static final Path HEADSHOTS_PATH = Paths.get("mods", "HyCitizensData", "headshots");
     private static final String ASSET_PATH_PREFIX = "UI/WorldMap/MapMarkers/";
     private static final int ICON_SIZE = 32;
     private static final int NPC_CONTENT_SCALE_PERCENT = 96;
@@ -47,6 +49,74 @@ public final class CitizenMapMarkerAsset {
     private static final Set<String> USER_CUSTOM_MARKERS = ConcurrentHashMap.newKeySet();
 
     private CitizenMapMarkerAsset() {
+    }
+
+    /*
+    // Headshot thumbnail resolution (disabled to prevent HyUI 25 dynamic image slot exhaustion in large citizen lists)
+    @Nonnull
+    public static String resolveCitizenThumbnailPath(@Nonnull CitizenData citizen) {
+        if (citizen.isPlayerModel()) {
+            if (citizen.isUseLiveSkin() && citizen.getSkinUsername() != null && !citizen.getSkinUsername().isBlank()) {
+                return SkinUtilities.getHeadshotRenderUrlForUsername(citizen.getSkinUsername(), 128, 20);
+            }
+            if (citizen.getCachedSkin() != null) {
+                return SkinUtilities.getHeadshotRenderUrl(citizen.getCachedSkin(), 128, 20);
+            }
+            return "https://api.hytl.skin/headshot/electro?size=128&rotation=20";
+        }
+
+        String relativePath = ensureNpcHeadshotFile(citizen.getModelId());
+        return relativePath != null ? relativePath : "";
+    }
+
+    @Nullable
+    public static String ensureNpcHeadshotFile(@Nullable String modelId) {
+        if (modelId == null || modelId.isBlank()) {
+            return null;
+        }
+
+        String safeKey = sanitizeKey(modelId);
+        String fileName = "npc_" + safeKey + ".png";
+        Path localPath = HEADSHOTS_PATH.resolve(fileName);
+        String relativeHyUiPath = "HyCitizensData/headshots/" + fileName;
+
+        if (Files.exists(localPath)) {
+            return relativeHyUiPath;
+        }
+
+        try {
+            Files.createDirectories(HEADSHOTS_PATH);
+            byte[] pngBytes = null;
+            String portraitName = CitizenNpcPortraitResolver.resolvePortraitName(modelId);
+            if (portraitName != null) {
+                byte[] rawBytes = CitizenNpcPortraitResolver.loadPortraitPngByPortraitName(portraitName);
+                if (rawBytes != null && rawBytes.length > 0) {
+                    pngBytes = createNpcPortraitMarkerPng(rawBytes, 64, NPC_CONTENT_SCALE_PERCENT);
+                }
+            }
+            if (pngBytes == null || pngBytes.length == 0) {
+                pngBytes = createGeneratedNpcMarkerPng(modelId, modelId);
+            }
+
+            if (pngBytes != null && pngBytes.length > 0) {
+                Files.write(localPath, pngBytes);
+                return relativeHyUiPath;
+            }
+        } catch (Exception e) {
+            getLogger().atWarning().log("[HyCitizens] Failed to write NPC headshot file: " + e.getMessage());
+        }
+        return null;
+    }
+    */
+
+    @Nonnull
+    public static String resolveCitizenThumbnailPath(@Nonnull CitizenData citizen) {
+        return "";
+    }
+
+    @Nullable
+    public static String ensureNpcHeadshotFile(@Nullable String modelId) {
+        return null;
     }
 
     @Nonnull
@@ -181,7 +251,7 @@ public final class CitizenMapMarkerAsset {
     }
 
     @Nullable
-    private static String ensureNpcTypeIcon(@Nonnull CitizenData citizen) {
+    public static String ensureNpcTypeIcon(@Nonnull CitizenData citizen) {
         String modelId = citizen.getModelId();
         String portraitName = CitizenNpcPortraitResolver.resolvePortraitName(modelId);
         if (portraitName != null) {
