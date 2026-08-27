@@ -4,6 +4,7 @@ import com.electro.hycitizens.api.dialogue.*;
 import com.electro.hycitizens.api.dialogue.event.*;
 import com.electro.hycitizens.api.scripting.*;
 import com.electro.hycitizens.persistence.DataStore;
+import com.electro.hycitizens.persistence.DocumentEnvelope;
 import com.electro.hycitizens.persistence.PersistenceService;
 import com.electro.hycitizens.ui.DialogUI;
 import com.electro.hycitizens.util.DialogPaths;
@@ -24,6 +25,7 @@ import java.nio.file.*;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.stream.Collectors;
 
 import static com.hypixel.hytale.logger.HytaleLogger.getLogger;
 
@@ -136,7 +138,7 @@ public class DialogueManager {
                 .filter(entry -> Objects.equals(entry.getValue().getDefaultDialogId(), dialogId)
                         || entry.getValue().getRules().stream()
                         .anyMatch(rule -> Objects.equals(rule.getDialogId(), dialogId)))
-                .collect(java.util.stream.Collectors.toMap(
+                .collect(Collectors.toMap(
                         Map.Entry::getKey, Map.Entry::getValue, (left, right) -> left, LinkedHashMap::new)));
         snapshot.put("overrides", overrides.values().stream()
                 .filter(override -> Objects.equals(override.dialogId(), dialogId)).toList());
@@ -530,7 +532,7 @@ public class DialogueManager {
             try {
                 PlayerDialogState state = dataStore.read(
                         "dialog_state", id.toString(), STATE_TYPE, PlayerDialogState.SCHEMA_VERSION
-                ).map(com.electro.hycitizens.persistence.DocumentEnvelope::data).orElse(new PlayerDialogState(id));
+                ).map(DocumentEnvelope::data).orElse(new PlayerDialogState(id));
                 state.setPlayerId(id);
                 return state;
             } catch (IOException error) {

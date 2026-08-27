@@ -7,12 +7,15 @@ import it.unimi.dsi.fastutil.Pair;
 import com.hypixel.hytale.server.core.universe.world.npc.INonPlayerCharacter;
 import com.electro.hycitizens.models.CitizenData;
 import com.electro.hycitizens.managers.DialogueManager;
+import com.electro.hycitizens.api.dialogue.DialogOverride;
+import com.electro.hycitizens.api.dialogue.DialogPatch;
 import com.electro.hycitizens.api.dialogue.IDialogue;
 import com.electro.hycitizens.models.FactionConfig;
 import com.electro.hycitizens.models.MovementBehavior;
 import com.electro.hycitizens.api.scripting.ScriptAction.Branch;
 import com.electro.hycitizens.interactions.CitizenInteraction;
 import com.electro.hycitizens.util.CommandExecutionUtil;
+import org.joml.Vector3d;
 
 import com.google.gson.Gson;
 import com.google.gson.JsonArray;
@@ -47,6 +50,9 @@ import com.hypixel.hytale.server.core.universe.world.SoundUtil;
 import com.hypixel.hytale.server.core.universe.world.WorldConfig;
 import com.hypixel.hytale.server.core.universe.world.storage.EntityStore;
 import com.hypixel.hytale.server.core.util.EventTitleUtil;
+import com.hypixel.hytale.server.core.inventory.InventoryComponent;
+import com.hypixel.hytale.server.core.inventory.container.CombinedItemContainer;
+import com.hypixel.hytale.server.core.inventory.container.ItemContainer;
 import com.hypixel.hytale.server.npc.util.InventoryHelper;
 import com.hypixel.hytale.server.core.inventory.ItemStack;
 import com.hypixel.hytale.server.core.modules.entity.component.TransformComponent;
@@ -1146,10 +1152,12 @@ public class ScriptManager {
                 int amount = amountNum != null ? amountNum.intValue() : 1;
 
                 Ref<EntityStore> pRef = context.getPlayer().getReference();
+                if (pRef == null || !pRef.isValid()) return false;
                 Player p = pRef.getStore().getComponent(pRef, Player.getComponentType());
                 if (p == null) return false;
 
-                return InventoryHelper.countItems(p.getInventory().getCombinedHotbarFirst(), List.of(itemId)) >= amount;
+                CombinedItemContainer container = InventoryComponent.getCombined(pRef.getStore(), pRef, InventoryComponent.HOTBAR_FIRST);
+                return container != null && InventoryHelper.countItems(container, List.of(itemId)) >= amount;
             }
         });
 
@@ -1398,10 +1406,12 @@ public class ScriptManager {
                 int required = slotsVal != null ? slotsVal.intValue() : 1;
                 
                 PlayerRef playerRef = context.getPlayer();
-                Player p = playerRef.getReference().getStore().getComponent(playerRef.getReference(), Player.getComponentType());
+                Ref<EntityStore> pRef = playerRef.getReference();
+                Player p = pRef.getStore().getComponent(pRef, Player.getComponentType());
                 if (p == null) return false;
                 
-                CombinedItemContainer container = p.getInventory().getCombinedHotbarFirst();
+                CombinedItemContainer container = InventoryComponent.getCombined(pRef.getStore(), pRef, InventoryComponent.HOTBAR_FIRST);
+                if (container == null) return false;
                 int free = 0;
                 for (short i = 0; i < container.getCapacity(); i++) {
                     ItemStack item = container.getItemStack(i);
@@ -1423,22 +1433,29 @@ public class ScriptManager {
                 if (itemId == null) return false;
                 
                 PlayerRef playerRef = context.getPlayer();
-                Player p = playerRef.getReference().getStore().getComponent(playerRef.getReference(), Player.getComponentType());
+                Ref<EntityStore> pRef = playerRef.getReference();
+                Store<EntityStore> pStore = pRef.getStore();
+                Player p = pStore.getComponent(pRef, Player.getComponentType());
                 if (p == null) return false;
                 
                 ItemStack item = null;
                 if ("HELMET".equals(slot)) {
-                    item = p.getInventory().getArmor().getItemStack((short) 0);
+                    InventoryComponent.Armor armor = pStore.getComponent(pRef, InventoryComponent.Armor.getComponentType());
+                    item = armor != null ? armor.getInventory().getItemStack((short) 0) : null;
                 } else if ("CHEST".equals(slot)) {
-                    item = p.getInventory().getArmor().getItemStack((short) 1);
+                    InventoryComponent.Armor armor = pStore.getComponent(pRef, InventoryComponent.Armor.getComponentType());
+                    item = armor != null ? armor.getInventory().getItemStack((short) 1) : null;
                 } else if ("GLOVES".equals(slot)) {
-                    item = p.getInventory().getArmor().getItemStack((short) 2);
+                    InventoryComponent.Armor armor = pStore.getComponent(pRef, InventoryComponent.Armor.getComponentType());
+                    item = armor != null ? armor.getInventory().getItemStack((short) 2) : null;
                 } else if ("LEGGINGS".equals(slot)) {
-                    item = p.getInventory().getArmor().getItemStack((short) 3);
+                    InventoryComponent.Armor armor = pStore.getComponent(pRef, InventoryComponent.Armor.getComponentType());
+                    item = armor != null ? armor.getInventory().getItemStack((short) 3) : null;
                 } else if ("HAND".equals(slot) || "MAIN_HAND".equals(slot)) {
-                    item = p.getInventory().getItemInHand();
+                    item = InventoryComponent.getItemInHand(pStore, pRef);
                 } else if ("OFF_HAND".equals(slot) || "OFFHAND".equals(slot)) {
-                    item = p.getInventory().getUtilityItem();
+                    InventoryComponent.Utility utility = pStore.getComponent(pRef, InventoryComponent.Utility.getComponentType());
+                    item = utility != null ? utility.getActiveItem() : null;
                 }
                 
                 return item != null && !item.isEmpty() && itemId.equalsIgnoreCase(item.getItem().getId());
@@ -1690,17 +1707,17 @@ public class ScriptManager {
                 List<ScriptAction> subActions = (List<ScriptAction>) params.get("actions");
                 if (subActions == null || subActions.isEmpty()) return CompletableFuture.completedFuture(null);
 
-                Map<java.util.UUID, Double> dealers = citizen.getRecentDamageDealers();
+                Map<UUID, Double> dealers = citizen.getRecentDamageDealers();
                 if (dealers == null || dealers.isEmpty()) return CompletableFuture.completedFuture(null);
 
-                List<Map.Entry<java.util.UUID, Double>> sortedDealers = new ArrayList<>(dealers.entrySet());
+                List<Map.Entry<UUID, Double>> sortedDealers = new ArrayList<>(dealers.entrySet());
                 sortedDealers.sort((a, b) -> Double.compare(b.getValue(), a.getValue()));
 
                 int count = 0;
-                for (Map.Entry<java.util.UUID, Double> entry : sortedDealers) {
+                for (Map.Entry<UUID, Double> entry : sortedDealers) {
                     if (count >= maxDealers) break;
                     
-                    java.util.UUID playerUuid = entry.getKey();
+                    UUID playerUuid = entry.getKey();
                     double damageAmount = entry.getValue();
                     
                     // Set loop variables in session
@@ -1837,7 +1854,7 @@ public class ScriptManager {
                         return;
                     }
 
-                    movementManager.getSettings().canFly = enabled;
+                    movementManager.getSettings().fly = enabled ? FlyMode.Allowed : FlyMode.Disabled;
                     movementManager.update(context.getPlayer().getPacketHandler());
                     MovementStatesComponent movementStatesComponent = playerStore.getComponent(playerRef, MovementStatesComponent.getComponentType());
                     if (movementStatesComponent == null) {
@@ -2307,13 +2324,17 @@ public class ScriptManager {
                 int amount = amountNum != null ? amountNum.intValue() : 1;
 
                 PlayerRef playerRef = context.getPlayer();
-                Player p = playerRef.getReference().getStore().getComponent(playerRef.getReference(), Player.getComponentType());
+                Ref<EntityStore> pRef = playerRef.getReference();
+                Store<EntityStore> pStore = pRef.getStore();
+                Player p = pStore.getComponent(pRef, Player.getComponentType());
                 if (p != null) {
                     ItemStack stack = new ItemStack(itemId, amount);
-                    if (p.getInventory().getHotbar().canAddItemStack(stack)) {
-                        p.getInventory().getHotbar().addItemStack(stack);
-                    } else if (p.getInventory().getStorage().canAddItemStack(stack)) {
-                        p.getInventory().getStorage().addItemStack(stack);
+                    InventoryComponent.Hotbar hotbar = pStore.getComponent(pRef, InventoryComponent.Hotbar.getComponentType());
+                    InventoryComponent.Storage storage = pStore.getComponent(pRef, InventoryComponent.Storage.getComponentType());
+                    if (hotbar != null && hotbar.getInventory().canAddItemStack(stack)) {
+                        hotbar.getInventory().addItemStack(stack);
+                    } else if (storage != null && storage.getInventory().canAddItemStack(stack)) {
+                        storage.getInventory().addItemStack(stack);
                     } else {
                         playerRef.sendMessage(Message.raw("Your inventory is full!").color(Color.RED));
                     }
@@ -2331,10 +2352,13 @@ public class ScriptManager {
                 int amount = amountNum != null ? amountNum.intValue() : 1;
 
                 PlayerRef playerRef = context.getPlayer();
-                Player p = playerRef.getReference().getStore().getComponent(playerRef.getReference(), Player.getComponentType());
+                Ref<EntityStore> pRef = playerRef.getReference();
+                Player p = pRef.getStore().getComponent(pRef, Player.getComponentType());
                 if (p != null) {
-                    CombinedItemContainer container = p.getInventory().getCombinedHotbarFirst();
-                    removeItems(container, itemId, amount);
+                    CombinedItemContainer container = InventoryComponent.getCombined(pRef.getStore(), pRef, InventoryComponent.HOTBAR_FIRST);
+                    if (container != null) {
+                        removeItems(container, itemId, amount);
+                    }
                 }
                 return CompletableFuture.completedFuture(null);
             }
@@ -2725,7 +2749,7 @@ public class ScriptManager {
                     NPCPlugin npcPlugin = NPCPlugin.get();
                     if (npcPlugin != null) {
                         Pair<Ref<EntityStore>, INonPlayerCharacter> pair =
-                            npcPlugin.spawnNPC(context.getStore(), role, null, new org.joml.Vector3d(x, y, z), new Rotation3f());
+                            npcPlugin.spawnNPC(context.getStore(), role, null, new Vector3d(x, y, z), new Rotation3f());
                         if (pair != null && saveRefVar != null && !saveRefVar.isEmpty()) {
                             Ref<EntityStore> spawnedRef = pair.first();
                             if (spawnedRef != null && spawnedRef.isValid()) {
@@ -3237,9 +3261,9 @@ public class ScriptManager {
                     DialogueManager.get().removeOverridesByOwner(owner);
                 } else {
                     DialogueManager.get().removeOverridesByOwner(owner);
-                    DialogueManager.get().addOverride(new com.electro.hycitizens.api.dialogue.DialogOverride(
+                    DialogueManager.get().addOverride(new DialogOverride(
                             UUID.randomUUID(),
-                            com.electro.hycitizens.api.dialogue.DialogOverride.Scope.NPC,
+                            DialogOverride.Scope.NPC,
                             citizen.getId(),
                             dialogueId,
                             getAsInt(params.get("priority"), 0),
@@ -3306,8 +3330,8 @@ public class ScriptManager {
                     if (dialogId.isEmpty() || nodeId.isEmpty() || operation.isEmpty()) {
                         return CompletableFuture.failedFuture(new IllegalArgumentException("Dialog patch requires dialog_id, node_id, and operation"));
                     }
-                    com.electro.hycitizens.api.dialogue.DialogPatch.Scope scope =
-                            com.electro.hycitizens.api.dialogue.DialogPatch.Scope.valueOf(scopeName.toUpperCase(Locale.ROOT));
+                    DialogPatch.Scope scope =
+                            DialogPatch.Scope.valueOf(scopeName.toUpperCase(Locale.ROOT));
                     String scopeId = switch (scope) {
                         case GLOBAL -> "";
                         case NPC -> context.getCitizen() != null ? context.getCitizen().getId() : "";
@@ -3316,13 +3340,13 @@ public class ScriptManager {
                     };
                     UUID patchId = params.get("patch_id") != null
                             ? UUID.fromString(params.get("patch_id").toString()) : UUID.randomUUID();
-                    com.electro.hycitizens.api.dialogue.DialogPatch patch =
-                            new com.electro.hycitizens.api.dialogue.DialogPatch(
+                    DialogPatch patch =
+                            new DialogPatch(
                                     patchId, dialogId, scope, scopeId,
                                     Objects.toString(params.getOrDefault("owner", "visual-script"), "visual-script"),
                                     getAsInt(params.get("priority"), 0),
                                     getAsLong(params.get("expires_at"), 0L),
-                                    com.electro.hycitizens.api.dialogue.DialogPatch.Operation.valueOf(operation.toUpperCase(Locale.ROOT)),
+                                    DialogPatch.Operation.valueOf(operation.toUpperCase(Locale.ROOT)),
                                     nodeId, Objects.toString(params.get("response_id"), null),
                                     Objects.toString(params.get("value"), null)
                             );

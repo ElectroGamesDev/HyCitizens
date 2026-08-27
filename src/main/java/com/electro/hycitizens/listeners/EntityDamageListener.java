@@ -20,6 +20,7 @@ import com.hypixel.hytale.server.core.entity.entities.Player;
 import com.hypixel.hytale.server.core.modules.entity.component.Invulnerable;
 import com.hypixel.hytale.server.core.modules.entity.component.TransformComponent;
 import com.hypixel.hytale.server.core.modules.entity.damage.Damage;
+import com.hypixel.hytale.server.core.modules.entity.damage.DamageCause;
 import com.hypixel.hytale.server.core.modules.entity.damage.DamageEventSystem;
 import com.hypixel.hytale.server.core.modules.entity.damage.DamageModule;
 import com.hypixel.hytale.server.core.modules.entity.item.ItemComponent;
@@ -119,9 +120,10 @@ public class EntityDamageListener extends DamageEventSystem {
             }
 
             // Fire ON_DAMAGE trigger
-            Map<String, Object> triggerArgs = new java.util.HashMap<>();
+            Map<String, Object> triggerArgs = new HashMap<>();
             triggerArgs.put("damage_amount", event.getAmount());
-            triggerArgs.put("damage_cause", event.getCause() != null ? event.getCause().getId() : "UNKNOWN");
+            DamageCause damageCause = DamageCause.getAssetMap().getAsset(event.getDamageCauseIndex());
+            triggerArgs.put("damage_cause", damageCause != null ? damageCause.getId() : "UNKNOWN");
             if (attackerPlayerRef != null) {
                 triggerArgs.put("attacker_name", attackerPlayerRef.getUsername());
             }

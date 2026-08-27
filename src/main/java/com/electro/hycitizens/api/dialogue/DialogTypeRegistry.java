@@ -1,5 +1,7 @@
 package com.electro.hycitizens.api.dialogue;
 
+import java.util.Comparator;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -54,9 +56,9 @@ public final class DialogTypeRegistry {
         return nodeIds.get(type);
     }
 
-    public java.util.List<TypeDescriptor> nodeDescriptors() {
+    public List<TypeDescriptor> nodeDescriptors() {
         return nodeDescriptors.values().stream()
-                .sorted(java.util.Comparator.comparing(TypeDescriptor::id)).toList();
+                .sorted(Comparator.comparing(TypeDescriptor::id)).toList();
     }
 
     public record TypeDescriptor(String id, Map<String, Object> schema, Map<String, Object> editorHints) {

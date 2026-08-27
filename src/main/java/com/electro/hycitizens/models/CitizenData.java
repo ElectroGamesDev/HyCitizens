@@ -113,7 +113,7 @@ public class CitizenData {
     private transient Map<UUID, Integer> sequentialDeathCommandIndex = new ConcurrentHashMap<>();
     private transient Map<UUID, Boolean> playersInProximity = new ConcurrentHashMap<>();
     private transient Map<String, Long> lastTimedAnimationPlay = new ConcurrentHashMap<>();
-    private transient Map<String, java.util.concurrent.ScheduledFuture<?>> animationStopTasks = new ConcurrentHashMap<>();
+    private transient Map<String, ScheduledFuture<?>> animationStopTasks = new ConcurrentHashMap<>();
     private boolean firstInteractionEnabled = false;
     private List<CommandAction> firstInteractionCommandActions = new ArrayList<>();
     private MessagesConfig firstInteractionMessagesConfig = new MessagesConfig();
@@ -678,7 +678,7 @@ public class CitizenData {
             normalized = normalized.substring(slash + 1);
         }
 
-        if (!normalized.toLowerCase(java.util.Locale.ROOT).endsWith(".png")) {
+        if (!normalized.toLowerCase(Locale.ROOT).endsWith(".png")) {
             return "";
         }
         return normalized.replaceAll("[\\r\\n]+", "").trim();
@@ -690,7 +690,7 @@ public class CitizenData {
             return MAP_MARKER_TYPE_PIN;
         }
 
-        String normalized = type.trim().toUpperCase(java.util.Locale.ROOT).replace('-', '_').replace(' ', '_');
+        String normalized = type.trim().toUpperCase(Locale.ROOT).replace('-', '_').replace(' ', '_');
         if (normalized.equals("MONEY_BAG")) {
             return MAP_MARKER_TYPE_MONEY_SYMBOL;
         }
@@ -836,7 +836,7 @@ public class CitizenData {
     }
 
     @Nonnull
-    public Map<String, java.util.concurrent.ScheduledFuture<?>> getAnimationStopTasks() {
+    public Map<String, ScheduledFuture<?>> getAnimationStopTasks() {
         return animationStopTasks;
     }
 

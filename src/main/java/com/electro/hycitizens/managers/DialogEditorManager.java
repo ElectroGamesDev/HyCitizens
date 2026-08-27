@@ -3,8 +3,10 @@ package com.electro.hycitizens.managers;
 import com.electro.hycitizens.HyCitizensPlugin;
 import com.electro.hycitizens.api.dialogue.IDialogue;
 import com.electro.hycitizens.api.dialogue.Dialogue;
+import com.electro.hycitizens.api.dialogue.DialogTypeRegistry;
 import com.electro.hycitizens.api.scripting.ScriptManager;
 import com.electro.hycitizens.util.DialogPaths;
+import com.electro.hycitizens.util.JsonDiffSummary;
 import com.electro.hycitizens.util.ResourceId;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
@@ -22,15 +24,19 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.security.MessageDigest;
 import java.time.Duration;
+import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
 
 import static com.hypixel.hytale.logger.HytaleLogger.getLogger;
 
@@ -87,7 +93,7 @@ public class DialogEditorManager {
         payload.put("schemaVersion", 1);
         JsonObject capabilities = ScriptManager.get().getCapabilitySchema().deepCopy();
         capabilities.add("dialogNodeTypes", gson.toJsonTree(
-                com.electro.hycitizens.api.dialogue.DialogTypeRegistry.get().nodeDescriptors()));
+                DialogTypeRegistry.get().nodeDescriptors()));
         payload.put("capabilities", capabilities);
         payload.put("owner_uuid", playerRef.getUuid().toString());
         payload.put("resource_id", dialogId);
@@ -252,7 +258,7 @@ public class DialogEditorManager {
                                     playerRef.sendMessage(Message.raw("[HyCitizens] Dialog changed after this editor session started. "
                                             + "Base revision " + session.baseRevision + ", current revision "
                                             + (current != null ? current.getRevision() : "deleted") + "; "
-                                            + com.electro.hycitizens.util.JsonDiffSummary.changedTopLevelFields(
+                                            + JsonDiffSummary.changedTopLevelFields(
                                             session.baseJson,
                                             current != null ? DialogueManager.get().getGson().toJson(current, IDialogue.class) : "{}")
                                             + ". Start a new session before overwriting.").color(Color.RED));
@@ -269,11 +275,11 @@ public class DialogEditorManager {
                                 Files.writeString(temporary, prettyJson, StandardCharsets.UTF_8);
                                 try {
                                     Files.move(temporary, dialogFile,
-                                            java.nio.file.StandardCopyOption.REPLACE_EXISTING,
-                                            java.nio.file.StandardCopyOption.ATOMIC_MOVE);
-                                } catch (java.nio.file.AtomicMoveNotSupportedException ignored) {
+                                            StandardCopyOption.REPLACE_EXISTING,
+                                            StandardCopyOption.ATOMIC_MOVE);
+                                } catch (AtomicMoveNotSupportedException ignored) {
                                     Files.move(temporary, dialogFile,
-                                            java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                                            StandardCopyOption.REPLACE_EXISTING);
                                 }
 
                                 // Reload dialogues in-memory
@@ -287,7 +293,7 @@ public class DialogEditorManager {
                                     DialogueManager.get().loadDialogues();
                                     throw new IllegalArgumentException("Dialog validation failed: "
                                             + report.issues().stream().map(issue -> issue.source() + ": " + issue.message())
-                                            .collect(java.util.stream.Collectors.joining("; ")));
+                                            .collect(Collectors.joining("; ")));
                                 }
                                 consumeRemoteSession(token);
 
@@ -330,7 +336,7 @@ public class DialogEditorManager {
 
     private String sha256(String value) {
         try {
-            return java.util.HexFormat.of().formatHex(
+            return HexFormat.of().formatHex(
                     MessageDigest.getInstance("SHA-256").digest(value.getBytes(StandardCharsets.UTF_8))
             );
         } catch (Exception e) {

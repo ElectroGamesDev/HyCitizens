@@ -73,8 +73,7 @@ public class SkinCustomizerUI {
         CustomizerState state = sessionStates.get(playerId);
         if (state == null || state.citizen != citizen) {
             PlayerSkin current = citizen.getCachedSkin();
-            if (current == null) current = SkinUtilities.createDefaultSkin();
-            if (!SkinUtilities.isValidSkin(current)) current = SkinUtilities.createDefaultSkin();
+            current = SkinUtilities.sanitizeSkin(current);
             state = new CustomizerState(citizen, SkinUtilities.copySkin(current), SkinUtilities.copySkin(current));
             sessionStates.put(playerId, state);
         }
@@ -510,17 +509,13 @@ public class SkinCustomizerUI {
 
         // Done
         page.addEventListener("done-btn", CustomUIEventBindingType.Activating, event -> {
-            if (!SkinUtilities.isValidSkin(state.workingSkin)) {
-                playerRef.sendMessage(Message.raw("Skin customization contains an invalid cosmetic option and was not saved.").color(Color.RED));
-                return;
-            }
-
-            state.citizen.setCachedSkin(SkinUtilities.copySkin(state.workingSkin));
+            PlayerSkin sanitized = SkinUtilities.sanitizeSkin(state.workingSkin);
+            state.citizen.setCachedSkin(SkinUtilities.copySkin(sanitized));
             state.citizen.setUseLiveSkin(false);
             state.citizen.setSkinUsername("custom_" + UUID.randomUUID().toString().substring(0, 8));
             state.citizen.setLastSkinUpdate(System.currentTimeMillis());
             plugin.getCitizensManager().saveCitizen(state.citizen);
-            plugin.getCitizensManager().applySkinPreview(state.citizen, state.workingSkin);
+            plugin.getCitizensManager().applySkinPreview(state.citizen, sanitized);
             playerRef.sendMessage(Message.raw("Skin customization saved!").color(Color.GREEN));
             clearState(playerRef);
             plugin.getCitizensUI().openEditCitizenGUI(playerRef, store, state.citizen);

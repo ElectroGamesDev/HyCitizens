@@ -21,18 +21,25 @@ import java.awt.image.ImageObserver;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.LinkOption;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.util.ArrayList;
 import java.util.Collection;
+import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Supplier;
+import java.util.stream.Stream;
 
 import static com.hypixel.hytale.logger.HytaleLogger.getLogger;
 
 public final class CitizenMapMarkerAsset {
     public static final String DEFAULT_MARKER_IMAGE = "hycitizens-pin.png";
     public static final String ASSET_PACK_NAME = "electro:HyCitizensData";
-    public static final java.nio.file.Path CUSTOM_MARKERS_PATH = java.nio.file.Paths.get("mods", "HyCitizensData", "MapMarkers");
+    public static final Path CUSTOM_MARKERS_PATH = Paths.get("mods", "HyCitizensData", "MapMarkers");
     private static final String ASSET_PATH_PREFIX = "UI/WorldMap/MapMarkers/";
     private static final int ICON_SIZE = 32;
     private static final int NPC_CONTENT_SCALE_PERCENT = 96;
@@ -61,14 +68,14 @@ public final class CitizenMapMarkerAsset {
     }
 
     @Nonnull
-    public static java.util.List<String> listCustomMarkerIcons() {
-        return new java.util.ArrayList<>(USER_CUSTOM_MARKERS);
+    public static List<String> listCustomMarkerIcons() {
+        return new ArrayList<>(USER_CUSTOM_MARKERS);
     }
 
     public static void loadUserCustomMarkers() {
         try {
-            java.nio.file.Files.createDirectories(CUSTOM_MARKERS_PATH);
-        } catch (java.io.IOException e) {
+            Files.createDirectories(CUSTOM_MARKERS_PATH);
+        } catch (IOException e) {
             getLogger().atWarning().log("[HyCitizens] Failed to create custom markers directory: " + e.getMessage());
             return;
         }
@@ -76,23 +83,23 @@ public final class CitizenMapMarkerAsset {
         USER_CUSTOM_MARKERS.clear();
         int loadedCount = 0;
 
-        try (java.util.stream.Stream<java.nio.file.Path> paths = java.nio.file.Files.list(CUSTOM_MARKERS_PATH)) {
-            java.util.List<java.nio.file.Path> pngFiles = paths
-                    .filter(path -> java.nio.file.Files.isRegularFile(path, java.nio.file.LinkOption.NOFOLLOW_LINKS))
+        try (Stream<Path> paths = Files.list(CUSTOM_MARKERS_PATH)) {
+            List<Path> pngFiles = paths
+                    .filter(path -> Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS))
                     .filter(path -> {
                         String name = path.getFileName().toString().toLowerCase(Locale.ROOT);
                         return name.endsWith(".png") && !name.startsWith("hycitizens-");
                     })
                     .toList();
 
-            for (java.nio.file.Path pngFile : pngFiles) {
+            for (Path pngFile : pngFiles) {
                 String fileName = pngFile.getFileName().toString();
                 if (registerUserCustomMarker(fileName, pngFile)) {
                     USER_CUSTOM_MARKERS.add(fileName);
                     loadedCount++;
                 }
             }
-        } catch (java.io.IOException e) {
+        } catch (IOException e) {
             getLogger().atWarning().log("[HyCitizens] Failed to scan custom markers directory: " + e.getMessage());
         }
 
@@ -101,7 +108,7 @@ public final class CitizenMapMarkerAsset {
         }
     }
 
-    private static boolean registerUserCustomMarker(@Nonnull String fileName, @Nonnull java.nio.file.Path filePath) {
+    private static boolean registerUserCustomMarker(@Nonnull String fileName, @Nonnull Path filePath) {
         try {
             CommonAssetModule commonAssetModule = CommonAssetModule.get();
             if (commonAssetModule == null) {
@@ -110,7 +117,7 @@ public final class CitizenMapMarkerAsset {
             }
 
             String assetName = ASSET_PATH_PREFIX + fileName;
-            byte[] pngBytes = java.nio.file.Files.readAllBytes(filePath);
+            byte[] pngBytes = Files.readAllBytes(filePath);
 
             MemoryCommonAsset asset = new MemoryCommonAsset(assetName, pngBytes);
             commonAssetModule.addCommonAsset(ASSET_PACK_NAME, asset);

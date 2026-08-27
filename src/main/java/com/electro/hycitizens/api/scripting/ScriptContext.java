@@ -66,7 +66,7 @@ public class ScriptContext extends ExecutionContext {
     }
 
     public CitizenData getCitizen()              { return citizen; }
-    public PlayerRef getPlayer()               { return player; }   // may be null — always check
+    public PlayerRef getPlayer()               { return player; }   // may be null - always check
     public World getWorld()                { return world; }
     public Store<EntityStore> getStore()         { return store; }
     public String getTriggerType()          { return triggerType; }

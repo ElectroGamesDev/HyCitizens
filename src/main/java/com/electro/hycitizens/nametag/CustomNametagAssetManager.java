@@ -12,8 +12,11 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.util.Collections;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Stream;
 
 import static com.hypixel.hytale.logger.HytaleLogger.getLogger;
@@ -112,11 +115,11 @@ public class CustomNametagAssetManager {
 
     @Nullable
     public static String getOrGenerateAssetId(@Nonnull String formattedName) {
-        return getOrGenerateAssetIdForLines(java.util.Collections.singletonList(formattedName));
+        return getOrGenerateAssetIdForLines(Collections.singletonList(formattedName));
     }
 
     @Nullable
-    public static String getOrGenerateAssetIdForLines(@Nonnull java.util.List<String> lines) {
+    public static String getOrGenerateAssetIdForLines(@Nonnull List<String> lines) {
         boolean hasFormatting = false;
         for (String line : lines) {
             if (hasFormatCodes(line)) {
@@ -258,7 +261,7 @@ public class CustomNametagAssetManager {
     private static void scheduleHotReloadCheck(@Nonnull String modelAssetId) {
         HytaleServer.SCHEDULED_EXECUTOR.schedule(() -> {
             checkModelAssetHotReload(modelAssetId, 0);
-        }, HOT_RELOAD_FIRST_CHECK_MS, java.util.concurrent.TimeUnit.MILLISECONDS);
+        }, HOT_RELOAD_FIRST_CHECK_MS, TimeUnit.MILLISECONDS);
     }
 
     private static void checkModelAssetHotReload(@Nonnull String modelAssetId, int attempt) {
@@ -283,7 +286,7 @@ public class CustomNametagAssetManager {
         if (attempt == 0) {
             HytaleServer.SCHEDULED_EXECUTOR.schedule(() -> {
                 checkModelAssetHotReload(modelAssetId, 1);
-            }, HOT_RELOAD_RETRY_CHECK_MS, java.util.concurrent.TimeUnit.MILLISECONDS);
+            }, HOT_RELOAD_RETRY_CHECK_MS, TimeUnit.MILLISECONDS);
         } else {
             getLogger().atWarning().log("[HyCitizens] ModelAsset did not hot-reload after " + (HOT_RELOAD_FIRST_CHECK_MS + HOT_RELOAD_RETRY_CHECK_MS) + "ms: " + modelAssetId);
             pendingReloadCallbacks.remove(modelAssetId);

@@ -7,6 +7,7 @@ import com.hypixel.hytale.server.core.HytaleServer;
 import com.electro.hycitizens.models.CitizenData;
 import com.electro.hycitizens.HyCitizensPlugin;
 import com.electro.hycitizens.persistence.DataStore;
+import com.electro.hycitizens.persistence.DocumentEnvelope;
 import com.electro.hycitizens.persistence.PersistenceService;
 
 import java.io.*;
@@ -121,7 +122,7 @@ public class VariableManager {
     private void loadGlobalVariables() {
         globalVariables.clear();
         try {
-            Optional<com.electro.hycitizens.persistence.DocumentEnvelope<Map<String, Object>>> stored =
+            Optional<DocumentEnvelope<Map<String, Object>>> stored =
                     dataStore.read("script_variables", "global", VARIABLE_TYPE, SCHEMA_VERSION);
             if (stored.isPresent()) {
                 stored.get().data().forEach((key, value) -> globalVariables.put(key, normalizeValue(value)));
@@ -179,7 +180,7 @@ public class VariableManager {
     private Map<String, Object> loadPlayerVariables(UUID playerUuid) {
         Map<String, Object> vars = new ConcurrentHashMap<>();
         try {
-            Optional<com.electro.hycitizens.persistence.DocumentEnvelope<Map<String, Object>>> stored =
+            Optional<DocumentEnvelope<Map<String, Object>>> stored =
                     dataStore.read("script_variables", playerUuid.toString(), VARIABLE_TYPE, SCHEMA_VERSION);
             if (stored.isPresent()) {
                 stored.get().data().forEach((key, value) -> vars.put(key, normalizeValue(value)));

@@ -19,6 +19,7 @@ import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
 import java.awt.*;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -30,7 +31,11 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import com.electro.hycitizens.api.scripting.ScriptBlock;
+import com.electro.hycitizens.api.scripting.ScriptContext;
 import com.electro.hycitizens.api.scripting.ScriptManager;
+import com.electro.hycitizens.managers.DialogueManager;
+import com.hypixel.hytale.server.core.universe.Universe;
+import com.hypixel.hytale.server.core.universe.world.World;
 
 public class CitizenInteraction {
 
@@ -296,6 +301,11 @@ public class CitizenInteraction {
     }
 
     static public void handleInteraction(@Nonnull CitizenData citizen, @Nonnull PlayerRef playerRef, @Nonnull String interactionSource) {
+        Ref<EntityStore> ref = playerRef.getReference();
+        if (ref == null || !ref.isValid()) {
+            return;
+        }
+
         // Interact event must be called before configured and combat check.
         CitizenInteractEvent interactEvent = new CitizenInteractEvent(citizen, playerRef);
         HyCitizensPlugin.get().getCitizensManager().fireCitizenInteractEvent(interactEvent);
@@ -308,14 +318,14 @@ public class CitizenInteraction {
         if (interactDiagId != null
                 && !interactDiagId.isEmpty()
                 && citizen.isInteractDialogueTriggeredBy(interactionSource)) {
-            if (com.electro.hycitizens.managers.DialogueManager.get().getDialogue(interactDiagId) != null) {
+            if (DialogueManager.get().getDialogue(interactDiagId) != null) {
                 if (HyCitizensPlugin.get().getCitizensManager().isCitizenInCombat(citizen)) {
                     playerRef.sendMessage(Message.raw("This citizen is busy in combat.").color(Color.RED));
                     return;
                 }
 
-                com.hypixel.hytale.server.core.universe.world.World world = com.hypixel.hytale.server.core.universe.Universe.get().getWorld(playerRef.getWorldUuid());
-                com.electro.hycitizens.api.scripting.ScriptContext scriptContext = new com.electro.hycitizens.api.scripting.ScriptContext(
+                World world = Universe.get().getWorld(playerRef.getWorldUuid());
+                ScriptContext scriptContext = new ScriptContext(
                         citizen,
                         playerRef,
                         world,
@@ -323,7 +333,7 @@ public class CitizenInteraction {
                         "ON_INTERACT",
                         null
                 );
-                if (com.electro.hycitizens.managers.DialogueManager.get()
+                if (DialogueManager.get()
                         .resolveAndStart(playerRef, citizen.getId(), interactDiagId, scriptContext)) {
                     return;
                 }
@@ -338,8 +348,6 @@ public class CitizenInteraction {
             playerRef.sendMessage(Message.raw("This citizen is busy in combat.").color(Color.RED));
             return;
         }
-
-        Ref<EntityStore> ref = playerRef.getReference();
 
         Player player = ref.getStore().getComponent(ref, Player.getComponentType());
         if (player == null) {
@@ -411,7 +419,7 @@ public class CitizenInteraction {
         }
 
         // Fire scripting triggers
-        Map<String, Object> triggerArgs = new java.util.HashMap<>();
+        Map<String, Object> triggerArgs = new HashMap<>();
         triggerArgs.put("interaction_source", interactionSource);
         if (isFirst) {
             ScriptManager.get().fireTrigger(citizen, "ON_FIRST_INTERACT", triggerArgs, playerRef, playerRef.getReference().getStore());

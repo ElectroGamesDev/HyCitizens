@@ -17,6 +17,7 @@ import com.hypixel.hytale.server.core.io.adapter.PacketAdapters;
 import com.hypixel.hytale.server.core.io.PacketHandler;
 import com.hypixel.hytale.server.core.io.adapter.PacketWatcher;
 import com.hypixel.hytale.server.core.inventory.ItemStack;
+import com.hypixel.hytale.server.core.inventory.InventoryComponent;
 import com.hypixel.hytale.server.core.modules.interaction.interaction.config.Interaction;
 import com.hypixel.hytale.server.core.universe.PlayerRef;
 import com.hypixel.hytale.server.core.universe.Universe;
@@ -196,7 +197,7 @@ public class PlayerItemInteractionHandler implements PacketWatcher {
                     return;
                 }
 
-                callback.accept(player.getInventory().getItemInHand());
+                callback.accept(InventoryComponent.getItemInHand(store, ref));
             } catch (Exception e) {
                 getLogger().atWarning().log("Failed to get held item", e.getMessage());
                 callback.accept(null);

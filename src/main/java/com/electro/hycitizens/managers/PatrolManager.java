@@ -17,7 +17,8 @@ import com.hypixel.hytale.server.core.universe.Universe;
 import com.hypixel.hytale.server.core.universe.world.World;
 import com.hypixel.hytale.server.core.universe.world.storage.EntityStore;
 import com.hypixel.hytale.server.npc.entities.NPCEntity;
-import com.hypixel.hytale.server.npc.role.Role;
+import com.hypixel.hytale.server.npc.role.support.MarkedEntitySupport;
+import com.hypixel.hytale.server.npc.role.support.StateSupport;
 
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
@@ -367,13 +368,10 @@ public class PatrolManager {
                 return;
             }
 
-            NPCEntity npcEntity = npcRef.getStore().getComponent(npcRef, NPCEntity.getComponentType());
-            if (npcEntity == null || npcEntity.getRole() == null) {
-                return;
+            MarkedEntitySupport markedEntitySupport = npcRef.getStore().getComponent(npcRef, MarkedEntitySupport.getComponentType());
+            if (markedEntitySupport != null) {
+                markedEntitySupport.setMarkedEntity(getMovementTargetSlot(npcRef), targetRef);
             }
-
-            Role role = npcEntity.getRole();
-            role.getMarkedEntitySupport().setMarkedEntity(getMovementTargetSlot(role), targetRef);
         } catch (Exception e) {
             getLogger().atWarning().log("Failed to create move target for citizen " + citizen.getId() + ": " + e.getMessage());
         }
@@ -405,8 +403,8 @@ public class PatrolManager {
             return;
         }
 
-        NPCEntity npcEntity = npcRef.getStore().getComponent(npcRef, NPCEntity.getComponentType());
-        if (npcEntity == null || npcEntity.getRole() == null || npcEntity.getRole().getMarkedEntitySupport() == null) {
+        MarkedEntitySupport markedEntitySupport = npcRef.getStore().getComponent(npcRef, MarkedEntitySupport.getComponentType());
+        if (markedEntitySupport == null) {
             return;
         }
 
@@ -415,13 +413,17 @@ public class PatrolManager {
             return;
         }
 
-        npcEntity.getRole().getMarkedEntitySupport().setMarkedEntity(getMovementTargetSlot(npcEntity.getRole()), targetRef);
-        npcEntity.setLeashPoint(targetTransform.getPosition());
+        markedEntitySupport.setMarkedEntity(getMovementTargetSlot(npcRef), targetRef);
+        NPCEntity npcEntity = npcRef.getStore().getComponent(npcRef, NPCEntity.getComponentType());
+        if (npcEntity != null) {
+            npcEntity.setLeashPoint(targetTransform.getPosition());
+        }
     }
 
     @Nonnull
-    private String getMovementTargetSlot(@Nonnull Role role) {
-        return role.getStateSupport() != null ? MOVE_TARGET_SLOT : LOCKED_TARGET_SLOT;
+    private String getMovementTargetSlot(@Nonnull Ref<EntityStore> npcRef) {
+        StateSupport stateSupport = npcRef.getStore().getComponent(npcRef, StateSupport.getComponentType());
+        return stateSupport != null ? MOVE_TARGET_SLOT : LOCKED_TARGET_SLOT;
     }
 
     public boolean citizenMayNeedMoveTarget(@Nonnull CitizenData citizen) {

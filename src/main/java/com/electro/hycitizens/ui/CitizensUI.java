@@ -13,6 +13,7 @@ import com.electro.hycitizens.api.dialogue.IDialogueNode;
 import com.electro.hycitizens.api.scripting.ScriptContext;
 import com.electro.hycitizens.managers.DialogEditorManager;
 import com.electro.hycitizens.managers.DialogueManager;
+import com.electro.hycitizens.util.DialogPaths;
 import com.electro.hycitizens.util.HtmlUtils;
 import com.electro.hycitizens.roles.RoleGenerator;
 import com.hypixel.hytale.codec.Codec;
@@ -32,6 +33,7 @@ import com.hypixel.hytale.server.core.asset.type.model.config.ModelAsset;
 import com.hypixel.hytale.server.core.cosmetics.CosmeticsModule;
 import com.hypixel.hytale.server.core.entity.entities.Player;
 import com.hypixel.hytale.server.core.inventory.ItemStack;
+import com.hypixel.hytale.server.core.inventory.InventoryComponent;
 import com.hypixel.hytale.server.core.modules.entity.component.TransformComponent;
 import com.hypixel.hytale.server.core.modules.entity.teleport.Teleport;
 import com.hypixel.hytale.server.core.modules.time.WorldTimeResource;
@@ -54,7 +56,9 @@ import java.time.LocalDateTime;
 import java.util.*;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.BiConsumer;
 import java.util.function.Consumer;
+import java.util.stream.Collectors;
 import com.electro.hycitizens.util.SkinUtilities;
 
 public class CitizensUI {
@@ -1740,7 +1744,7 @@ public class CitizensUI {
                     .filter(c -> c.getName().toLowerCase(Locale.ROOT).contains(lowerSearchQuery)
                             || c.getId().toLowerCase(Locale.ROOT).contains(lowerSearchQuery)
                             || c.getGroup().toLowerCase(Locale.ROOT).contains(lowerSearchQuery))
-                    .collect(java.util.stream.Collectors.toList());
+                    .collect(Collectors.toList());
         }
 
         String normalizedViewingGroup = normalizeGroupPath(viewingGroup);
@@ -1758,12 +1762,12 @@ public class CitizensUI {
         List<String> childGroups = visibleGroupHierarchy.stream()
                 .filter(group -> isDirectChildGroup(group, normalizedViewingGroup))
                 .sorted(String.CASE_INSENSITIVE_ORDER)
-                .collect(java.util.stream.Collectors.toList());
+                .collect(Collectors.toList());
 
         List<CitizenData> directCitizens = filteredCitizens.stream()
                 .filter(citizen -> isDirectCitizenInGroup(citizen, normalizedViewingGroup))
                 .sorted(Comparator.comparing(c -> c.getName().toLowerCase(Locale.ROOT)))
-                .collect(java.util.stream.Collectors.toList());
+                .collect(Collectors.toList());
 
         List<ListItem> unifiedList = new ArrayList<>();
         boolean isViewingSpecificGroup = !normalizedViewingGroup.isEmpty();
@@ -2959,11 +2963,13 @@ public class CitizensUI {
 
             ItemStack stack = new ItemStack("CitizenStick");
             boolean added = false;
-            if (player.getInventory().getHotbar().canAddItemStack(stack)) {
-                player.getInventory().getHotbar().addItemStack(stack);
+            InventoryComponent.Hotbar hotbar = store.getComponent(ref, InventoryComponent.Hotbar.getComponentType());
+            InventoryComponent.Storage storage = store.getComponent(ref, InventoryComponent.Storage.getComponentType());
+            if (hotbar != null && hotbar.getInventory().canAddItemStack(stack)) {
+                hotbar.getInventory().addItemStack(stack);
                 added = true;
-            } else if (player.getInventory().getStorage().canAddItemStack(stack)) {
-                player.getInventory().getStorage().addItemStack(stack);
+            } else if (storage != null && storage.getInventory().canAddItemStack(stack)) {
+                storage.getInventory().addItemStack(stack);
                 added = true;
             }
 
@@ -4553,45 +4559,36 @@ public class CitizensUI {
                         return;
                     }
 
-                    Player player = ref.getStore().getComponent(ref, Player.getComponentType());
+                    Player player = store.getComponent(ref, Player.getComponentType());
                     if (player == null) {
                         return;
                     }
 
-                    if (player.getInventory().getItemInHand() == null) {
-                        citizen.setNpcHand(null);
-                    } else {
-                        citizen.setNpcHand(player.getInventory().getItemInHand().getItemId());
-                    }
+                    ItemStack handItem = InventoryComponent.getItemInHand(store, ref);
+                    citizen.setNpcHand(handItem != null ? handItem.getItemId() : null);
 
-                    if (player.getInventory().getUtilityItem() == null) {
-                        citizen.setNpcOffHand(null);
-                    } else {
-                        citizen.setNpcOffHand(player.getInventory().getUtilityItem().getItemId());
-                    }
+                    InventoryComponent.Utility utilityComp = store.getComponent(ref, InventoryComponent.Utility.getComponentType());
+                    ItemStack utilityItem = utilityComp != null ? utilityComp.getActiveItem() : null;
+                    citizen.setNpcOffHand(utilityItem != null ? utilityItem.getItemId() : null);
 
-                    if (player.getInventory().getArmor().getItemStack((short) 0) == null) {
+                    InventoryComponent.Armor armorComp = store.getComponent(ref, InventoryComponent.Armor.getComponentType());
+                    if (armorComp != null) {
+                        ItemStack helm = armorComp.getInventory().getItemStack((short) 0);
+                        citizen.setNpcHelmet(helm != null ? helm.getItemId() : null);
+
+                        ItemStack chest = armorComp.getInventory().getItemStack((short) 1);
+                        citizen.setNpcChest(chest != null ? chest.getItemId() : null);
+
+                        ItemStack gloves = armorComp.getInventory().getItemStack((short) 2);
+                        citizen.setNpcGloves(gloves != null ? gloves.getItemId() : null);
+
+                        ItemStack legs = armorComp.getInventory().getItemStack((short) 3);
+                        citizen.setNpcLeggings(legs != null ? legs.getItemId() : null);
+                    } else {
                         citizen.setNpcHelmet(null);
-                    } else {
-                        citizen.setNpcHelmet(player.getInventory().getArmor().getItemStack((short) 0).getItemId());
-                    }
-
-                    if (player.getInventory().getArmor().getItemStack((short) 1) == null) {
                         citizen.setNpcChest(null);
-                    } else {
-                        citizen.setNpcChest(player.getInventory().getArmor().getItemStack((short) 1).getItemId());
-                    }
-
-                    if (player.getInventory().getArmor().getItemStack((short) 2) == null) {
                         citizen.setNpcGloves(null);
-                    } else {
-                        citizen.setNpcGloves(player.getInventory().getArmor().getItemStack((short) 2).getItemId());
-                    }
-
-                    if (player.getInventory().getArmor().getItemStack((short) 3) == null) {
                         citizen.setNpcLeggings(null);
-                    } else {
-                        citizen.setNpcLeggings(player.getInventory().getArmor().getItemStack((short) 3).getItemId());
                     }
 
                     plugin.getCitizensManager().saveCitizen(citizen);
@@ -4691,7 +4688,7 @@ public class CitizensUI {
             });
         } catch (IllegalArgumentException ignored) {}
 
-        java.util.function.BiConsumer<Object, UIContext> saveAction = (event, ctx) -> {
+        BiConsumer<Object, UIContext> saveAction = (event, ctx) -> {
             {
                 mapMarkerEnabled[0] = ctx.getValue("map-marker-check", Boolean.class).orElse(mapMarkerEnabled[0]);
                 if (mapMarkerEnabled[0]) {
@@ -6785,7 +6782,7 @@ public class CitizensUI {
                 openEditMessageGUI(playerRef, store, citizen,
                         new CitizenMessage("", "BOTH", 0.0f), -1));
 
-        // Selection mode buttons — only affect mode, not interaction component, so use saveCitizen.
+        // Selection mode buttons - only affect mode, not interaction component, so use saveCitizen.
         page.addEventListener("mode-random", CustomUIEventBindingType.Activating, event -> {
             MessagesConfig mc = citizen.getMessagesConfig();
             citizen.setMessagesConfig(new MessagesConfig(mc.getMessages(), "RANDOM", mc.isEnabled()));
@@ -6807,7 +6804,7 @@ public class CitizensUI {
             openMessagesGUI(playerRef, store, citizen);
         });
 
-        // Edit and Delete — use updateCitizen so the F-key Interactable component is refreshed.
+        // Edit and Delete - use updateCitizen so the F-key Interactable component is refreshed.
         for (int i = 0; i < msgs.size(); i++) {
             final int index = i;
 
@@ -9264,7 +9261,7 @@ public class CitizensUI {
         if (lowerFilter.isEmpty()) {
             filteredItems = itemMap.entrySet().stream()
                     .sorted(Comparator.comparing(Map.Entry::getKey))
-                    .collect(java.util.stream.Collectors.toList());
+                    .collect(Collectors.toList());
         } else {
             filteredItems = itemMap.entrySet().stream()
                     .filter(entry -> {
@@ -9279,7 +9276,7 @@ public class CitizensUI {
                         return id.contains(lowerFilter) || translation.contains(lowerFilter);
                     })
                     .sorted(Comparator.comparing(Map.Entry::getKey))
-                    .collect(java.util.stream.Collectors.toList());
+                    .collect(Collectors.toList());
         }
 
         int totalItems = filteredItems.size();
@@ -11078,12 +11075,15 @@ public class CitizensUI {
                     path.getName()
             );
 
-            if (player.getInventory().getHotbar().canAddItemStack(waypointItemStack)) {
-                player.getInventory().getHotbar().addItemStack(waypointItemStack);
+            InventoryComponent.Hotbar hotbar = store.getComponent(ref, InventoryComponent.Hotbar.getComponentType());
+            InventoryComponent.Storage storage = store.getComponent(ref, InventoryComponent.Storage.getComponentType());
+
+            if (hotbar != null && hotbar.getInventory().canAddItemStack(waypointItemStack)) {
+                hotbar.getInventory().addItemStack(waypointItemStack);
                 playerRef.sendMessage(Message.raw("You have received a patrol waypoint stick. Use LEFT click to open the waypoint menu, RIGHT click will add a waypoint to your position.").color(Color.GREEN));
             }
-            else if (player.getInventory().getStorage().canAddItemStack(waypointItemStack)) {
-                player.getInventory().getStorage().addItemStack(waypointItemStack);
+            else if (storage != null && storage.getInventory().canAddItemStack(waypointItemStack)) {
+                storage.getInventory().addItemStack(waypointItemStack);
                 playerRef.sendMessage(Message.raw("You have received a patrol waypoint stick. Use LEFT click to open the waypoint menu, RIGHT click will add a waypoint to your position.").color(Color.GREEN));
             }
             else {
@@ -11245,7 +11245,7 @@ public class CitizensUI {
             newDialogue.putNode(startNode);
 
             try {
-                Path dialogFile = com.electro.hycitizens.util.DialogPaths.DIALOGS_DIRECTORY.resolve(newId + ".json");
+                Path dialogFile = DialogPaths.DIALOGS_DIRECTORY.resolve(newId + ".json");
                 Files.createDirectories(dialogFile.getParent());
                 String prettyJson = DialogueManager.get().getGson().toJson(newDialogue, IDialogue.class);
                 Files.writeString(dialogFile, prettyJson, StandardCharsets.UTF_8);

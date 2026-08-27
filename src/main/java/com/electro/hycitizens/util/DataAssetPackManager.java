@@ -17,11 +17,13 @@ import com.hypixel.hytale.server.core.asset.AssetModule;
 import javax.annotation.Nonnull;
 import java.io.IOException;
 import java.io.StringReader;
+import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.Comparator;
 import java.util.Locale;
 
 import static com.hypixel.hytale.logger.HytaleLogger.getLogger;
@@ -150,7 +152,7 @@ public class DataAssetPackManager {
         }
 
         Files.walk(directory)
-            .sorted(java.util.Comparator.reverseOrder())
+            .sorted(Comparator.reverseOrder())
             .forEach(path -> {
                 try {
                     Files.delete(path);
@@ -260,7 +262,7 @@ public class DataAssetPackManager {
                 return false;
             }
 
-            String manifestJson = new String(Files.readAllBytes(manifestPath), java.nio.charset.StandardCharsets.UTF_8);
+            String manifestJson = new String(Files.readAllBytes(manifestPath), StandardCharsets.UTF_8);
             char[] jsonChars = manifestJson.toCharArray();
             RawJsonReader reader =
                 new RawJsonReader(jsonChars);
@@ -275,8 +277,8 @@ public class DataAssetPackManager {
             }
 
             try {
-                java.lang.reflect.Method[] methods = assetModule.getClass().getMethods();
-                for (java.lang.reflect.Method method : methods) {
+                Method[] methods = assetModule.getClass().getMethods();
+                for (Method method : methods) {
                     if (!"registerPack".equals(method.getName())) {
                         continue;
                     }

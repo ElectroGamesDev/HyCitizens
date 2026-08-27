@@ -3,6 +3,8 @@ package com.electro.hycitizens.persistence;
 import com.google.gson.JsonElement;
 
 import javax.annotation.Nonnull;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.UnaryOperator;
@@ -36,7 +38,7 @@ public final class MigrationRegistry {
     ) {
         JsonElement current = data.deepCopy();
         validate(documentType, fromVersion, current);
-        java.util.List<String> steps = new java.util.ArrayList<>();
+        List<String> steps = new ArrayList<>();
         for (int version = fromVersion; version < toVersion; version++) {
             UnaryOperator<JsonElement> migrator = migrations
                     .getOrDefault(documentType, Map.of())
@@ -50,7 +52,7 @@ public final class MigrationRegistry {
             steps.add(version + "->" + (version + 1));
             validate(documentType, version + 1, current);
         }
-        return new MigrationReport(documentType, fromVersion, toVersion, dryRun, java.util.List.copyOf(steps),
+        return new MigrationReport(documentType, fromVersion, toVersion, dryRun, List.copyOf(steps),
                 dryRun ? data.deepCopy() : current);
     }
 
@@ -63,6 +65,6 @@ public final class MigrationRegistry {
 
     public record MigrationReport(
             String documentType, int fromVersion, int toVersion, boolean dryRun,
-            java.util.List<String> steps, JsonElement data
+            List<String> steps, JsonElement data
     ) {}
 }

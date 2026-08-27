@@ -35,6 +35,9 @@ import com.hypixel.hytale.server.core.entity.UUIDComponent;
 import com.hypixel.hytale.server.core.entity.entities.ProjectileComponent;
 import com.hypixel.hytale.server.core.entity.nameplate.Nameplate;
 import com.hypixel.hytale.server.core.inventory.ItemStack;
+import com.hypixel.hytale.server.core.inventory.InventoryComponent;
+import com.hypixel.hytale.server.npc.role.support.StateSupport;
+import com.hypixel.hytale.server.npc.role.support.CombatSupport;
 import com.hypixel.hytale.server.core.modules.entity.component.*;
 import com.hypixel.hytale.server.core.modules.entity.player.PlayerSkinComponent;
 import com.hypixel.hytale.server.core.modules.entity.tracker.NetworkId;
@@ -63,8 +66,11 @@ import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
-import static com.hypixel.hytale.logger.HytaleLogger.getLogger;
 import com.electro.hycitizens.api.scripting.ScriptBlock;
+import com.google.gson.Gson;
+import com.google.gson.reflect.TypeToken;
+import java.lang.reflect.Type;
+import static com.hypixel.hytale.logger.HytaleLogger.getLogger;
 
 public class CitizensManager {
     private static final int MAX_PENDING_HOLOGRAM_REMOVAL_ATTEMPTS = 20;
@@ -1543,8 +1549,8 @@ public class CitizensManager {
         String scriptsJson = config.getString(basePath + ".scripts");
         if (scriptsJson != null && !scriptsJson.isEmpty()) {
             try {
-                java.lang.reflect.Type listType = new com.google.gson.reflect.TypeToken<List<ScriptBlock>>(){}.getType();
-                List<ScriptBlock> scripts = new com.google.gson.Gson().fromJson(scriptsJson, listType);
+                Type listType = new TypeToken<List<ScriptBlock>>(){}.getType();
+                List<ScriptBlock> scripts = new Gson().fromJson(scriptsJson, listType);
                 if (scripts != null) {
                     citizenData.setScripts(scripts);
                 }
@@ -1555,8 +1561,8 @@ public class CitizensManager {
         String varsJson = config.getString(basePath + ".scriptVariables");
         if (varsJson != null && !varsJson.isEmpty()) {
             try {
-                java.lang.reflect.Type mapType = new com.google.gson.reflect.TypeToken<Map<String, Object>>(){}.getType();
-                Map<String, Object> vars = new com.google.gson.Gson().fromJson(varsJson, mapType);
+                Type mapType = new TypeToken<Map<String, Object>>(){}.getType();
+                Map<String, Object> vars = new Gson().fromJson(varsJson, mapType);
                 if (vars != null) {
                     citizenData.setScriptVariables(vars);
                 }
@@ -2037,8 +2043,8 @@ public class CitizensManager {
             config.setStringList(basePath + ".disable-damage-groups", citizen.getDisableDamageGroups());
 
             // Save scripts and scriptVariables
-            config.set(basePath + ".scripts", new com.google.gson.Gson().toJson(citizen.getScripts()));
-            config.set(basePath + ".scriptVariables", new com.google.gson.Gson().toJson(citizen.getScriptVariables()));
+            config.set(basePath + ".scripts", new Gson().toJson(citizen.getScripts()));
+            config.set(basePath + ".scriptVariables", new Gson().toJson(citizen.getScriptVariables()));
             config.set(basePath + ".interact-dialogue-id", citizen.getInteractDialogueId());
             config.set(basePath + ".interact-dialogue-trigger", citizen.getInteractDialogueTrigger());
 
@@ -2118,7 +2124,7 @@ public class CitizensManager {
     }
 
     public void updateCitizenNPCItems(CitizenData citizen) {
-        if (citizen.getSpawnedUUID() == null || citizen.getNpcRef() == null) {
+        if (citizen.getSpawnedUUID() == null || citizen.getNpcRef() == null || !citizen.getNpcRef().isValid()) {
             return;
         }
 
@@ -2142,53 +2148,49 @@ public class CitizensManager {
         }
 
 
+        Ref<EntityStore> npcRef = citizen.getNpcRef();
+        Store<EntityStore> store = npcRef.getStore();
+
         // Item in hand
-        if (citizen.getNpcHand() == null) {
-            npcEntity.getInventory().getHotbar().setItemStackForSlot((short) 0, null);
-        }
-        else {
-            npcEntity.getInventory().getHotbar().setItemStackForSlot((short) 0, new ItemStack(citizen.getNpcHand()));
-        }
-
-        // Item in offhand
-        // Todo: Re-add
-//        if (citizen.getNpcOffHand() == null) {
-//            npcEntity.getInventory().getUtility().setItemStackForSlot((short) 0, null);
-//        }
-//        else {
-//            npcEntity.getInventory().getUtility().setItemStackForSlot((short) 0, new ItemStack(citizen.getNpcOffHand()));
-//        }
-
-        // Set helmet
-        if (citizen.getNpcHelmet() == null) {
-            npcEntity.getInventory().getArmor().setItemStackForSlot((short) 0, null);
-        }
-        else {
-            npcEntity.getInventory().getArmor().setItemStackForSlot((short) 0, new ItemStack(citizen.getNpcHelmet()));
+        InventoryComponent.Hotbar hotbar = store.getComponent(npcRef, InventoryComponent.Hotbar.getComponentType());
+        if (hotbar != null) {
+            if (citizen.getNpcHand() == null) {
+                hotbar.getInventory().setItemStackForSlot((short) 0, null);
+            } else {
+                hotbar.getInventory().setItemStackForSlot((short) 0, new ItemStack(citizen.getNpcHand()));
+            }
         }
 
-        // Set chest
-        if (citizen.getNpcChest() == null) {
-            npcEntity.getInventory().getArmor().setItemStackForSlot((short) 1, null);
-        }
-        else {
-            npcEntity.getInventory().getArmor().setItemStackForSlot((short) 1, new ItemStack(citizen.getNpcChest()));
-        }
+        // Armor
+        InventoryComponent.Armor armor = store.getComponent(npcRef, InventoryComponent.Armor.getComponentType());
+        if (armor != null) {
+            // Set helmet
+            if (citizen.getNpcHelmet() == null) {
+                armor.getInventory().setItemStackForSlot((short) 0, null);
+            } else {
+                armor.getInventory().setItemStackForSlot((short) 0, new ItemStack(citizen.getNpcHelmet()));
+            }
 
-        // Set gloves
-        if (citizen.getNpcGloves() == null) {
-            npcEntity.getInventory().getArmor().setItemStackForSlot((short) 2, null);
-        }
-        else {
-            npcEntity.getInventory().getArmor().setItemStackForSlot((short) 2, new ItemStack(citizen.getNpcGloves()));
-        }
+            // Set chest
+            if (citizen.getNpcChest() == null) {
+                armor.getInventory().setItemStackForSlot((short) 1, null);
+            } else {
+                armor.getInventory().setItemStackForSlot((short) 1, new ItemStack(citizen.getNpcChest()));
+            }
 
-        // Set leggings
-        if (citizen.getNpcLeggings() == null) {
-            npcEntity.getInventory().getArmor().setItemStackForSlot((short) 3, null);
-        }
-        else {
-            npcEntity.getInventory().getArmor().setItemStackForSlot((short) 3, new ItemStack(citizen.getNpcLeggings()));
+            // Set gloves
+            if (citizen.getNpcGloves() == null) {
+                armor.getInventory().setItemStackForSlot((short) 2, null);
+            } else {
+                armor.getInventory().setItemStackForSlot((short) 2, new ItemStack(citizen.getNpcGloves()));
+            }
+
+            // Set leggings
+            if (citizen.getNpcLeggings() == null) {
+                armor.getInventory().setItemStackForSlot((short) 3, null);
+            } else {
+                armor.getInventory().setItemStackForSlot((short) 3, new ItemStack(citizen.getNpcLeggings()));
+            }
         }
 
         EntityStatMap finalStatMap = statMap;
@@ -2964,7 +2966,7 @@ public class CitizensManager {
         if (scheduleManager != null) {
             scheduleManager.refreshCitizen(citizen);
         }
-        ScriptManager.get().fireTrigger(citizen, "ON_SPAWN", new java.util.HashMap<>(), null, store);
+        ScriptManager.get().fireTrigger(citizen, "ON_SPAWN", new HashMap<>(), null, store);
         citizensCurrentlySpawning.remove(citizen.getId());
     }
 
@@ -2974,28 +2976,31 @@ public class CitizensManager {
         }
 
         PlayerSkin skinToUse = determineSkin(citizen);
-
-        float scale = Math.max((float)0.01, citizen.getScale());
-        Model playerModel;
-
-        if (skinToUse != null && !SkinUtilities.isValidSkin(skinToUse)) {
-            getLogger().atWarning().log("Citizen '" + citizen.getId() + "' has an invalid cached skin. Using the default skin for this spawn.");
+        if (skinToUse == null) {
             skinToUse = SkinUtilities.createDefaultSkin();
+        } else {
+            skinToUse = SkinUtilities.sanitizeSkin(skinToUse);
         }
 
-        if (skinToUse != null) {
+        float scale = Math.max((float)0.01, citizen.getScale());
+        Model playerModel = null;
+
+        try {
+            playerModel = CosmeticsModule.get().createModel(skinToUse, scale);
+        } catch (Exception e) {
+            getLogger().atWarning().log("Failed to create player skin model for citizen '" + citizen.getId() + "': " + e.getMessage());
+        }
+
+        if (playerModel == null) {
+            skinToUse = SkinUtilities.createDefaultSkin();
             try {
                 playerModel = CosmeticsModule.get().createModel(skinToUse, scale);
-            } catch (Exception e) {
-                getLogger().atWarning().log("Failed to create player skin model for citizen '" + citizen.getId() + "': " + e.getMessage());
-                skinToUse = SkinUtilities.createDefaultSkin();
-                try {
-                    playerModel = CosmeticsModule.get().createModel(skinToUse, scale);
-                } catch (Exception fallbackError) {
-                    playerModel = null;
-                }
+            } catch (Exception fallbackError) {
+                playerModel = null;
             }
-        } else {
+        }
+
+        if (playerModel == null) {
             Map<String, String> randomAttachmentIds = new HashMap<>();
             playerModel = new Model.ModelReference("Player", scale, randomAttachmentIds).toModel();
         }
@@ -3079,7 +3084,7 @@ public class CitizensManager {
         if (scheduleManager != null) {
             scheduleManager.refreshCitizen(citizen);
         }
-        ScriptManager.get().fireTrigger(citizen, "ON_SPAWN", new java.util.HashMap<>(), null, store);
+        ScriptManager.get().fireTrigger(citizen, "ON_SPAWN", new HashMap<>(), null, store);
         citizensCurrentlySpawning.remove(citizen.getId());
     }
 
@@ -3642,18 +3647,23 @@ public class CitizensManager {
     }
 
     private void applyPlayerModelAppearance(@Nonnull Ref<EntityStore> npcRef, @Nonnull CitizenData citizen, @Nonnull PlayerSkin skin) {
-        if (!SkinUtilities.isValidSkin(skin)) {
-            getLogger().atWarning().log("Skipped invalid skin while restoring appearance for citizen '" + citizen.getId() + "'.");
-            return;
-        }
+        PlayerSkin sanitizedSkin = SkinUtilities.sanitizeSkin(skin);
 
         float scale = Math.max(0.01f, citizen.getScale());
-        Model newModel;
+        Model newModel = null;
         try {
-            newModel = CosmeticsModule.get().createModel(skin, scale);
+            newModel = CosmeticsModule.get().createModel(sanitizedSkin, scale);
         } catch (Exception e) {
             getLogger().atWarning().log("Failed to create skin model while restoring appearance for citizen '" + citizen.getId() + "': " + e.getMessage());
-            return;
+        }
+        if (newModel == null) {
+            try {
+                PlayerSkin defaultSkin = SkinUtilities.createDefaultSkin();
+                newModel = CosmeticsModule.get().createModel(defaultSkin, scale);
+                sanitizedSkin = defaultSkin;
+            } catch (Exception e) {
+                getLogger().atWarning().log("Failed to create fallback skin model for citizen '" + citizen.getId() + "': " + e.getMessage());
+            }
         }
         if (newModel == null) {
             getLogger().atWarning().log("Failed to create skin model while restoring appearance for citizen '" + citizen.getId() + "'.");
@@ -3661,7 +3671,7 @@ public class CitizensManager {
         }
         newModel = withSafeAnimationSetMap(newModel);
 
-        npcRef.getStore().putComponent(npcRef, PlayerSkinComponent.getComponentType(), new PlayerSkinComponent(skin));
+        npcRef.getStore().putComponent(npcRef, PlayerSkinComponent.getComponentType(), new PlayerSkinComponent(sanitizedSkin));
         npcRef.getStore().putComponent(npcRef, ModelComponent.getComponentType(), new ModelComponent(newModel));
 
         PersistentModel persistentModel = npcRef.getStore().getComponent(npcRef, PersistentModel.getComponentType());
@@ -3766,24 +3776,29 @@ public class CitizensManager {
     }
 
     public void applySkinPreview(CitizenData citizen, PlayerSkin skin) {
-        if (!SkinUtilities.isValidSkin(skin)) {
-            getLogger().atWarning().log("Skipped invalid skin preview for citizen '" + citizen.getId() + "'.");
-            return;
-        }
-
         if (citizen.getSpawnedUUID() != null) {
             World world = Universe.get().getWorld(citizen.getWorldUUID());
             if (world != null) {
                 Ref<EntityStore> npcRef = world.getEntityRef(citizen.getSpawnedUUID());
                 if (npcRef != null && npcRef.isValid()) {
                     world.execute(() -> {
+                        PlayerSkin sanitizedSkin = SkinUtilities.sanitizeSkin(skin);
                         float scale = Math.max((float) 0.01, citizen.getScale());
-                        Model newModel;
+                        Model newModel = null;
                         try {
-                            newModel = CosmeticsModule.get().createModel(skin, scale);
+                            newModel = CosmeticsModule.get().createModel(sanitizedSkin, scale);
                         } catch (Exception e) {
                             getLogger().atWarning().log("Failed to create skin model while previewing skin for citizen '" + citizen.getId() + "': " + e.getMessage());
-                            return;
+                        }
+
+                        if (newModel == null) {
+                            try {
+                                PlayerSkin defaultSkin = SkinUtilities.createDefaultSkin();
+                                newModel = CosmeticsModule.get().createModel(defaultSkin, scale);
+                                sanitizedSkin = defaultSkin;
+                            } catch (Exception e) {
+                                getLogger().atWarning().log("Failed to create fallback skin model for preview on citizen '" + citizen.getId() + "': " + e.getMessage());
+                            }
                         }
 
                         if (newModel == null) {
@@ -3792,7 +3807,7 @@ public class CitizensManager {
                         }
                         newModel = withSafeAnimationSetMap(newModel);
 
-                        PlayerSkinComponent skinComponent = new PlayerSkinComponent(skin);
+                        PlayerSkinComponent skinComponent = new PlayerSkinComponent(sanitizedSkin);
                         npcRef.getStore().putComponent(npcRef, PlayerSkinComponent.getComponentType(), skinComponent);
                         ModelComponent modelComponent = new ModelComponent(newModel);
                         npcRef.getStore().putComponent(npcRef, ModelComponent.getComponentType(), modelComponent);
@@ -3999,7 +4014,7 @@ public class CitizensManager {
             return;
         }
 
-        ScriptManager.get().fireTrigger(citizen, "ON_DESPAWN", new java.util.HashMap<>(), null, world.getEntityStore().getStore());
+        ScriptManager.get().fireTrigger(citizen, "ON_DESPAWN", new HashMap<>(), null, world.getEntityStore().getStore());
 
         boolean despawned = false;
         Ref<EntityStore> npcRef = citizen.getNpcRef();
@@ -5480,12 +5495,12 @@ public class CitizensManager {
         }
 
         try {
-            NPCEntity npcEntity = npcRef.getStore().getComponent(npcRef, NPCEntity.getComponentType());
-            if (npcEntity == null || npcEntity.getRole() == null || npcEntity.getRole().getStateSupport() == null) {
+            StateSupport stateSupport = npcRef.getStore().getComponent(npcRef, StateSupport.getComponentType());
+            if (stateSupport == null) {
                 return null;
             }
 
-            return npcEntity.getRole().getStateSupport().getStateName();
+            return stateSupport.getStateName();
         } catch (Exception e) {
             return null;
         }
@@ -5567,11 +5582,8 @@ public class CitizensManager {
 
         world.execute(() -> {
             try {
-                NPCEntity npcEntity = citizen.getNpcRef().getStore().getComponent(
-                        citizen.getNpcRef(), NPCEntity.getComponentType());
-                if (npcEntity == null || npcEntity.getRole() == null) return;
-
-                var combatSupport = npcEntity.getRole().getCombatSupport();
+                CombatSupport combatSupport = citizen.getNpcRef().getStore().getComponent(
+                        citizen.getNpcRef(), CombatSupport.getComponentType());
                 if (combatSupport == null) return;
 
                 combatSupport.clearAttackOverrides();
@@ -5887,9 +5899,9 @@ public class CitizensManager {
         if (isNowInCombat != citizen.wasInCombat()) {
             citizen.setWasInCombat(isNowInCombat);
             if (isNowInCombat) {
-                ScriptManager.get().fireTrigger(citizen, "ON_COMBAT_START", new java.util.HashMap<>(), null, null);
+                ScriptManager.get().fireTrigger(citizen, "ON_COMBAT_START", new HashMap<>(), null, null);
             } else {
-                ScriptManager.get().fireTrigger(citizen, "ON_COMBAT_END", new java.util.HashMap<>(), null, null);
+                ScriptManager.get().fireTrigger(citizen, "ON_COMBAT_END", new HashMap<>(), null, null);
             }
         }
     }

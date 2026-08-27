@@ -12,6 +12,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -118,8 +119,8 @@ public final class GeneratedAssetReloader {
     public static boolean reloadAssetMapEntry(@Nonnull Object assetMap,
                                               @Nonnull Object assetCodec,
                                               @Nonnull String packKey,
-                                              @Nonnull java.util.Map<String, Object> assets,
-                                              @Nonnull java.util.Map<String, Path> paths) {
+                                              @Nonnull Map<String, Object> assets,
+                                              @Nonnull Map<String, Path> paths) {
         try {
             Method putAll = findPutAllMethod(assetMap.getClass());
             if (putAll == null) {
@@ -127,7 +128,7 @@ public final class GeneratedAssetReloader {
             }
 
             putAll.setAccessible(true);
-            putAll.invoke(assetMap, packKey, assetCodec, assets, paths, java.util.Collections.emptyMap());
+            putAll.invoke(assetMap, packKey, assetCodec, assets, paths, Collections.emptyMap());
             return true;
         } catch (Throwable throwable) {
             getLogger().atWarning().log("[HyCitizens] Could not reload generated asset map entry: " + throwable.getMessage());

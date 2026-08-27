@@ -5,6 +5,7 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 
 import java.util.LinkedHashSet;
+import java.util.Objects;
 import java.util.Set;
 
 public final class JsonDiffSummary {
@@ -16,7 +17,7 @@ public final class JsonDiffSummary {
             JsonObject after = JsonParser.parseString(afterJson).getAsJsonObject();
             Set<String> keys = new LinkedHashSet<>(before.keySet());
             keys.addAll(after.keySet());
-            keys.removeIf(key -> java.util.Objects.equals(before.get(key), after.get(key)));
+            keys.removeIf(key -> Objects.equals(before.get(key), after.get(key)));
             return keys.isEmpty() ? "content hash changed" : "changed fields: " + String.join(", ", keys);
         } catch (RuntimeException error) {
             return "content hash changed";

@@ -14,6 +14,7 @@ import com.hypixel.hytale.server.core.modules.entity.component.TransformComponen
 import com.electro.hycitizens.HyCitizensPlugin;
 import com.hypixel.hytale.server.core.entity.entities.Player;
 import com.hypixel.hytale.server.core.inventory.ItemStack;
+import com.hypixel.hytale.server.core.inventory.InventoryComponent;
 import com.hypixel.hytale.server.core.inventory.container.CombinedItemContainer;
 import com.hypixel.hytale.server.core.modules.time.WorldTimeResource;
 import java.util.concurrent.ThreadLocalRandom;
@@ -22,8 +23,10 @@ import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-import static com.hypixel.hytale.logger.HytaleLogger.getLogger;
+import com.hypixel.hytale.builtin.weather.resources.WeatherResource;
 import com.hypixel.hytale.component.ResourceType;
+import com.hypixel.hytale.server.core.asset.type.weather.config.Weather;
+import static com.hypixel.hytale.logger.HytaleLogger.getLogger;
 
 public class ScriptExpressionEvaluator {
 
@@ -310,7 +313,7 @@ public class ScriptExpressionEvaluator {
             double result = evaluateMathExpression(expression);
             if (result == 0.0 && !expression.trim().matches("[\\d\\s+\\-*/%().]+")) {
                 String citizenId = (context != null && context.getCitizen() != null) ? context.getCitizen().getId() : "unknown";
-                getLogger().atWarning().log("[HyCitizens] Script EVAL expression returned 0 (possible bad variable or syntax) — citizen: " + citizenId + ", expression: {EVAL: " + expression + "}");
+                getLogger().atWarning().log("[HyCitizens] Script EVAL expression returned 0 (possible bad variable or syntax) - citizen: " + citizenId + ", expression: {EVAL: " + expression + "}");
             }
             String formatted = String.format(Locale.ROOT, "%.2f", result);
             if (formatted.endsWith(".00")) {
@@ -379,7 +382,7 @@ public class ScriptExpressionEvaluator {
                         while ((ch >= '0' && ch <= '9') || ch == '.') nextChar();
                         x = Double.parseDouble(expr.substring(startPos, this.pos));
                     } else {
-                        // Unparseable token — skip it and return 0 (caller logs the full expression)
+                        // Unparseable token - skip it and return 0 (caller logs the full expression)
                         while (ch != -1 && ch != ' ' && ch != '+' && ch != '-' && ch != '*' && ch != '/' && ch != '%' && ch != ')') {
                             nextChar();
                         }
@@ -432,11 +435,13 @@ public class ScriptExpressionEvaluator {
 
     private static String getCurrentWeather(ScriptContext context) {
         try {
-            Class<?> weatherClass = Class.forName("com.hypixel.hytale.server.core.modules.weather.WorldWeatherResource");
-            ResourceType<EntityStore, ?> resourceType = (ResourceType<EntityStore, ?>) weatherClass.getMethod("getResourceType").invoke(null);
-            Object weatherResource = context.getStore().getResource(resourceType);
+            WeatherResource weatherResource = context.getStore().getResource(WeatherResource.getResourceType());
             if (weatherResource != null) {
-                return weatherResource.getClass().getMethod("getWeatherType").invoke(weatherResource).toString();
+                int forcedIndex = weatherResource.getForcedWeatherIndex();
+                if (forcedIndex != Weather.UNKNOWN_ID) {
+                    Weather weather = Weather.getAssetMap().getAsset(forcedIndex);
+                    if (weather != null && weather.getId() != null) return weather.getId();
+                }
             }
         } catch (Exception ignored) {}
         return "CLEAR";
@@ -445,9 +450,9 @@ public class ScriptExpressionEvaluator {
     private static int getFreeInventorySlots(ScriptContext context) {
         PlayerRef playerRef = context.getPlayer();
         if (playerRef == null) return 0;
-        Player p = playerRef.getReference().getStore().getComponent(playerRef.getReference(), Player.getComponentType());
-        if (p == null) return 0;
-        CombinedItemContainer container = p.getInventory().getCombinedHotbarFirst();
+        Ref<EntityStore> ref = playerRef.getReference();
+        if (ref == null || !ref.isValid()) return 0;
+        CombinedItemContainer container = InventoryComponent.getCombined(ref.getStore(), ref, InventoryComponent.HOTBAR_FIRST);
         if (container == null) return 0;
         int free = 0;
         for (short i = 0; i < container.getCapacity(); i++) {

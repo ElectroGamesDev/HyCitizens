@@ -1,9 +1,12 @@
 package com.electro.hycitizens.api.dialogue;
 
+import com.electro.hycitizens.api.scripting.ScriptAction;
+import com.electro.hycitizens.api.scripting.ScriptCondition;
 import com.google.gson.Gson;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.IntConsumer;
 
 public final class DialogMutationService {
     private final Map<UUID, DialogPatch> patches = new ConcurrentHashMap<>();
@@ -90,16 +93,16 @@ public final class DialogMutationService {
                     .findFirst()
                     .ifPresent(response -> response.setText(patch.value()));
             case ADD_CONDITION -> node.addCondition(
-                    gson.fromJson(patch.value(), com.electro.hycitizens.api.scripting.ScriptCondition.class));
+                    gson.fromJson(patch.value(), ScriptCondition.class));
             case REMOVE_CONDITION -> removeIndexed(node::removeCondition, patch.value());
             case ADD_ACTION -> node.addAction(
-                    gson.fromJson(patch.value(), com.electro.hycitizens.api.scripting.ScriptAction.class));
+                    gson.fromJson(patch.value(), ScriptAction.class));
             case REMOVE_ACTION -> removeIndexed(node::removeAction, patch.value());
             case INJECT_NODE -> { }
         }
     }
 
-    private void removeIndexed(java.util.function.IntConsumer remover, String rawIndex) {
+    private void removeIndexed(IntConsumer remover, String rawIndex) {
         try {
             int index = Integer.parseInt(rawIndex);
             if (index >= 0) remover.accept(index);

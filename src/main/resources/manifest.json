@@ -12,7 +12,7 @@
   "Website": "https://github.com/ElectroGamesDev",
   "Main": "com.electro.hycitizens.HyCitizensPlugin",
   "IncludesAssetPack": true,
-  "ServerVersion": ">=0.5.0-pre.9 <0.6.0",
+  "ServerVersion": ">=0.6.0-pre.13.1 <0.7.0",
   "OptionalDependencies": {
     "electro:HyCitizensData": "*"
   }

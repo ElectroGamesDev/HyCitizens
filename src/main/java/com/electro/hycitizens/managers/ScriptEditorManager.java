@@ -2,10 +2,14 @@ package com.electro.hycitizens.managers;
 
 import com.electro.hycitizens.HyCitizensPlugin;
 import com.electro.hycitizens.api.scripting.ScriptBlock;
+import com.electro.hycitizens.api.scripting.ScriptManager;
 import com.electro.hycitizens.models.CitizenData;
+import com.electro.hycitizens.util.JsonDiffSummary;
 import com.electro.hycitizens.util.ResourceId;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
+import com.google.gson.JsonArray;
+import com.google.gson.JsonObject;
 import com.google.gson.reflect.TypeToken;
 import com.hypixel.hytale.component.Store;
 import com.hypixel.hytale.server.core.HytaleServer;
@@ -83,7 +87,7 @@ public class ScriptEditorManager {
         payload.put("payload_sha256", payloadSha256);
         payload.put("documentType", "hycitizens:script-editor-upload");
         payload.put("schemaVersion", 1);
-        payload.put("capabilities", com.electro.hycitizens.api.scripting.ScriptManager.get().getCapabilitySchema());
+        payload.put("capabilities", ScriptManager.get().getCapabilitySchema());
         payload.put("owner_uuid", playerRef.getUuid().toString());
         payload.put("resource_id", citizenId);
         payload.put("editor_type", "script");
@@ -211,8 +215,8 @@ public class ScriptEditorManager {
 
                     try {
                         // fetch.php returns {citizen_id, citizen_name, scripts:[…]}
-                        com.google.gson.JsonObject root = gson.fromJson(response.body(), com.google.gson.JsonObject.class);
-                        com.google.gson.JsonArray scriptsArray = root.has("scripts") ? root.getAsJsonArray("scripts") : root.getAsJsonArray();
+                        JsonObject root = gson.fromJson(response.body(), JsonObject.class);
+                        JsonArray scriptsArray = root.has("scripts") ? root.getAsJsonArray("scripts") : root.getAsJsonArray();
                         List<ScriptBlock> parsed = gson.fromJson(scriptsArray, new TypeToken<List<ScriptBlock>>(){}.getType());
                         if (parsed == null) parsed = new ArrayList<>();
 
@@ -224,7 +228,7 @@ public class ScriptEditorManager {
                                 if (!sha256(currentJson).equals(session.baseHash)) {
                                     restoreSession(session);
                                     playerRef.sendMessage(Message.raw("[HyCitizens] Citizen scripts changed after this editor session started. "
-                                            + com.electro.hycitizens.util.JsonDiffSummary.changedTopLevelFields(
+                                            + JsonDiffSummary.changedTopLevelFields(
                                             "{\"scripts\":" + session.baseJson + "}",
                                             "{\"scripts\":" + currentJson + "}")
                                             + ". Start a new session before overwriting.").color(Color.RED));
@@ -273,7 +277,7 @@ public class ScriptEditorManager {
 
     private String sha256(String value) {
         try {
-            return java.util.HexFormat.of().formatHex(
+            return HexFormat.of().formatHex(
                     MessageDigest.getInstance("SHA-256").digest(value.getBytes(StandardCharsets.UTF_8))
             );
         } catch (Exception e) {

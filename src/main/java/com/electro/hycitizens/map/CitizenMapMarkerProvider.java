@@ -19,7 +19,6 @@ import com.hypixel.hytale.server.core.util.PositionUtil;
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
 import java.util.ArrayList;
-import java.util.Collection;
 import java.util.List;
 import java.util.UUID;
 
@@ -43,7 +42,7 @@ public final class CitizenMapMarkerProvider implements WorldMapManager.MarkerPro
         }
 
         List<PendingMarker> pendingMarkers = new ArrayList<>();
-        PlayerRef viewerRef = findViewerRef(world.getPlayerRefs(), viewer.getUuid());
+        PlayerRef viewerRef = viewer.getPlayerRef();
         Vector3d viewerPosition = viewerRef != null && viewerRef.getTransform() != null
                 ? new Vector3d(viewerRef.getTransform().getPosition())
                 : null;
@@ -115,20 +114,6 @@ public final class CitizenMapMarkerProvider implements WorldMapManager.MarkerPro
                 .replace('\n', ' ')
                 .trim();
         return name;
-    }
-
-    @Nullable
-    private static PlayerRef findViewerRef(@Nullable Collection<PlayerRef> playerRefs, @Nullable UUID viewerUuid) {
-        if (playerRefs == null || viewerUuid == null) {
-            return null;
-        }
-
-        for (PlayerRef playerRef : playerRefs) {
-            if (playerRef != null && viewerUuid.equals(playerRef.getUuid())) {
-                return playerRef;
-            }
-        }
-        return null;
     }
 
     private static boolean isWithinCustomMarkerDistance(@Nonnull CitizenData citizen, @Nonnull Vector3d markerPosition, @Nullable Vector3d viewerPosition) {

@@ -7,6 +7,7 @@ import javax.annotation.Nullable;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Objects;
 
 public class DialogueNode implements IDialogueNode {
     private String type = "hycitizens:speech";
@@ -78,7 +79,7 @@ public class DialogueNode implements IDialogueNode {
     public void addAction(ScriptAction action) { getMutableActions().add(action); }
     public void addResponse(DialogueResponse response) { getMutableResponses().add(response); }
     public void removeResponsesById(String responseId) {
-        getMutableResponses().removeIf(response -> java.util.Objects.equals(response.getId(), responseId));
+        getMutableResponses().removeIf(response -> Objects.equals(response.getId(), responseId));
     }
     public void removeCondition(int index) {
         if (index >= 0 && index < getMutableConditions().size()) getMutableConditions().remove(index);

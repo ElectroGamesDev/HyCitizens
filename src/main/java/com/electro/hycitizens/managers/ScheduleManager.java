@@ -25,8 +25,10 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
@@ -50,7 +52,7 @@ public class ScheduleManager {
 
     private final CitizensManager citizensManager;
     private final Map<String, ScheduleSession> sessions = new ConcurrentHashMap<>();
-    private final java.util.Set<String> queuedTicks = ConcurrentHashMap.newKeySet();
+    private final Set<String> queuedTicks = ConcurrentHashMap.newKeySet();
     private ThreadedScheduler task = new ThreadedScheduler();
 
     public ScheduleManager(@Nonnull CitizensManager citizensManager) {
@@ -538,7 +540,7 @@ public class ScheduleManager {
 
         citizen.setCurrentScheduleRuntimeState(ScheduleRuntimeState.ACTIVE);
         citizen.setCurrentScheduleStatusText("Following " + leader.getName()
-                + " @ " + String.format(java.util.Locale.ROOT, "%.1f", entry.getFollowDistance()));
+                + " @ " + String.format(Locale.ROOT, "%.1f", entry.getFollowDistance()));
         return true;
     }
 
@@ -658,7 +660,7 @@ public class ScheduleManager {
             minute = 0;
             hour = Math.min(24, hour + 1);
         }
-        return String.format(java.util.Locale.ROOT, "%02d:%02d", hour, minute);
+        return String.format(Locale.ROOT, "%02d:%02d", hour, minute);
     }
 
     private void updateCitizenLeashPoint(@Nonnull CitizenData citizen, @Nonnull Vector3d position) {
@@ -783,7 +785,7 @@ public class ScheduleManager {
             case FOLLOW_CITIZEN -> {
                 CitizenData leader = citizensManager.getCitizen(entry.getFollowCitizenId());
                 yield leader != null
-                        ? "Following " + leader.getName() + " @ " + String.format(java.util.Locale.ROOT, "%.1f", entry.getFollowDistance())
+                        ? "Following " + leader.getName() + " @ " + String.format(Locale.ROOT, "%.1f", entry.getFollowDistance())
                         : "Following from " + location.getName();
             }
         };
