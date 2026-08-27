@@ -2,7 +2,9 @@ package com.electro.hycitizens.models;
 
 import com.electro.hycitizens.api.scripting.ScriptBlock;
 import com.electro.hycitizens.roles.RoleGenerator;
+import com.electro.hycitizens.util.RotationUtil;
 import com.hypixel.hytale.component.Ref;
+import com.hypixel.hytale.math.vector.Rotation3f;
 import org.joml.Vector3d;
 import org.joml.Vector3f;
 import com.hypixel.hytale.protocol.Direction;
@@ -48,7 +50,8 @@ public class CitizenData {
     private String modelId;
     private Vector3d position;
     private Vector3f rotation;
-    private Vector3d currentPosition;
+    private volatile Vector3d currentPosition;
+    private volatile Rotation3f currentRotation;
     private float scale;
     private String requiredPermission;
     private String noPermissionMessage;
@@ -231,6 +234,7 @@ public class CitizenData {
         this.position = position;
         this.rotation = rotation;
         this.currentPosition = position;
+        this.currentRotation = rotation != null ? RotationUtil.toRotation(rotation) : new Rotation3f();
         this.scale = sanitizeModelScale(scale);
         this.requiredPermission = requiredPermission;
         this.noPermissionMessage = noPermissionMessage;
@@ -327,13 +331,22 @@ public class CitizenData {
         this.rotation = rotation;
     }
 
-    public void setCurrentPosition (@Nonnull Vector3d currentPosition) {
+    public void setCurrentPosition(@Nullable Vector3d currentPosition) {
         this.currentPosition = currentPosition;
     }
 
-    @Nonnull
+    @Nullable
     public Vector3d getCurrentPosition() {
         return currentPosition;
+    }
+
+    public void setCurrentRotation(@Nullable Rotation3f currentRotation) {
+        this.currentRotation = currentRotation;
+    }
+
+    @Nullable
+    public Rotation3f getCurrentRotation() {
+        return currentRotation;
     }
 
     public float getScale() {

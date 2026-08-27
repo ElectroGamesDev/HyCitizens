@@ -190,7 +190,7 @@ public class SkinCustomizerUI {
                             </div>
                         </div>
 
-                        <div class="footer" style="layout: center; flex-weight: 0; padding: 26 16 26 16; border-top: 1 solid #1a293c; width: 100%; vertical-align: center;">
+                        <div class="footer" style="layout: center; flex-weight: 0; padding: 26 16 26 16; border-top: 1 solid #1a293c; anchor-width: 100%%; vertical-align: center;">
                             <button id="randomize-all-btn" class="secondary-button" style="anchor-width: 160; anchor-height: 40;">Randomize</button>
                             <div style="flex-weight: 1;"></div>
                             <button id="cancel-btn" class="secondary-button" style="anchor-width: 130; anchor-height: 40;">Cancel</button>

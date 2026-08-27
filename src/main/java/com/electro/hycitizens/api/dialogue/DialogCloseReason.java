@@ -4,5 +4,6 @@ public enum DialogCloseReason {
     ADVANCE,
     PLAYER_DISMISS,
     SYSTEM_REPLACE,
-    COMPLETE
+    COMPLETE,
+    DISTANCE_EXCEEDED
 }

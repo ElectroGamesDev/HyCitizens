@@ -27,76 +27,119 @@ public class PlayerDialogState {
 
     public UUID getPlayerId() { return playerId; }
     public void setPlayerId(UUID playerId) { this.playerId = playerId; }
-    public Set<String> getSeenDialogs() { return seenDialogs; }
-    public Set<String> getCompletedDialogs() { return completedDialogs; }
-    public Map<String, Set<String>> getSeenNodes() { return seenNodes; }
-    public Map<String, Set<String>> getCompletedNodes() { return completedNodes; }
-    public Map<String, Integer> getDialogVisits() { return dialogVisits; }
-    public Map<String, Map<String, Integer>> getNodeVisits() { return nodeVisits; }
-    public Map<String, Map<String, Integer>> getResponseChoices() { return responseChoices; }
-    public Map<String, Long> getFirstInteractionAt() { return firstInteractionAt; }
-    public Map<String, Long> getLastInteractionAt() { return lastInteractionAt; }
-    public Map<String, Long> getCompletionTimes() { return completionTimes; }
-    public Map<String, String> getLastVisitedNode() { return lastVisitedNode; }
+    public Set<String> getSeenDialogs() {
+        if (seenDialogs == null) seenDialogs = new HashSet<>();
+        return seenDialogs;
+    }
+    public Set<String> getCompletedDialogs() {
+        if (completedDialogs == null) completedDialogs = new HashSet<>();
+        return completedDialogs;
+    }
+    public Map<String, Set<String>> getSeenNodes() {
+        if (seenNodes == null) seenNodes = new HashMap<>();
+        return seenNodes;
+    }
+    public Map<String, Set<String>> getCompletedNodes() {
+        if (completedNodes == null) completedNodes = new HashMap<>();
+        return completedNodes;
+    }
+    public Map<String, Integer> getDialogVisits() {
+        if (dialogVisits == null) dialogVisits = new HashMap<>();
+        return dialogVisits;
+    }
+    public Map<String, Map<String, Integer>> getNodeVisits() {
+        if (nodeVisits == null) nodeVisits = new HashMap<>();
+        return nodeVisits;
+    }
+    public Map<String, Map<String, Integer>> getResponseChoices() {
+        if (responseChoices == null) responseChoices = new HashMap<>();
+        return responseChoices;
+    }
+    public Map<String, Long> getFirstInteractionAt() {
+        if (firstInteractionAt == null) firstInteractionAt = new HashMap<>();
+        return firstInteractionAt;
+    }
+    public Map<String, Long> getLastInteractionAt() {
+        if (lastInteractionAt == null) lastInteractionAt = new HashMap<>();
+        return lastInteractionAt;
+    }
+    public Map<String, Long> getCompletionTimes() {
+        if (completionTimes == null) completionTimes = new HashMap<>();
+        return completionTimes;
+    }
+    public Map<String, String> getLastVisitedNode() {
+        if (lastVisitedNode == null) lastVisitedNode = new HashMap<>();
+        return lastVisitedNode;
+    }
     public String getLastActiveDialogId() { return lastActiveDialogId; }
     public String getLastActiveNpcId() { return lastActiveNpcId; }
-    public Map<String, Map<String, ResumableSession>> getResumableSessions() { return resumableSessions; }
+    public Map<String, Map<String, ResumableSession>> getResumableSessions() {
+        if (resumableSessions == null) resumableSessions = new HashMap<>();
+        return resumableSessions;
+    }
 
     public ResumableSession getResumableSession(String dialogId, String npcId) {
-        return resumableSessions.getOrDefault(dialogId, Map.of()).get(npcId != null ? npcId : "");
+        return getResumableSessions().getOrDefault(dialogId, Map.of()).get(npcId != null ? npcId : "");
     }
 
     public void putResumableSession(ResumableSession session) {
-        resumableSessions.computeIfAbsent(session.dialogId(), ignored -> new HashMap<>())
+        getResumableSessions().computeIfAbsent(session.dialogId(), ignored -> new HashMap<>())
                 .put(session.npcId() != null ? session.npcId() : "", session);
     }
 
     public void removeResumableSession(String dialogId, String npcId) {
-        Map<String, ResumableSession> byNpc = resumableSessions.get(dialogId);
+        Map<String, ResumableSession> byNpc = getResumableSessions().get(dialogId);
         if (byNpc == null) return;
         byNpc.remove(npcId != null ? npcId : "");
-        if (byNpc.isEmpty()) resumableSessions.remove(dialogId);
+        if (byNpc.isEmpty()) getResumableSessions().remove(dialogId);
     }
-    public Map<String, Object> getCustomState() { return customState; }
-    public Deque<HistoryEntry> getHistory() { return history; }
+    public Map<String, Object> getCustomState() {
+        if (customState == null) customState = new HashMap<>();
+        return customState;
+    }
+    public Deque<HistoryEntry> getHistory() {
+        if (history == null) history = new ArrayDeque<>();
+        return history;
+    }
 
     public void recordStart(String dialogId, String npcId, long now) {
-        seenDialogs.add(dialogId);
-        dialogVisits.merge(dialogId, 1, Integer::sum);
-        firstInteractionAt.putIfAbsent(dialogId, now);
-        lastInteractionAt.put(dialogId, now);
+        getSeenDialogs().add(dialogId);
+        getDialogVisits().merge(dialogId, 1, Integer::sum);
+        getFirstInteractionAt().putIfAbsent(dialogId, now);
+        getLastInteractionAt().put(dialogId, now);
         lastActiveDialogId = dialogId;
         lastActiveNpcId = npcId;
         addHistory(new HistoryEntry(now, "START", dialogId, null, null, npcId));
     }
 
     public void recordNode(String dialogId, String nodeId, String npcId, long now) {
-        seenNodes.computeIfAbsent(dialogId, ignored -> new HashSet<>()).add(nodeId);
-        nodeVisits.computeIfAbsent(dialogId, ignored -> new HashMap<>()).merge(nodeId, 1, Integer::sum);
-        lastInteractionAt.put(dialogId, now);
-        lastVisitedNode.put(dialogId, nodeId);
+        getSeenNodes().computeIfAbsent(dialogId, ignored -> new HashSet<>()).add(nodeId);
+        getNodeVisits().computeIfAbsent(dialogId, ignored -> new HashMap<>()).merge(nodeId, 1, Integer::sum);
+        getLastInteractionAt().put(dialogId, now);
+        getLastVisitedNode().put(dialogId, nodeId);
         lastActiveDialogId = dialogId;
         lastActiveNpcId = npcId;
         addHistory(new HistoryEntry(now, "NODE", dialogId, nodeId, null, npcId));
     }
 
     public void recordResponse(String dialogId, String responseId, String nodeId, String npcId, long now) {
-        responseChoices.computeIfAbsent(dialogId, ignored -> new HashMap<>()).merge(responseId, 1, Integer::sum);
-        completedNodes.computeIfAbsent(dialogId, ignored -> new HashSet<>()).add(nodeId);
+        getResponseChoices().computeIfAbsent(dialogId, ignored -> new HashMap<>()).merge(responseId, 1, Integer::sum);
+        getCompletedNodes().computeIfAbsent(dialogId, ignored -> new HashSet<>()).add(nodeId);
         addHistory(new HistoryEntry(now, "RESPONSE", dialogId, nodeId, responseId, npcId));
     }
 
     public void recordCompletion(String dialogId, String nodeId, String responseId, String npcId, long now) {
-        completedDialogs.add(dialogId);
-        completionTimes.put(dialogId, now);
-        completedNodes.computeIfAbsent(dialogId, ignored -> new HashSet<>()).add(nodeId);
+        getCompletedDialogs().add(dialogId);
+        getCompletionTimes().put(dialogId, now);
+        getCompletedNodes().computeIfAbsent(dialogId, ignored -> new HashSet<>()).add(nodeId);
         addHistory(new HistoryEntry(now, "COMPLETE", dialogId, nodeId, responseId, npcId));
     }
 
     private void addHistory(HistoryEntry entry) {
-        history.addLast(entry);
-        while (history.size() > 200) {
-            history.removeFirst();
+        Deque<HistoryEntry> hist = getHistory();
+        hist.addLast(entry);
+        while (hist.size() > 200) {
+            hist.removeFirst();
         }
     }
 

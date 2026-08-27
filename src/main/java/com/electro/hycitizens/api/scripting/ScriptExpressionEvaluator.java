@@ -1,6 +1,9 @@
 package com.electro.hycitizens.api.scripting;
 
 import com.electro.hycitizens.models.CitizenData;
+import com.electro.hycitizens.managers.DialogueManager;
+import com.electro.hycitizens.api.dialogue.DialogueSession;
+import com.electro.hycitizens.api.dialogue.PlayerDialogState;
 import com.hypixel.hytale.server.core.universe.PlayerRef;
 import com.hypixel.hytale.server.core.modules.entitystats.EntityStatMap;
 import com.hypixel.hytale.server.core.modules.entitystats.EntityStatValue;
@@ -30,7 +33,7 @@ import static com.hypixel.hytale.logger.HytaleLogger.getLogger;
 
 public class ScriptExpressionEvaluator {
 
-    private static final Pattern PLACEHOLDER_PATTERN = Pattern.compile("%([a-zA-Z0-9_]+):([a-zA-Z0-9_\\.]+)(?::([a-zA-Z0-9_\\.]+))?%");
+    private static final Pattern PLACEHOLDER_PATTERN = Pattern.compile("(?:%|\\{\\{|\\$\\{)\\s*([a-zA-Z0-9_]+)[\\.:]([a-zA-Z0-9_\\.]+)(?:[\\.:]([a-zA-Z0-9_\\.]+))?\\s*(?:%|\\}\\}|\\})");
     private static final Pattern EVAL_PATTERN = Pattern.compile("\\{EVAL:\\s*([^\\}]+)\\}");
     private static final Pattern IF_PATTERN = Pattern.compile("\\{IF:\\s*([^\\s]+)\\s*([^\\s]+)\\s*([^\\s]+)\\s*THEN:\\s*(.*?)\\s*ELSE:\\s*(.*?)\\}");
 
@@ -129,6 +132,8 @@ public class ScriptExpressionEvaluator {
                 }
             } else if ("distance".equals(scope)) {
                 resolvedValue = String.valueOf(calculateDistance(context));
+            } else if ("dialog".equals(scope) || "dialogue".equals(scope)) {
+                resolvedValue = resolveDialogueField(varName, extraArg, context);
             } else {
                 resolvedValue = matcher.group(0); // keep original
             }
@@ -137,6 +142,51 @@ public class ScriptExpressionEvaluator {
         }
         matcher.appendTail(sb);
         return sb.toString();
+    }
+
+    private static String resolveDialogueField(String field, String extraArg, ScriptContext context) {
+        PlayerRef player = context.getPlayer();
+        DialogueSession session = (player != null) ? DialogueManager.get().getDialogueSession(player) : null;
+        String dialogId = (extraArg != null && !extraArg.isEmpty()) ? extraArg : (session != null ? session.getDialogue().getId() : "");
+
+        if ("id".equalsIgnoreCase(field)) {
+            return session != null ? session.getDialogue().getId() : (extraArg != null ? extraArg : "");
+        } else if ("title".equalsIgnoreCase(field)) {
+            if (session != null && (extraArg == null || extraArg.isEmpty())) {
+                return session.getDialogue().getTitle();
+            }
+            if (dialogId != null && !dialogId.isEmpty()) {
+                var d = DialogueManager.get().getDialogue(dialogId);
+                return d != null ? d.getTitle() : "";
+            }
+            return "";
+        } else if ("node_id".equalsIgnoreCase(field) || "node".equalsIgnoreCase(field)) {
+            return session != null ? session.getCurrentNodeId() : "";
+        } else if ("speaker".equalsIgnoreCase(field)) {
+            if (session != null && session.getCurrentNode() != null) {
+                return session.getCurrentNode().getSpeaker();
+            }
+            return context.getCitizen() != null ? context.getCitizen().getName() : "NPC";
+        } else if ("visits".equalsIgnoreCase(field) || "visit_count".equalsIgnoreCase(field)) {
+            if (player == null || dialogId == null || dialogId.isEmpty()) return "0";
+            PlayerDialogState state = DialogueManager.get().getPlayerStateSnapshot(player.getUuid());
+            return String.valueOf(state != null ? state.getDialogVisits().getOrDefault(dialogId, 0) : 0);
+        } else if ("seen".equalsIgnoreCase(field)) {
+            if (player == null || dialogId == null || dialogId.isEmpty()) return "false";
+            PlayerDialogState state = DialogueManager.get().getPlayerStateSnapshot(player.getUuid());
+            return String.valueOf(state != null && state.getSeenDialogs().contains(dialogId));
+        } else if ("completed".equalsIgnoreCase(field)) {
+            if (player == null || dialogId == null || dialogId.isEmpty()) return "false";
+            PlayerDialogState state = DialogueManager.get().getPlayerStateSnapshot(player.getUuid());
+            return String.valueOf(state != null && state.getCompletedDialogs().contains(dialogId));
+        } else if ("state".equalsIgnoreCase(field) || "custom".equalsIgnoreCase(field)) {
+            if (player == null || extraArg == null || extraArg.isEmpty()) return "0";
+            PlayerDialogState state = DialogueManager.get().getPlayerStateSnapshot(player.getUuid());
+            if (state == null) return "0";
+            Object val = state.getCustomState().get(extraArg);
+            return val != null ? val.toString() : "0";
+        }
+        return "0";
     }
 
     private static String resolvePlayerField(String field, ScriptContext context) {

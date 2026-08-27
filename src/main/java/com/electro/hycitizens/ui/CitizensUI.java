@@ -77,6 +77,146 @@ public class CitizensUI {
             boolean rotateModelTowardsPlayer
     ) {}
 
+    public static class CitizenCreationState {
+        private int step = 1;
+        private boolean isPlayerModel = true;
+        private String name = "";
+        private float nametagOffset = 0.0f;
+        private boolean hideNametag = false;
+        private boolean hideNpc = false;
+        private boolean mapMarkerEnabled = false;
+        private String mapMarkerType = CitizenData.MAP_MARKER_TYPE_PIN;
+        private String mapMarkerName = "";
+        private String mapMarkerCustomIcon = "";
+        private float mapMarkerMaxDistance = 0.0f;
+        private boolean modelNametagEnabled = false;
+        private String nametagModelId = "";
+        private float nametagModelScale = 1.0f;
+        private boolean rotateNametagTowardsPlayer = true;
+        private String modelId = "";
+        private float scale = 1.0f;
+        private String permission = "";
+        private String permMessage = "";
+        private boolean useLiveSkin = false;
+        private String skinUsername = "";
+        private PlayerSkin cachedSkin = null;
+        private boolean rotateTowardsPlayer = false;
+        private String group = "";
+        private float lookAtDistance = 25.0f;
+
+        public CitizenCreationState() {}
+
+        public CitizenCreationState(boolean isPlayerModel, String name, float nametagOffset, boolean hideNametag,
+                                    boolean hideNpc, boolean mapMarkerEnabled, String mapMarkerType,
+                                    String mapMarkerName, String mapMarkerCustomIcon, float mapMarkerMaxDistance,
+                                    boolean modelNametagEnabled, String nametagModelId, float nametagModelScale,
+                                    boolean rotateNametagTowardsPlayer, String modelId, float scale,
+                                    String permission, String permMessage, boolean useLiveSkin,
+                                    String skinUsername, boolean rotateTowardsPlayer, String group,
+                                    float lookAtDistance) {
+            this.isPlayerModel = isPlayerModel;
+            this.name = name != null ? name : "";
+            this.nametagOffset = nametagOffset;
+            this.hideNametag = hideNametag;
+            this.hideNpc = hideNpc;
+            this.mapMarkerEnabled = mapMarkerEnabled;
+            this.mapMarkerType = CitizenData.normalizeMapMarkerType(mapMarkerType);
+            this.mapMarkerName = mapMarkerName != null ? mapMarkerName : "";
+            this.mapMarkerCustomIcon = CitizenData.normalizeMapMarkerCustomIcon(mapMarkerCustomIcon);
+            this.mapMarkerMaxDistance = Math.max(0.0f, mapMarkerMaxDistance);
+            this.modelNametagEnabled = modelNametagEnabled;
+            this.nametagModelId = nametagModelId != null ? nametagModelId : "";
+            this.nametagModelScale = nametagModelScale > 0 ? nametagModelScale : 1.0f;
+            this.rotateNametagTowardsPlayer = rotateNametagTowardsPlayer;
+            this.modelId = modelId != null ? modelId.trim() : "";
+            this.scale = scale > 0 ? scale : 1.0f;
+            this.permission = permission != null ? permission : "";
+            this.permMessage = permMessage != null ? permMessage : "";
+            this.useLiveSkin = useLiveSkin;
+            this.skinUsername = skinUsername != null ? skinUsername : "";
+            this.rotateTowardsPlayer = rotateTowardsPlayer;
+            this.group = group != null ? group : "";
+            this.lookAtDistance = lookAtDistance >= 0 ? lookAtDistance : 25.0f;
+        }
+
+        public int getStep() { return step; }
+        public void setStep(int step) { this.step = Math.max(1, Math.min(getTotalSteps(), step)); }
+        public int getTotalSteps() { return hideNpc ? 3 : 4; }
+        public int getEffectiveStep() { return Math.min(step, getTotalSteps()); }
+
+        public boolean isPlayerModel() { return isPlayerModel; }
+        public void setPlayerModel(boolean playerModel) { isPlayerModel = playerModel; }
+
+        public String getName() { return name; }
+        public void setName(String name) { this.name = name != null ? name : ""; }
+
+        public float getNametagOffset() { return nametagOffset; }
+        public void setNametagOffset(float nametagOffset) { this.nametagOffset = nametagOffset; }
+
+        public boolean isHideNametag() { return hideNametag; }
+        public void setHideNametag(boolean hideNametag) { this.hideNametag = hideNametag; }
+
+        public boolean isHideNpc() { return hideNpc; }
+        public void setHideNpc(boolean hideNpc) { this.hideNpc = hideNpc; }
+
+        public boolean isMapMarkerEnabled() { return mapMarkerEnabled; }
+        public void setMapMarkerEnabled(boolean mapMarkerEnabled) { this.mapMarkerEnabled = mapMarkerEnabled; }
+
+        public String getMapMarkerType() { return mapMarkerType; }
+        public void setMapMarkerType(String mapMarkerType) { this.mapMarkerType = CitizenData.normalizeMapMarkerType(mapMarkerType); }
+
+        public String getMapMarkerName() { return mapMarkerName; }
+        public void setMapMarkerName(String mapMarkerName) { this.mapMarkerName = mapMarkerName != null ? mapMarkerName : ""; }
+
+        public String getMapMarkerCustomIcon() { return mapMarkerCustomIcon; }
+        public void setMapMarkerCustomIcon(String mapMarkerCustomIcon) { this.mapMarkerCustomIcon = CitizenData.normalizeMapMarkerCustomIcon(mapMarkerCustomIcon); }
+
+        public float getMapMarkerMaxDistance() { return mapMarkerMaxDistance; }
+        public void setMapMarkerMaxDistance(float mapMarkerMaxDistance) { this.mapMarkerMaxDistance = Math.max(0.0f, mapMarkerMaxDistance); }
+
+        public boolean isModelNametagEnabled() { return modelNametagEnabled; }
+        public void setModelNametagEnabled(boolean modelNametagEnabled) { this.modelNametagEnabled = modelNametagEnabled; }
+
+        public String getNametagModelId() { return nametagModelId; }
+        public void setNametagModelId(String nametagModelId) { this.nametagModelId = nametagModelId != null ? nametagModelId : ""; }
+
+        public float getNametagModelScale() { return nametagModelScale; }
+        public void setNametagModelScale(float nametagModelScale) { this.nametagModelScale = nametagModelScale > 0 ? nametagModelScale : 1.0f; }
+
+        public boolean isRotateNametagTowardsPlayer() { return rotateNametagTowardsPlayer; }
+        public void setRotateNametagTowardsPlayer(boolean rotateNametagTowardsPlayer) { this.rotateNametagTowardsPlayer = rotateNametagTowardsPlayer; }
+
+        public String getModelId() { return modelId; }
+        public void setModelId(String modelId) { this.modelId = modelId != null ? modelId.trim() : ""; }
+
+        public float getScale() { return scale; }
+        public void setScale(float scale) { this.scale = Math.max(0.01f, Math.min(100.0f, scale)); }
+
+        public String getPermission() { return permission; }
+        public void setPermission(String permission) { this.permission = permission != null ? permission : ""; }
+
+        public String getPermMessage() { return permMessage; }
+        public void setPermMessage(String permMessage) { this.permMessage = permMessage != null ? permMessage : ""; }
+
+        public boolean isUseLiveSkin() { return useLiveSkin; }
+        public void setUseLiveSkin(boolean useLiveSkin) { this.useLiveSkin = useLiveSkin; }
+
+        public String getSkinUsername() { return skinUsername; }
+        public void setSkinUsername(String skinUsername) { this.skinUsername = skinUsername != null ? skinUsername : ""; }
+
+        public PlayerSkin getCachedSkin() { return cachedSkin; }
+        public void setCachedSkin(PlayerSkin cachedSkin) { this.cachedSkin = cachedSkin; }
+
+        public boolean getRotateTowardsPlayer() { return rotateTowardsPlayer; }
+        public void setRotateTowardsPlayer(boolean rotateTowardsPlayer) { this.rotateTowardsPlayer = rotateTowardsPlayer; }
+
+        public String getGroup() { return group; }
+        public void setGroup(String group) { this.group = group != null ? group : ""; }
+
+        public float getLookAtDistance() { return lookAtDistance; }
+        public void setLookAtDistance(float lookAtDistance) { this.lookAtDistance = Math.max(0.0f, lookAtDistance); }
+    }
+
     private String generateAnimationDropdownOptions(String selectedValue, String modelId) {
         StringBuilder sb = new StringBuilder();
 
@@ -2057,66 +2197,62 @@ public class CitizensUI {
                                     <p class="section-description">Set the citizen's name and display settings</p>
                                 </div>
                                 <div class="spacer-sm"></div>
-                                <div class="form-row">
-                                    <!-- Left Column: Name & Nametag & Hide NPC -->
-                                    <div class="form-col" style="padding: 0 15 0 15; flex-weight: 1;">
-                                        <div class="form-group">
-                                            <p class="form-label">Citizen Name *</p>
-                                            <input type="text" id="citizen-name" class="form-input" value="{{$citizen.name}}" placeholder="Enter a display name" maxlength="256" style="width: 100%;" />
-                                            <p class="form-hint" style="text-align: center;">{bold}, {italic}, {underline}, {strikethrough}, {red}, {#FFFFF}, {red-}gradient{-blue}</p>
-                                        </div>
-                                        <div class="spacer-sm"></div>
-                                        <button id="nametag-settings-btn" class="secondary-button" style="width: 100%;">Nametag Settings</button>
+                                <div style="padding: 0 15 0 15; layout: top;">
+                                    <div class="form-group">
+                                        <p class="form-label">Citizen Name *</p>
+                                        <input type="text" id="citizen-name" class="form-input" value="{{$citizen.name}}" placeholder="Enter a display name" maxlength="256" style="width: 100%;" />
+                                        <p class="form-hint" style="text-align: center;">{bold}, {italic}, {underline}, {strikethrough}, {red}, {#FFFFF}, {red-}gradient{-blue}</p>
+                                    </div>
+                                    <div class="spacer-sm"></div>
+                                    <div style="layout: top; horizontal-align: center; width: 100%;">
+                                        <button id="nametag-settings-btn" class="secondary-button" style="anchor-width: 480;">Nametag Settings</button>
                                         <div class="spacer-xs"></div>
                                         <p class="form-hint" style="text-align: center;">{{$nametagSummary}}</p>
-                                        <div class="spacer-sm"></div>
-                                        <div class="checkbox-row">
-                                            <input type="checkbox" id="hide-npc-check" {{#if hideNpc}}checked{{/if}} />
-                                            <div style="layout: top; flex-weight: 1; padding-left: 10;">
-                                                <p class="checkbox-label">Hide NPC</p>
-                                                <p class="checkbox-description">Hide the NPC entity</p>
-                                            </div>
+                                    </div>
+                                    <div class="spacer-sm"></div>
+                                    <div class="checkbox-row">
+                                        <input type="checkbox" id="hide-npc-check" {{#if hideNpc}}checked{{/if}} />
+                                        <div style="layout: top; flex-weight: 1; padding-left: 10;">
+                                            <p class="checkbox-label">Hide NPC</p>
+                                            <p class="checkbox-description">Hide the NPC entity</p>
                                         </div>
                                     </div>
-                                    
-                                    <!-- Right Column: Map Marker Settings -->
-                                    <div class="form-col" style="padding: 0 15 0 15; flex-weight: 1;">
-                                        <div class="checkbox-row">
-                                            <input type="checkbox" id="map-marker-check" {{#if mapMarkerEnabled}}checked{{/if}} />
-                                            <div style="layout: top; flex-weight: 1; padding-left: 10;">
-                                                <p class="checkbox-label">Show Map Marker</p>
-                                                <p class="checkbox-description">Add this citizen to the world map</p>
-                                            </div>
+                                    <div class="spacer-sm"></div>
+                                    <div class="checkbox-row">
+                                        <input type="checkbox" id="map-marker-check" {{#if mapMarkerEnabled}}checked{{/if}} />
+                                        <div style="layout: top; flex-weight: 1; padding-left: 10;">
+                                            <p class="checkbox-label">Show Map Marker</p>
+                                            <p class="checkbox-description">Add this citizen to the world map</p>
                                         </div>
-                                        {{#if mapMarkerEnabled}}
-                                        <div class="spacer-sm"></div>
-                                        <div class="form-group">
-                                            <p class="form-label">Map Marker Type</p>
-                                            <select id="map-marker-type" data-hyui-showlabel="true">{{{$mapMarkerTypeOptions}}}</select>
-                                        </div>
-                                        <div class="spacer-sm"></div>
-                                        <div class="form-group">
-                                            <p class="form-label">Marker Name</p>
-                                            <input type="text" id="map-marker-name" class="form-input" value="{{$mapMarkerName}}" placeholder="Leave empty for citizen name" maxlength="64" style="width: 100%;" />
-                                        </div>
-                                        {{#if isCustomMapMarker}}
-                                        <div class="spacer-sm"></div>
-                                        <div class="form-group">
-                                            <p class="form-label">Custom Marker Image</p>
-                                            <select id="map-marker-custom-icon" data-hyui-showlabel="true">{{{$mapMarkerCustomIconOptions}}}</select>
-                                        </div>
-                                        {{/if}}
-                                        <div class="spacer-sm"></div>
-                                        <div class="form-group">
-                                            {{@numberField:id=map-marker-max-distance,label=Display View Distance,value={{$mapMarkerMaxDistance}},placeholder=0,min=0,max=100000,step=1,decimals=0,hint=0 uses the map view distance}}
-                                        </div>
-                                        {{/if}}
                                     </div>
+                                    {{#if mapMarkerEnabled}}
+                                    <div class="spacer-sm"></div>
+                                    <div class="form-group">
+                                        <p class="form-label">Map Marker Type</p>
+                                        <select id="map-marker-type" data-hyui-showlabel="true">{{{$mapMarkerTypeOptions}}}</select>
+                                    </div>
+                                    <div class="spacer-sm"></div>
+                                    <div class="form-group">
+                                        <p class="form-label">Marker Name</p>
+                                        <input type="text" id="map-marker-name" class="form-input" value="{{$mapMarkerName}}" placeholder="Leave empty for citizen name" maxlength="64" style="width: 100%;" />
+                                    </div>
+                                    {{#if isCustomMapMarker}}
+                                    <div class="spacer-sm"></div>
+                                    <div class="form-group">
+                                        <p class="form-label">Custom Marker Image</p>
+                                        <select id="map-marker-custom-icon" data-hyui-showlabel="true">{{{$mapMarkerCustomIconOptions}}}</select>
+                                    </div>
+                                    {{/if}}
+                                    <div class="spacer-sm"></div>
+                                    <div class="form-group">
+                                        {{@numberField:id=map-marker-max-distance,label=Display View Distance,value={{$mapMarkerMaxDistance}},placeholder=0,min=0,max=100000,step=1,decimals=0,hint=0 uses the map view distance}}
+                                    </div>
+                                    {{/if}}
                                 </div>
                             </div>
- 
+
                             <div class="spacer-md"></div>
- 
+
                             <!-- Group Section -->
                             <div class="section">
                                 <div class="section-header" style="background-color: #21324a(0.4);">
@@ -2145,9 +2281,9 @@ public class CitizensUI {
                                     </div>
                                 </div>
                             </div>
- 
+
                             <div class="spacer-md"></div>
- 
+
                             <!-- Entity Selection & Scaling -->
                             <div class="section">
                                 <div class="section-header" style="background-color: #21324a(0.4);">
@@ -2164,73 +2300,69 @@ public class CitizensUI {
                                 </div>
                                 <div class="spacer-md"></div>
                                 
-                                <div class="form-row">
-                                    <!-- Left Column: Skin/Model and Rotation check -->
-                                    <div class="form-col" style="padding: 0 15 0 15; flex-weight: 1;">
-                                        {{#if isPlayerModel}}
-                                        <div class="card" style="width: 100%;">
-                                            <div class="card-header" style="layout: center;">
-                                                <p class="card-title" style="text-align: center;">Player Skin</p>
-                                            </div>
-                                            <div class="card-body">
-                                                <div class="checkbox-row" style="horizontal-align: center;">
-                                                    <input type="checkbox" id="live-skin-check" {{#if useLiveSkin}}checked{{/if}} />
-                                                    <p class="checkbox-label" style="font-size: 16;">Use Live Player Skin</p>
-                                                </div>
-                                                <div class="spacer-sm"></div>
-                                                
-                                                {{#if useLiveSkin}}
-                                                <div class="form-group" style="horizontal-align: center;">
-                                                    <p class="form-label" style="text-align: center;">Target Username</p>
-                                                    <input type="text" id="skin-username" class="form-input" value="{{$citizen.skinUsername}}" 
-                                                           placeholder="e.g., electro" style="width: 100%;" />
-                                                </div>
-                                                {{else}}
-                                                <div class="form-row" style="horizontal-align: center;">
-                                                    <button id="get-player-skin-btn" class="secondary-button" style="width: 48%;">Use My Skin</button>
-                                                    <div class="spacer-h-xs"></div>
-                                                    <button id="random-skin-btn" class="secondary-button" style="width: 48%;">Random Skin</button>
-                                                </div>
-                                                <div class="spacer-xs"></div>
-                                                <button id="customize-skin-btn" class="secondary-button" style="width: 100%;">Customize Static Skin</button>
-                                                {{/if}}
-                                            </div>
+                                <div style="padding: 0 15 0 15; layout: top;">
+                                    {{#if isPlayerModel}}
+                                    <div class="card" style="width: 100%;">
+                                        <div class="card-header" style="layout: center;">
+                                            <p class="card-title" style="text-align: center;">Player Skin</p>
                                         </div>
-                                        {{else}}
-                                        <div class="form-group">
-                                            <p class="form-label">Entity Type</p>
-                                            <select id="entity-dropdown" data-hyui-showlabel="true">
-                                                {{{$entityOptions}}}
-                                            </select>
-                                            <p class="form-hint">Choose from common entity types</p>
-                                        </div>
-                                        <div class="spacer-sm"></div>
-                                        <div class="form-group">
-                                            <p class="form-label">Or Enter An Entity/Model ID</p>
-                                            <input type="text" id="citizen-model-id" class="form-input" value="{{$citizen.modelId}}"
-                                                   placeholder="e.g., PlayerTestModel_V, Sheep" maxlength="64" style="width: 100%;" />
-                                        </div>
-                                        {{/if}}
-                                        
-                                        <div class="spacer-sm"></div>
-                                        <div class="checkbox-row">
-                                            <input type="checkbox" id="rotate-towards-player" {{#if rotateTowardsPlayer}}checked{{/if}} />
-                                            <div style="layout: top; flex-weight: 1; padding-left: 10;">
-                                                <p class="checkbox-label">Rotate Towards Player</p>
+                                        <div class="card-body">
+                                            <div class="checkbox-row" style="horizontal-align: center;">
+                                                <input type="checkbox" id="live-skin-check" {{#if useLiveSkin}}checked{{/if}} />
+                                                <p class="checkbox-label" style="font-size: 16;">Use Live Player Skin</p>
                                             </div>
+                                            <div class="spacer-sm"></div>
+                                            
+                                            {{#if useLiveSkin}}
+                                            <div class="form-group" style="horizontal-align: center;">
+                                                <p class="form-label" style="text-align: center;">Target Username</p>
+                                                <input type="text" id="skin-username" class="form-input" value="{{$citizen.skinUsername}}" 
+                                                       placeholder="e.g., electro" style="width: 100%;" />
+                                            </div>
+                                            {{else}}
+                                            <div class="form-row" style="horizontal-align: center; width: 100%;">
+                                                <button id="get-player-skin-btn" class="secondary-button" style="anchor-width: 235;">Use My Skin</button>
+                                                <div class="spacer-h-sm"></div>
+                                                <button id="random-skin-btn" class="secondary-button" style="anchor-width: 235;">Random Skin</button>
+                                            </div>
+                                            <div class="spacer-xs"></div>
+                                            <div class="form-row" style="horizontal-align: center; width: 100%;">
+                                                <button id="customize-skin-btn" class="secondary-button" style="anchor-width: 480;">Customize Skin</button>
+                                            </div>
+                                            {{/if}}
                                         </div>
                                     </div>
+                                    {{else}}
+                                    <div class="form-group">
+                                        <p class="form-label">Entity Type</p>
+                                        <select id="entity-dropdown" data-hyui-showlabel="true">
+                                            {{{$entityOptions}}}
+                                        </select>
+                                        <p class="form-hint">Choose from common entity types</p>
+                                    </div>
+                                    <div class="spacer-sm"></div>
+                                    <div class="form-group">
+                                        <p class="form-label">Or Enter An Entity/Model ID</p>
+                                        <input type="text" id="citizen-model-id" class="form-input" value="{{$citizen.modelId}}"
+                                               placeholder="e.g., PlayerTestModel_V, Sheep" maxlength="64" style="width: 100%;" />
+                                    </div>
+                                    {{/if}}
                                     
-                                    <!-- Right Column: Scaling & Look-At distance -->
-                                    <div class="form-col" style="padding: 0 15 0 15; flex-weight: 1;">
-                                        <div class="form-group">
-                                            {{@numberField:id=look-at-distance,label=Look-At Distance,value={{$lookAtDistance}},placeholder=0.0,min=0,max=100,step=0.5,decimals=1,hint=Distance inside which NPC turns to players}}
+                                    <div class="spacer-sm"></div>
+                                    <div class="checkbox-row">
+                                        <input type="checkbox" id="rotate-towards-player" {{#if rotateTowardsPlayer}}checked{{/if}} />
+                                        <div style="layout: top; flex-weight: 1; padding-left: 10;">
+                                            <p class="checkbox-label">Rotate Towards Player</p>
                                         </div>
-                                        <div class="spacer-sm"></div>
-                                        <div class="form-group">
-                                            {{@numberField:id=citizen-scale,label=Scale Factor *,value={{$citizen.scale}},min=0.1,max=10.0,step=0.1,decimals=2}}
-                                            <p class="form-hint">* Scaling non-player models requires a reload</p>
-                                        </div>
+                                    </div>
+                                    <div class="spacer-sm"></div>
+                                    <div class="form-group">
+                                        {{@numberField:id=look-at-distance,label=Look-At Distance,value={{$lookAtDistance}},placeholder=0.0,min=0,max=100,step=0.5,decimals=1,hint=Distance inside which NPC turns to players}}
+                                    </div>
+                                    <div class="spacer-sm"></div>
+                                    <div class="form-group">
+                                        {{@numberField:id=citizen-scale,label=Scale Factor *,value={{$citizen.scale}},min=0.1,max=10.0,step=0.1,decimals=2}}
+                                        <p class="form-hint">* Scaling non-player models requires a reload</p>
                                     </div>
                                 </div>
                             </div>
@@ -2398,9 +2530,7 @@ public class CitizensUI {
 
 
     public void openCreateCitizenGUI(@Nonnull PlayerRef playerRef, @Nonnull Store<EntityStore> store) {
-        openCreateCitizenGUI(playerRef, store, true, "", 0, false, false,
-                false, CitizenData.MAP_MARKER_TYPE_PIN, "", "", 0.0f, false, "", 1.0f, true, "",
-                1.0f, "", "", false, false, "", true, "", 25.0f);
+        openCreateCitizenWizard(playerRef, store, new CitizenCreationState());
     }
 
     public void openCreateCitizenGUI(@Nonnull PlayerRef playerRef, @Nonnull Store<EntityStore> store,
@@ -2410,301 +2540,548 @@ public class CitizensUI {
                                       String modelId, float scale, String permission, String permMessage, boolean useLiveSkin,
                                       boolean preserveState, String skinUsername, boolean rotateTowardsPlayer,
                                       String group, float lookAtDistance) {
-        openCreateCitizenGUI(playerRef, store, isPlayerModel, name, nametagOffset, hideNametag, hideNpc,
-                mapMarkerEnabled, mapMarkerType, "", "", 0.0f, modelNametagEnabled, nametagModelId, nametagModelScale, rotateNametagTowardsPlayer,
-                modelId, scale, permission, permMessage, useLiveSkin, preserveState, skinUsername, rotateTowardsPlayer, group, lookAtDistance);
+        CitizenCreationState state = new CitizenCreationState(isPlayerModel, name, nametagOffset, hideNametag, hideNpc,
+                mapMarkerEnabled, mapMarkerType, "", "", 0.0f, modelNametagEnabled, nametagModelId, nametagModelScale,
+                rotateNametagTowardsPlayer, modelId, scale, permission, permMessage, useLiveSkin, skinUsername,
+                rotateTowardsPlayer, group, lookAtDistance);
+        openCreateCitizenWizard(playerRef, store, state);
     }
 
-    private void openCreateCitizenGUI(@Nonnull PlayerRef playerRef, @Nonnull Store<EntityStore> store,
-                                      boolean isPlayerModel, String name, float nametagOffset, boolean hideNametag, boolean hideNpc,
-                                      boolean mapMarkerEnabled, String mapMarkerType, String mapMarkerName,
-                                      String mapMarkerCustomIcon, float mapMarkerMaxDistance,
-                                      boolean modelNametagEnabled, String nametagModelId, float nametagModelScale, boolean rotateNametagTowardsPlayer,
-                                      String modelId, float scale, String permission, String permMessage, boolean useLiveSkin,
-                                      boolean preserveState, String skinUsername, boolean rotateTowardsPlayer,
-                                      String group, float lookAtDistance) {
+    public void openCreateCitizenWizard(@Nonnull PlayerRef playerRef, @Nonnull Store<EntityStore> store, @Nonnull CitizenCreationState state) {
         pendingFollowSelections.remove(playerRef.getUuid());
 
+        int effectiveStep = state.getEffectiveStep();
+        int totalSteps = state.getTotalSteps();
+        boolean isStep1 = effectiveStep == 1;
+        boolean isStep2 = effectiveStep == 2;
+        boolean isStep3 = effectiveStep == 3 && !state.isHideNpc();
+        boolean isFinalStep = effectiveStep == totalSteps;
+
         List<String> allGroups = plugin.getCitizensManager().getAllGroups();
-        String groupOptionsHTML = generateGroupDropdownOptions(group, allGroups);
+        String groupOptionsHTML = generateGroupDropdownOptions(state.getGroup(), allGroups);
+
+        String skinStatusHint;
+        if (state.getCachedSkin() != null) {
+            skinStatusHint = "Using generated random skin";
+        } else if (!state.getSkinUsername().isEmpty()) {
+            if (state.isUseLiveSkin()) {
+                skinStatusHint = "Live skin sync active for: " + escapeHtml(state.getSkinUsername());
+            } else {
+                skinStatusHint = "Static skin will be copied from: " + escapeHtml(state.getSkinUsername());
+            }
+        } else {
+            if (state.isUseLiveSkin()) {
+                skinStatusHint = "Live skin sync active for your current skin";
+            } else {
+                skinStatusHint = "Static skin will be copied from your current skin";
+            }
+        }
+
+        String summaryVisibility = state.isHideNpc() ? "Hidden NPC (Invisible Entity)" : "Visible 3D Entity";
+        String summaryModel;
+        if (state.isHideNpc()) {
+            summaryModel = "Default Player Entity (Hidden)";
+        } else if (state.isPlayerModel()) {
+            summaryModel = "Player Model (Scale: " + state.getScale() + ")";
+        } else {
+            String effectiveModel = state.getModelId().isEmpty() ? "Sheep" : state.getModelId();
+            summaryModel = escapeHtml(effectiveModel) + " (Scale: " + state.getScale() + ")";
+        }
+        String summaryMapMarker = state.isMapMarkerEnabled()
+                ? "Enabled (" + escapeHtml(state.getMapMarkerType()) + (state.getMapMarkerName().isEmpty() ? "" : ": " + escapeHtml(state.getMapMarkerName())) + ")"
+                : "Disabled";
+        String summaryGroup = state.getGroup().isEmpty() ? "None (Root)" : escapeHtml(state.getGroup());
+        String summaryPermission = state.getPermission().isEmpty() ? "None (All Players)" : escapeHtml(state.getPermission());
+        String nametagSummary = buildNametagSummary(state.getName(), state.getNametagOffset(), state.isHideNametag(),
+                state.isModelNametagEnabled(), state.getNametagModelId(), state.getNametagModelScale(), state.isRotateNametagTowardsPlayer());
+
+        String effectiveModelId = state.getModelId().isEmpty() ? "Sheep" : state.getModelId();
 
         TemplateProcessor template = createBaseTemplate()
-                .setVariable("isPlayerModel", isPlayerModel)
-                .setVariable("name", escapeHtml(name))
-                .setVariable("hideNpc", hideNpc)
-                .setVariable("mapMarkerEnabled", mapMarkerEnabled)
-                .setVariable("mapMarkerTypeOptions", generateMapMarkerTypeOptions(mapMarkerType))
-                .setVariable("mapMarkerName", escapeHtml(mapMarkerName))
-                .setVariable("mapMarkerCustomIconOptions", generateCustomMapMarkerIconOptions(mapMarkerCustomIcon))
-                .setVariable("mapMarkerCustomIcon", escapeHtml(CitizenData.normalizeMapMarkerCustomIcon(mapMarkerCustomIcon)))
-                .setVariable("mapMarkerMaxDistance", Math.max(0.0f, mapMarkerMaxDistance))
-                .setVariable("isCustomMapMarker", CitizenData.MAP_MARKER_TYPE_CUSTOM.equals(CitizenData.normalizeMapMarkerType(mapMarkerType)))
+                .setVariable("step", effectiveStep)
+                .setVariable("totalSteps", totalSteps)
+                .setVariable("isStep1", isStep1)
+                .setVariable("isStep2", isStep2)
+                .setVariable("isStep3", isStep3)
+                .setVariable("isFinalStep", isFinalStep)
+                .setVariable("isPlayerModel", state.isPlayerModel())
+                .setVariable("name", escapeHtml(state.getName()))
+                .setVariable("hideNpc", state.isHideNpc())
+                .setVariable("mapMarkerEnabled", state.isMapMarkerEnabled())
+                .setVariable("mapMarkerTypeOptions", generateMapMarkerTypeOptions(state.getMapMarkerType()))
+                .setVariable("mapMarkerName", escapeHtml(state.getMapMarkerName()))
+                .setVariable("mapMarkerCustomIconOptions", generateCustomMapMarkerIconOptions(state.getMapMarkerCustomIcon()))
+                .setVariable("mapMarkerCustomIcon", escapeHtml(CitizenData.normalizeMapMarkerCustomIcon(state.getMapMarkerCustomIcon())))
+                .setVariable("mapMarkerMaxDistance", Math.max(0.0f, state.getMapMarkerMaxDistance()))
+                .setVariable("isCustomMapMarker", CitizenData.MAP_MARKER_TYPE_CUSTOM.equals(CitizenData.normalizeMapMarkerType(state.getMapMarkerType())))
                 .setVariable("customMarkerDirectory", "mods/HyCitizensData/Common/UI/WorldMap/MapMarkers")
-                .setVariable("group", escapeHtml(group))
+                .setVariable("group", escapeHtml(state.getGroup()))
                 .setVariable("groupOptions", groupOptionsHTML)
-                .setVariable("modelId", modelId.isEmpty() ? "PlayerTestModel_V" : modelId)
-                .setVariable("scale", scale)
-                .setVariable("permission", escapeHtml(permission))
-                .setVariable("permMessage", escapeHtml(permMessage))
-                .setVariable("useLiveSkin", useLiveSkin)
-                .setVariable("skinUsername", escapeHtml(skinUsername))
-                .setVariable("rotateTowardsPlayer", rotateTowardsPlayer)
-.setVariable("lookAtDistance", lookAtDistance)
-                .setVariable("nametagSummary", buildNametagSummary(name, nametagOffset, hideNametag, modelNametagEnabled,
-                        nametagModelId, nametagModelScale, rotateNametagTowardsPlayer))
-                .setVariable("entityOptions", generateEntityDropdownOptions(modelId.isEmpty() ? "PlayerTestModel_V" : modelId));
+                .setVariable("modelId", escapeHtml(state.getModelId()))
+                .setVariable("scale", state.getScale())
+                .setVariable("permission", escapeHtml(state.getPermission()))
+                .setVariable("permMessage", escapeHtml(state.getPermMessage()))
+                .setVariable("useLiveSkin", state.isUseLiveSkin())
+                .setVariable("skinUsername", escapeHtml(state.getSkinUsername()))
+                .setVariable("skinStatusHint", skinStatusHint)
+                .setVariable("rotateTowardsPlayer", state.getRotateTowardsPlayer())
+                .setVariable("lookAtDistance", state.getLookAtDistance())
+                .setVariable("nametagSummary", nametagSummary)
+                .setVariable("summaryVisibility", summaryVisibility)
+                .setVariable("summaryModel", summaryModel)
+                .setVariable("summaryMapMarker", summaryMapMarker)
+                .setVariable("summaryGroup", summaryGroup)
+                .setVariable("summaryPermission", summaryPermission)
+                .setVariable("entityOptions", generateEntityDropdownOptions(effectiveModelId));
 
-        LeftPanelContext ctx = prepareLeftPanelContext(playerRef, "", group, null);
+        LeftPanelContext ctx = prepareLeftPanelContext(playerRef, "", state.getGroup(), null);
 
-        String rightPanelHtml = """
-                    <!-- RIGHT PANEL: CREATE NEW CITIZEN -->
-                    <div class="main-container decorated-container" style="anchor-width: 900; anchor-height: 900;">
-                
-                        <!-- Header -->
-                        <div class="header container-title">
-                            <div class="header-content">
-                                <p class="header-title">Create New Citizen</p>
+        String stepContentHtml;
+        String footerHtml;
+
+        if (isStep1) {
+            stepContentHtml = """
+                    <!-- STEP 1: IDENTITY & NAMETAG & HIDE NPC -->
+                    <p class="page-description">Step 1 of {{$totalSteps}}: Configure the citizen's display name, nametag display, and visibility</p>
+                    <div class="spacer-sm"></div>
+
+                    {{@infoBox:text=The citizen will spawn at your current player position and viewing rotation.}}
+
+                    <div class="spacer-md"></div>
+
+                    <!-- Citizen Name Section -->
+                    <div class="section">
+                        <div class="section-header" style="background-color: #21324a(0.4);">
+                            <p class="section-title">Citizen Display Name</p>
+                            <p class="section-description">The primary name shown in menus, maps, and above the citizen</p>
+                        </div>
+                        <div class="spacer-sm"></div>
+                        <div class="form-row" style="horizontal-align: center;">
+                            <div class="form-col-fixed" style="anchor-width: 620;">
+                                <div class="form-group">
+                                    <p class="form-label">Display Name *</p>
+                                    <input type="text" id="citizen-name" class="form-input" value="{{$name}}" placeholder="e.g. Town Guard, Blacksmith Bob, Quest Giver" maxlength="256" style="width: 100%;" />
+                                    <p class="form-hint" style="text-align: center;">Supports style codes: {bold}, {italic}, {underline}</p>
+                                    <p class="form-hint" style="text-align: center; color: #8bb0d0;">Colors & Gradients: {red}, {gold}, {#FFFF00}, {red-}gradient{-blue}</p>
+                                </div>
                             </div>
                         </div>
-                
-                        <!-- Body -->
-                        <div class="body" data-hyui-scrollbar-style='"Common.ui" "DefaultScrollbarStyle"' style="layout-mode: TopScrolling; flex-weight: 1;">
+                    </div>
 
-                            <p class="page-description">Configure your new NPC's appearance and behavior</p>
-                            <div class="spacer-sm"></div>
-                
-                            <!-- Info Box -->
-                            {{@infoBox:text=The citizen will spawn at your current position and rotation}}
-                
-                            <div class="spacer-md"></div>
-                
-                            <!-- Basic Information Section -->
-                            <div class="section">
-                                <div class="section-header" style="background-color: #21324a(0.4);">
-                                    <p class="section-title">Basic Information</p>
-                                    <p class="section-description">Set the citizen's name and display settings</p>
+                    <div class="spacer-md"></div>
+
+                    <!-- Nametag Settings Section -->
+                    <div class="section">
+                        <div class="section-header" style="background-color: #21324a(0.4);">
+                            <p class="section-title">Nametag Settings</p>
+                            <p class="section-description">Customize text lines, 3D floating model nametags, and height offset</p>
+                        </div>
+                        <div class="spacer-sm"></div>
+                        <div class="form-row" style="horizontal-align: center;">
+                            <div class="form-col-fixed" style="anchor-width: 620;">
+                                <div class="form-row" style="horizontal-align: center;">
+                                    <button id="nametag-settings-btn" class="secondary-button" style="anchor-width: 420; anchor-height: 44;">Customize Nametag Settings</button>
                                 </div>
-                                <div class="spacer-sm"></div>
-                                <div class="form-row">
-                                    <!-- Left Column: Name & Nametag & Hide NPC -->
-                                    <div class="form-col" style="padding: 0 15 0 15; flex-weight: 1;">
-                                        <div class="form-group">
-                                            <p class="form-label">Citizen Name *</p>
-                                            <input type="text" id="citizen-name" class="form-input" value="{{$name}}" placeholder="Enter a display name" maxlength="256" style="width: 100%;" />
-                                            <p class="form-hint" style="text-align: center;">{bold}, {italic}, {underline}, {strikethrough}, {red}, {#FFFFF}, {red-}gradient{-blue}</p>
-                                        </div>
-                                        <div class="spacer-sm"></div>
-                                        <button id="nametag-settings-btn" class="secondary-button" style="width: 100%;">Nametag Settings</button>
-                                        <div class="spacer-xs"></div>
-                                        <p class="form-hint" style="text-align: center;">{{$nametagSummary}}</p>
-                                        <div class="spacer-sm"></div>
-                                        <div class="checkbox-row">
-                                            <input type="checkbox" id="hide-npc-check" {{#if hideNpc}}checked{{/if}} />
-                                            <div style="layout: top; flex-weight: 1; padding-left: 10;">
-                                                <p class="checkbox-label">Hide NPC</p>
-                                                <p class="checkbox-description">Hide the NPC entity</p>
-                                            </div>
-                                        </div>
-                                    </div>
-                                    
-                                    <!-- Right Column: Map Marker Settings -->
-                                    <div class="form-col" style="padding: 0 15 0 15; flex-weight: 1;">
-                                        <div class="checkbox-row">
-                                            <input type="checkbox" id="map-marker-check" {{#if mapMarkerEnabled}}checked{{/if}} />
-                                            <div style="layout: top; flex-weight: 1; padding-left: 10;">
-                                                <p class="checkbox-label">Show Map Marker</p>
-                                                <p class="checkbox-description">Add this citizen to the world map</p>
-                                            </div>
-                                        </div>
-                                        {{#if mapMarkerEnabled}}
-                                        <div class="spacer-sm"></div>
-                                        <div class="form-group">
-                                            <p class="form-label">Map Marker Type</p>
-                                            <select id="map-marker-type" data-hyui-showlabel="true">{{{$mapMarkerTypeOptions}}}</select>
-                                        </div>
-                                        <div class="spacer-sm"></div>
-                                        <div class="form-group">
-                                            <p class="form-label">Marker Name</p>
-                                            <input type="text" id="map-marker-name" class="form-input" value="{{$mapMarkerName}}" placeholder="Leave empty for citizen name" maxlength="64" style="width: 100%;" />
-                                        </div>
-                                        {{#if isCustomMapMarker}}
-                                        <div class="spacer-sm"></div>
-                                        <div class="form-group">
-                                            <p class="form-label">Custom Marker Image</p>
-                                            <select id="map-marker-custom-icon" data-hyui-showlabel="true">{{{$mapMarkerCustomIconOptions}}}</select>
-                                        </div>
-                                        {{/if}}
-                                        <div class="spacer-sm"></div>
-                                        <div class="form-group">
-                                            {{@numberField:id=map-marker-max-distance,label=Display View Distance,value={{$mapMarkerMaxDistance}},placeholder=0,min=0,max=100000,step=1,decimals=0,hint=0 uses the map view distance}}
-                                        </div>
-                                        {{/if}}
-                                    </div>
-                                </div>
+                                <div class="spacer-xs"></div>
+                                <p class="form-hint" style="text-align: center;">Current Configuration: {{$nametagSummary}}</p>
                             </div>
-                
-                            <div class="spacer-md"></div>
-                
-                            <!-- Group Section -->
-                            <div class="section">
-                                {{@sectionHeader:title=Group,description=Organize citizens into groups for easier management}}
+                        </div>
+                    </div>
+
+                    <div class="spacer-md"></div>
+
+                    <!-- NPC Visibility Section -->
+                    <div class="section">
+                        <div class="section-header" style="background-color: #21324a(0.4);">
+                            <p class="section-title">World Entity Visibility</p>
+                            <p class="section-description">Choose whether the physical 3D NPC model is rendered in the world</p>
+                        </div>
+                        <div class="spacer-sm"></div>
+                        <div class="form-row" style="horizontal-align: center;">
+                            <div class="form-col-fixed" style="anchor-width: 620;">
+                                <div class="checkbox-row" style="background-color: #141f2e; padding: 12; border-radius: 8;">
+                                    <input type="checkbox" id="hide-npc-check" {{#if hideNpc}}checked{{/if}} />
+                                    <div style="layout: top; flex-weight: 1; padding-left: 12;">
+                                        <p class="checkbox-label" style="font-size: 15; font-weight: bold;">Hide NPC (Invisible Entity)</p>
+                                        <p class="checkbox-description" style="color: #9bb7d4; font-size: 12; line-height: 1.4;">Completely hides the physical NPC body.</p>
+                                        <p class="checkbox-description" style="color: #6bb0e8; font-size: 11; line-height: 1.3;">Ideal for holograms, floating text, interactive triggers, or script anchors.</p>
+                                    </div>
+                                </div>
+                                <div class="spacer-xs"></div>
+                                <p class="form-hint" style="text-align: center; color: #e6b800;">{{#if hideNpc}}Entity and appearance selection will be skipped automatically since the NPC is hidden.{{else}}Leave unchecked to create a visible physical NPC.{{/if}}</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="spacer-lg"></div>
+                    """;
+
+            footerHtml = """
+                    <div class="footer" style="layout: center; flex-weight: 0; padding: 26 16 26 16; border-top: 1 solid #1a293c; width: 100%; vertical-align: center;">
+                        <button id="cancel-btn" class="secondary-button" style="anchor-width: 140; anchor-height: 44;">Cancel</button>
+                        <div class="spacer-h-md"></div>
+                        <button id="next-btn" class="secondary-button" style="anchor-width: 220; anchor-height: 44;">Next Step: Map Marker</button>
+                    </div>
+                    """;
+        } else if (isStep2) {
+            stepContentHtml = """
+                    <!-- STEP 2: WORLD MAP MARKER -->
+                    <p class="page-description">Step 2 of {{$totalSteps}}: Configure if and how this citizen appears on the Hytale World Map</p>
+                    <div class="spacer-sm"></div>
+
+                    <div class="section">
+                        <div class="section-header" style="background-color: #21324a(0.4);">
+                            <p class="section-title">World Map Marker</p>
+                            <p class="section-description">Allow players to find this citizen on the in-game world map (M key)</p>
+                        </div>
+                        <div class="spacer-sm"></div>
+                        
+                        <div class="form-row" style="horizontal-align: center;">
+                            <div class="form-col-fixed" style="anchor-width: 620;">
+                                <div class="checkbox-row" style="background-color: #141f2e; padding: 12; border-radius: 8;">
+                                    <input type="checkbox" id="map-marker-check" {{#if mapMarkerEnabled}}checked{{/if}} />
+                                    <div style="layout: top; flex-weight: 1; padding-left: 12;">
+                                        <p class="checkbox-label" style="font-size: 15; font-weight: bold;">Show Map Marker</p>
+                                        <p class="checkbox-description" style="color: #9bb7d4; font-size: 12;">Display an interactive marker icon on the World Map</p>
+                                    </div>
+                                </div>
                                 
-                                <div class="form-row" style="horizontal-align: center;">
-                                    <div class="form-col-fixed" style="anchor-width: 460;">
-                                        <div class="form-group">
-                                            <p class="form-label">Select Existing Group</p>
-                                            <select id="group-dropdown" data-hyui-showlabel="true">
-                                                {{{$groupOptions}}}
-                                            </select>
-                                            <p class="form-hint" style="text-align: center;">Choose from existing groups</p>
-                                        </div>
-                                        <div class="spacer-sm"></div>
-                                        <div class="form-group">
-                                            <p class="form-label">Or Enter New Group Name</p>
-                                            <input type="text" id="group-custom" class="form-input" value="{{$group}}" placeholder="Enter group name or leave empty" style="width: 100%;" />
-                                            <p class="form-hint" style="text-align: center;">Type a group name to create a new group or use an existing one</p>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                
-                            <div class="spacer-md"></div>
-                
-                            <!-- Entity Type Section -->
-                            <div class="section">
-                                {{@sectionHeader:title=Entity Type,description=Choose whether this citizen uses a player model or another entity}}
-                
-                                <div class="form-row" style="horizontal-align: center;">
-                                    <div class="toggle-group" style="layout: left;">
-                                        <button id="type-player" class="secondary-button toggle-btn{{#if isPlayerModel}} toggle-active{{/if}}" style="anchor-width: 200; anchor-height: 48;">Player Model</button>
-                                        <div class="spacer-h-sm"></div>
-                                        <button id="type-entity" class="secondary-button toggle-btn{{#if !isPlayerModel}} toggle-active{{/if}}" style="anchor-width: 200; anchor-height: 48;">Other Entities</button>
-                                    </div>
-                                </div>
-                
+                                {{#if mapMarkerEnabled}}
                                 <div class="spacer-md"></div>
-                
-                                {{#if isPlayerModel}}
-                                <div class="card" style="width: 100%;">
-                                    <div class="card-header" style="layout: center;">
-                                        <p class="card-title" style="text-align: center;">Player Skin</p>
-                                    </div>
-                                    <div class="card-body">
-                                        <div class="checkbox-row" style="horizontal-align: center;">
-                                            <input type="checkbox" id="live-skin-check" {{#if useLiveSkin}}checked{{/if}} />
-                                            <p class="checkbox-label" style="font-size: 16;">Use Live Player Skin</p>
-                                        </div>
-                                        <div class="spacer-sm"></div>
-                                        
-                                        {{#if useLiveSkin}}
-                                        <div class="form-group" style="horizontal-align: center;">
-                                            <p class="form-label" style="text-align: center;">Target Username</p>
-                                            <input type="text" id="skin-username" class="form-input" value="{{$skinUsername}}" 
-                                                   placeholder="e.g., electro" style="width: 100%;" />
-                                        </div>
-                                        {{else}}
-                                        <div class="form-row" style="horizontal-align: center;">
-                                            <button id="get-player-skin-btn" class="secondary-button small-secondary-button" style="anchor-width: 160;">Use My Skin</button>
-                                            <div class="spacer-h-xs"></div>
-                                            <button id="random-skin-btn" class="secondary-button small-secondary-button" style="anchor-width: 160;">Random Skin</button>
-                                        </div>
-                                        {{/if}}
-                                    </div>
+                                <div class="form-group">
+                                    <p class="form-label">Marker Icon Type</p>
+                                    <select id="map-marker-type" data-hyui-showlabel="true">{{{$mapMarkerTypeOptions}}}</select>
+                                    <p class="form-hint">Choose the symbol or category icon shown on the map</p>
                                 </div>
-                                {{else}}
-                                <div class="form-row" style="horizontal-align: center;">
-                                    <div class="form-col-fixed" style="anchor-width: 460;">
-                                        <div class="form-group">
-                                            <p class="form-label">Entity Type</p>
-                                            <select id="entity-dropdown" data-hyui-showlabel="true">
-                                                {{{$entityOptions}}}
-                                            </select>
-                                            <p class="form-hint" style="text-align: center;">Choose from common entity types</p>
-                                        </div>
-                                        <div class="spacer-sm"></div>
-                                        <div class="form-group">
-                                            <p class="form-label">Or Enter An Entity/Model ID</p>
-                                            <input type="text" id="citizen-model-id" class="form-input" value="{{$modelId}}"
-                                                   placeholder="e.g., PlayerTestModel_V, Sheep" maxlength="64" style="width: 100%;" />
-                                            <p class="form-hint" style="text-align: center;">Enter any valid entity ID</p>
-                                        </div>
-                                    </div>
+                                
+                                <div class="spacer-sm"></div>
+                                <div class="form-group">
+                                    <p class="form-label">Marker Custom Label (Optional)</p>
+                                    <input type="text" id="map-marker-name" class="form-input" value="{{$mapMarkerName}}" placeholder="Leave empty to use citizen's display name" maxlength="64" style="width: 100%;" />
+                                    <p class="form-hint">Hover label displayed on the world map</p>
+                                </div>
+                                
+                                {{#if isCustomMapMarker}}
+                                <div class="spacer-sm"></div>
+                                <div class="form-group">
+                                    <p class="form-label">Custom Marker Image</p>
+                                    <select id="map-marker-custom-icon" data-hyui-showlabel="true">{{{$mapMarkerCustomIconOptions}}}</select>
+                                    <p class="form-hint">Custom PNG icon from mods/HyCitizensData/Common/UI/WorldMap/MapMarkers</p>
                                 </div>
                                 {{/if}}
+                                
                                 <div class="spacer-sm"></div>
-                                <div class="checkbox-row" style="horizontal-align: center;">
-                                    <input type="checkbox" id="rotate-towards-player" {{#if rotateTowardsPlayer}}checked{{/if}} />
-                                    <div style="layout: top; flex-weight: 0; text-align: center;">
-                                        <p class="checkbox-label">Rotate Towards Player</p>
-                                    </div>
+                                <div class="form-group">
+                                    {{@numberField:id=map-marker-max-distance,label=Display View Distance (Blocks),value={{$mapMarkerMaxDistance}},placeholder=0,min=0,max=100000,step=1,decimals=0,hint=Maximum distance players can see this marker. Set to 0 for default map view distance.}}
                                 </div>
+                                {{else}}
                                 <div class="spacer-sm"></div>
-                                <div class="form-group" style="horizontal-align: center; anchor-width: 460;">
-                                    {{@numberField:id=look-at-distance,label=Look-At Distance,value={{$lookAtDistance}},placeholder=0.0,min=0,max=100,step=0.5,decimals=1,hint=Distance inside which NPC turns to players}}
+                                <div class="info-box">
+                                    <p class="info-box-text">Map marker is disabled. This citizen will not show on the world map.</p>
                                 </div>
+                                {{/if}}
                             </div>
-                
-                            <div class="spacer-md"></div>
-                
-                            <!-- Scale Section -->
-                            <div class="section">
-                                {{@sectionHeader:title=Scale,description=Adjust the size of the citizen}}
-                
-                                <div class="form-row" style="horizontal-align: center;">
-                                    <div class="form-col-fixed" style="anchor-width: 250;">
-                                        <div class="form-group">
-                                            {{@numberField:id=citizen-scale,label=Scale Factor *,value={{$scale}},min=0.1,max=10.0,step=0.1,decimals=2}}
-                                            <p class="form-hint" style="text-align: center;">* Scaling non-player models requires a reload</p>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                
-                            <div class="spacer-md"></div>
-                
-                            <!-- Permissions Section -->
-                            <div class="section">
-                                {{@sectionHeader:title=Permissions,description=Control who can interact with this citizen}}
-                
-                                <div class="form-row" style="horizontal-align: center;">
-                                    <div class="form-col-fixed" style="anchor-width: 250;">
-                                        <div class="form-group">
-                                            <div class="form-row">
-                                                <p class="form-label">Required Permission</p>
-                                                <p class="form-label-optional">(Optional)</p>
-                                            </div>
-                                            <input type="text" id="citizen-permission" class="form-input" value="{{$permission}}" 
-                                                   placeholder="e.g., citizens.interact.vip" style="anchor-width: 250;" />
-                                            <p class="form-hint" style="text-align: center;">Leave empty for no permission requirement</p>
-                                        </div>
-                                    </div>
-                                    <div class="spacer-h-md"></div>
-                                    <div class="form-col-fixed" style="anchor-width: 250;">
-                                        <div class="form-group">
-                                            <div class="form-row">
-                                                <p class="form-label">No Permission Message</p>
-                                                <p class="form-label-optional">(Optional)</p>
-                                            </div>
-                                            <input type="text" id="citizen-perm-message" class="form-input" value="{{$permMessage}}" 
-                                                   placeholder="e.g., You need VIP rank to interact!" style="anchor-width: 250;" />
-                                            <p class="form-hint" style="text-align: center;">Message shown when player lacks permission</p>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                
-                            <div class="spacer-lg"></div>
-                
                         </div>
-                
-                        <!-- Footer -->
-                        <div class="footer" style="layout: center; flex-weight: 0; padding: 26 16 26 16; border-top: 1 solid #1a293c; width: 100%; vertical-align: center;">
-                            <button id="cancel-btn" class="secondary-button" style="anchor-width: 150;">Cancel</button>
-                            <div class="spacer-h-md"></div>
-                            <button id="create-btn" class="secondary-button btn-wide" style="anchor-width: 200;">Create</button>
-                        </div>
-                
                     </div>
+
+                    <div class="spacer-lg"></div>
+                    """;
+
+            footerHtml = """
+                    <div class="footer" style="layout: center; flex-weight: 0; padding: 26 16 26 16; border-top: 1 solid #1a293c; width: 100%; vertical-align: center;">
+                        <button id="prev-btn" class="secondary-button" style="anchor-width: 160; anchor-height: 44;">Back: Identity</button>
+                        <div class="spacer-h-sm"></div>
+                        <button id="cancel-btn" class="secondary-button" style="anchor-width: 140; anchor-height: 44;">Cancel</button>
+                        <div class="spacer-h-sm"></div>
+                        <button id="next-btn" class="secondary-button" style="anchor-width: 220; anchor-height: 44;">{{#if hideNpc}}Next Step: Organization{{else}}Next Step: Appearance{{/if}}</button>
+                    </div>
+                    """;
+        } else if (isStep3) {
+            stepContentHtml = """
+                    <!-- STEP 3: ENTITY TYPE & APPEARANCE -->
+                    <p class="page-description">Step 3 of {{$totalSteps}}: Choose whether to use a player character model or another entity</p>
+                    <div class="spacer-sm"></div>
+
+                    <!-- Entity Type Selection Toggle -->
+                    <div class="section">
+                        <div class="section-header" style="background-color: #21324a(0.4);">
+                            <p class="section-title">Entity Type</p>
+                            <p class="section-description">Choose between standard player model or creature / monster / mob models</p>
+                        </div>
+                        <div class="spacer-sm"></div>
+                        <div class="form-row" style="horizontal-align: center;">
+                            <div class="toggle-group" style="layout: left; anchor-width: 480;">
+                                <button id="type-player" class="secondary-button toggle-btn{{#if isPlayerModel}} toggle-active{{/if}}" style="anchor-width: 230; anchor-height: 46;">Player Model</button>
+                                <div class="spacer-h-sm"></div>
+                                <button id="type-entity" class="secondary-button toggle-btn{{#if !isPlayerModel}} toggle-active{{/if}}" style="anchor-width: 230; anchor-height: 46;">Other Entities</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="spacer-md"></div>
+
+                    {{#if isPlayerModel}}
+                    <!-- Player Skin Section -->
+                    <div class="section">
+                        <div class="section-header" style="background-color: #21324a(0.4);">
+                            <p class="section-title">Player Skin Configuration</p>
+                            <p class="section-description">Choose a starting skin for the player model</p>
+                        </div>
+                        <div class="spacer-sm"></div>
+                        
+                        <!-- Prominent Customizer Note -->
+                        <div class="form-row" style="horizontal-align: center;">
+                            <div class="form-col-fixed" style="anchor-width: 620;">
+                                <div class="info-box" style="background-color: #1e4871(0.4); border: 1 solid #3b7ac4; padding: 12; border-radius: 8;">
+                                    <p class="info-box-text" style="color: #ffffff; font-size: 13; text-align: center;">Player skins, cosmetics, hair, clothing, and body parts</p>
+                                    <p class="info-box-text" style="color: #8cc8ff; font-size: 12; text-align: center;">can be fully customized anytime later via the Skin Customizer in Edit Citizen!</p>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="spacer-md"></div>
+
+                        <div class="form-row" style="horizontal-align: center;">
+                            <div class="form-col-fixed" style="anchor-width: 620;">
+                                <div class="form-group">
+                                    <p class="form-label">Skin Username</p>
+                                    <input type="text" id="skin-username" class="form-input" value="{{$skinUsername}}" placeholder="e.g. electro, Notch (leave empty for your own skin)" style="width: 100%;" />
+                                    <p class="form-hint">Enter any player username to fetch and apply their skin</p>
+                                </div>
+                                <div class="spacer-sm"></div>
+                                <div class="form-row" style="horizontal-align: center;">
+                                    <button id="get-player-skin-btn" class="secondary-button" style="anchor-width: 280; anchor-height: 40;">Use My Current Skin</button>
+                                    <div class="spacer-h-md"></div>
+                                    <button id="random-skin-btn" class="secondary-button" style="anchor-width: 280; anchor-height: 40;">Generate Random Skin</button>
+                                </div>
+                                <div class="spacer-xs"></div>
+                                <p class="form-hint" style="text-align: center; color: #7cb8eb;">{{$skinStatusHint}}</p>
+                                <div class="spacer-md"></div>
+                                <div class="checkbox-row" style="background-color: #141f2e; padding: 10; border-radius: 8;">
+                                    <input type="checkbox" id="live-skin-check" {{#if useLiveSkin}}checked{{/if}} />
+                                    <div style="layout: top; flex-weight: 1; padding-left: 10;">
+                                        <p class="checkbox-label" style="font-size: 14; font-weight: bold;">Live Skin Updates</p>
+                                        <p class="checkbox-description" style="color: #9bb7d4; font-size: 11;">Automatically syncs when the target player updates their skin (optional)</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    {{else}}
+                    <!-- Creature / Entity Section -->
+                    <div class="section">
+                        <div class="section-header" style="background-color: #21324a(0.4);">
+                            <p class="section-title">Creature & Entity Model</p>
+                            <p class="section-description">Select from built-in creature models or enter a custom model asset ID</p>
+                        </div>
+                        <div class="spacer-sm"></div>
+                        <div class="form-row" style="horizontal-align: center;">
+                            <div class="form-col-fixed" style="anchor-width: 620;">
+                                <div class="form-group">
+                                    <p class="form-label">Select Entity Model</p>
+                                    <select id="entity-dropdown" data-hyui-showlabel="true">
+                                        {{{$entityOptions}}}
+                                    </select>
+                                    <p class="form-hint">Choose from common creatures and entity types</p>
+                                </div>
+                                <div class="spacer-sm"></div>
+                                <div class="form-group">
+                                    <p class="form-label">Or Enter Custom Model ID</p>
+                                    <input type="text" id="citizen-model-id" class="form-input" value="" placeholder="Leave empty to use dropdown, or type custom asset ID" maxlength="64" style="width: 100%;" />
+                                    <p class="form-hint">Enter any valid registered model asset ID</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    {{/if}}
+
+                    <div class="spacer-md"></div>
+
+                    <!-- Sizing & Player Tracking Section -->
+                    <div class="section">
+                        <div class="section-header" style="background-color: #21324a(0.4);">
+                            <p class="section-title">Scale & Tracking Behavior</p>
+                            <p class="section-description">Adjust model size and head/body player tracking</p>
+                        </div>
+                        <div class="spacer-sm"></div>
+                        <div class="form-row" style="horizontal-align: center;">
+                            <div class="form-col-fixed" style="anchor-width: 620;">
+                                <div class="form-group">
+                                    {{@numberField:id=citizen-scale,label=Scale Factor,value={{$scale}},min=0.1,max=10.0,step=0.1,decimals=2,hint=1.0 is standard size. Scaling non-player models may require a reload.}}
+                                </div>
+                                <div class="spacer-sm"></div>
+                                <div class="checkbox-row" style="background-color: #141f2e; padding: 10; border-radius: 8;">
+                                    <input type="checkbox" id="rotate-towards-player" {{#if rotateTowardsPlayer}}checked{{/if}} />
+                                    <div style="layout: top; flex-weight: 1; padding-left: 10;">
+                                        <p class="checkbox-label" style="font-size: 14; font-weight: bold;">Rotate Towards Player</p>
+                                        <p class="checkbox-description" style="color: #9bb7d4; font-size: 11;">Citizen smoothly turns to face approaching players</p>
+                                    </div>
+                                </div>
+                                <div class="spacer-sm"></div>
+                                <div class="form-group">
+                                    {{@numberField:id=look-at-distance,label=Look-At Tracking Distance (Blocks),value={{$lookAtDistance}},placeholder=25.0,min=0,max=100,step=0.5,decimals=1,hint=Distance within which the citizen will track and look at players.}}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="spacer-lg"></div>
+                    """;
+
+            footerHtml = """
+                    <div class="footer" style="layout: center; flex-weight: 0; padding: 26 16 26 16; border-top: 1 solid #1a293c; width: 100%; vertical-align: center;">
+                        <button id="prev-btn" class="secondary-button" style="anchor-width: 160; anchor-height: 44;">Back: Map Marker</button>
+                        <div class="spacer-h-sm"></div>
+                        <button id="cancel-btn" class="secondary-button" style="anchor-width: 140; anchor-height: 44;">Cancel</button>
+                        <div class="spacer-h-sm"></div>
+                        <button id="next-btn" class="secondary-button" style="anchor-width: 220; anchor-height: 44;">Next Step: Organization</button>
+                    </div>
+                    """;
+        } else {
+            stepContentHtml = """
+                    <!-- STEP 4 / FINAL STEP: ORGANIZATION & PERMISSIONS -->
+                    <p class="page-description">Step {{$totalSteps}} of {{$totalSteps}}: Organize your citizen into groups and set access permissions</p>
+                    <div class="spacer-sm"></div>
+
+                    <!-- Group Section -->
+                    <div class="section">
+                        <div class="section-header" style="background-color: #21324a(0.4);">
+                            <p class="section-title">Citizen Group</p>
+                            <p class="section-description">Categorize citizens for easier filtering, viewing, and batch actions</p>
+                        </div>
+                        <div class="spacer-sm"></div>
+                        <div class="form-row" style="horizontal-align: center;">
+                            <div class="form-col-fixed" style="anchor-width: 620;">
+                                <div class="form-group">
+                                    <p class="form-label">Select Existing Group</p>
+                                    <select id="group-dropdown" data-hyui-showlabel="true">
+                                        {{{$groupOptions}}}
+                                    </select>
+                                    <p class="form-hint">Choose from existing citizen groups</p>
+                                </div>
+                                <div class="spacer-sm"></div>
+                                <div class="form-group">
+                                    <p class="form-label">Or Enter New Group Name / Path</p>
+                                    <input type="text" id="group-custom" class="form-input" value="{{$group}}" placeholder="e.g. Guards, Market/Vendors (leave empty for none)" style="width: 100%;" />
+                                    <p class="form-hint">Supports nested folders using slashes (e.g. Town/Guards)</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="spacer-md"></div>
+
+                    <!-- Permissions Section -->
+                    <div class="section">
+                        <div class="section-header" style="background-color: #21324a(0.4);">
+                            <p class="section-title">Interaction Permissions (Optional)</p>
+                            <p class="section-description">Control which players can interact with or talk to this citizen</p>
+                        </div>
+                        <div class="spacer-sm"></div>
+                        <div class="form-row" style="horizontal-align: center;">
+                            <div class="form-col-fixed" style="anchor-width: 620;">
+                                <div class="form-group">
+                                    <p class="form-label">Required Permission Node</p>
+                                    <input type="text" id="citizen-permission" class="form-input" value="{{$permission}}" placeholder="e.g. hycitizens.interact.vip (leave empty for everyone)" style="width: 100%;" />
+                                    <p class="form-hint">Only players with this permission will be able to interact</p>
+                                </div>
+                                <div class="spacer-sm"></div>
+                                <div class="form-group">
+                                    <p class="form-label">No-Permission Denial Message</p>
+                                    <input type="text" id="citizen-perm-message" class="form-input" value="{{$permMessage}}" placeholder="e.g. You must be a VIP to speak with this citizen!" style="width: 100%;" />
+                                    <p class="form-hint">Message sent to players who lack the required permission</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="spacer-md"></div>
+
+                    <!-- Creation Summary Card -->
+                    <div class="section">
+                        <div class="section-header" style="background-color: #21324a(0.4);">
+                            <p class="section-title">Citizen Setup Summary</p>
+                            <p class="section-description">Review your configuration before creating</p>
+                        </div>
+                        <div class="spacer-sm"></div>
+                        <div class="form-row" style="horizontal-align: center;">
+                            <div class="form-col-fixed" style="anchor-width: 620; background-color: #121c29; border: 1 solid #253950; border-radius: 8; padding: 14;">
+                                <p style="font-size: 13; color: #9bb7d4; line-height: 1.6;">
+                                    <span style="color: #ffffff; font-weight: bold;">Name:</span> {{$name}}<br />
+                                    <span style="color: #ffffff; font-weight: bold;">Visibility:</span> {{$summaryVisibility}}<br />
+                                    <span style="color: #ffffff; font-weight: bold;">Model & Scale:</span> {{$summaryModel}}<br />
+                                    <span style="color: #ffffff; font-weight: bold;">Nametag:</span> {{$nametagSummary}}<br />
+                                    <span style="color: #ffffff; font-weight: bold;">Map Marker:</span> {{$summaryMapMarker}}<br />
+                                    <span style="color: #ffffff; font-weight: bold;">Group:</span> {{$summaryGroup}}<br />
+                                    <span style="color: #ffffff; font-weight: bold;">Permission:</span> {{$summaryPermission}}
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="spacer-lg"></div>
+                    """;
+
+            footerHtml = """
+                    <div class="footer" style="layout: center; flex-weight: 0; padding: 26 16 26 16; border-top: 1 solid #1a293c; width: 100%; vertical-align: center;">
+                        <button id="prev-btn" class="secondary-button" style="anchor-width: 160; anchor-height: 44;">{{#if hideNpc}}Back: Map Marker{{else}}Back: Appearance{{/if}}</button>
+                        <div class="spacer-h-sm"></div>
+                        <button id="cancel-btn" class="secondary-button" style="anchor-width: 140; anchor-height: 44;">Cancel</button>
+                        <div class="spacer-h-sm"></div>
+                        <button id="create-btn" class="secondary-button" style="anchor-width: 220; anchor-height: 44;">Create Citizen</button>
+                    </div>
+                    """;
+        }
+
+        String rightPanelHtml = """
+                <!-- RIGHT PANEL: CREATE NEW CITIZEN WIZARD -->
+                <div class="main-container decorated-container" style="anchor-width: 900; anchor-height: 900;">
+            
+                    <!-- Header -->
+                    <div class="header container-title">
+                        <div class="header-content">
+                            <p class="header-title">Create New Citizen</p>
+                        </div>
+                    </div>
+            
+                    <!-- Body -->
+                    <div class="body" data-hyui-scrollbar-style='"Common.ui" "DefaultScrollbarStyle"' style="layout-mode: TopScrolling; flex-weight: 1;">
+
+                        <!-- Step Progress Indicator -->
+                        <div style="layout: left; horizontal-align: center; width: 100%; padding: 8 0 8 0;">
+                            <div style="background-color: {{#if isStep1}}#2c4f7c{{else}}#162334{{/if}}; border-radius: 8; padding: 6 14 6 14; layout: left; vertical-align: center;">
+                                <p style="font-size: 12; font-weight: bold; color: {{#if isStep1}}#ffffff{{else}}#7e95b0{{/if}};">1. Identity & Nametag</p>
+                            </div>
+                            <div class="spacer-h-sm"></div>
+                            <p style="color: #4a6382; font-size: 12; vertical-align: center;">></p>
+                            <div class="spacer-h-sm"></div>
+                            <div style="background-color: {{#if isStep2}}#2c4f7c{{else}}#162334{{/if}}; border-radius: 8; padding: 6 14 6 14; layout: left; vertical-align: center;">
+                                <p style="font-size: 12; font-weight: bold; color: {{#if isStep2}}#ffffff{{else}}#7e95b0{{/if}};">2. World Map</p>
+                            </div>
+                            {{#if !hideNpc}}
+                            <div class="spacer-h-sm"></div>
+                            <p style="color: #4a6382; font-size: 12; vertical-align: center;">></p>
+                            <div class="spacer-h-sm"></div>
+                            <div style="background-color: {{#if isStep3}}#2c4f7c{{else}}#162334{{/if}}; border-radius: 8; padding: 6 14 6 14; layout: left; vertical-align: center;">
+                                <p style="font-size: 12; font-weight: bold; color: {{#if isStep3}}#ffffff{{else}}#7e95b0{{/if}};">3. Appearance</p>
+                            </div>
+                            {{/if}}
+                            <div class="spacer-h-sm"></div>
+                            <p style="color: #4a6382; font-size: 12; vertical-align: center;">></p>
+                            <div class="spacer-h-sm"></div>
+                            <div style="background-color: {{#if isFinalStep}}#2c4f7c{{else}}#162334{{/if}}; border-radius: 8; padding: 6 14 6 14; layout: left; vertical-align: center;">
+                                <p style="font-size: 12; font-weight: bold; color: {{#if isFinalStep}}#ffffff{{else}}#7e95b0{{/if}};">{{#if hideNpc}}3. Organization & Finish{{else}}4. Organization & Finish{{/if}}</p>
+                            </div>
+                        </div>
+
+                        <div class="spacer-sm"></div>
+                """
+                + stepContentHtml
+                + """
+                    </div>
+                """
+                + footerHtml
+                + """
+                </div>
                 """;
 
         String html = template.process(wrapSideBySideHtml(template, ctx, rightPanelHtml));
@@ -2714,10 +3091,7 @@ public class CitizensUI {
                 .fromHtml(HtmlUtils.sanitizeHtmlForHyUI(html));
 
         setupMainEventListeners(page, playerRef, store, Tab.CREATE, ctx.unifiedList(), ctx.searchQuery(), ctx.normalizedViewingGroup(), null);
-        setupCreateCitizenListeners(page, playerRef, store, isPlayerModel, name, nametagOffset, hideNametag, hideNpc,
-                mapMarkerEnabled, mapMarkerType, mapMarkerName, mapMarkerCustomIcon, mapMarkerMaxDistance,
-                modelNametagEnabled, nametagModelId, nametagModelScale, rotateNametagTowardsPlayer,
-                modelId, scale, permission, permMessage, useLiveSkin, skinUsername, rotateTowardsPlayer, group, lookAtDistance);
+        setupCreateCitizenWizardListeners(page, playerRef, store, state);
 
         page.open(store);
     }
@@ -3987,386 +4361,450 @@ public class CitizensUI {
         page.open(store);
     }
 
-    private void setupCreateCitizenListeners(PageBuilder page, PlayerRef playerRef, Store<EntityStore> store,
-                                              boolean initialIsPlayerModel, String initialName, float initialNametagOffset,
-                                              boolean initialHideNametag, boolean initialHideNpc,
-                                              boolean initialMapMarkerEnabled, String initialMapMarkerType, String initialMapMarkerName,
-                                              String initialMapMarkerCustomIcon, float initialMapMarkerMaxDistance,
-                                              boolean initialModelNametagEnabled, String initialNametagModelId,
-                                              float initialNametagModelScale, boolean initialRotateNametagTowardsPlayer,
-                                             String initialModelId, float initialScale, String initialPermission, String initialPermMessage, boolean initialUseLiveSkin,
-                                             String initialSkinUsername, boolean initialRotateTowardsPlayer,
-                                             String initialGroup, float initialLookAtDistance) {
-        final List<CommandAction> tempActions = new ArrayList<>();
-        final String[] currentName = {initialName};
-        final float[] nametagOffset = {initialNametagOffset};
-        final boolean[] hideNametag = {initialHideNametag};
-        final boolean[] hideNpc = {initialHideNpc};
-        final boolean[] mapMarkerEnabled = {initialMapMarkerEnabled};
-        final String[] mapMarkerType = {CitizenData.normalizeMapMarkerType(initialMapMarkerType)};
-        final String[] mapMarkerName = {initialMapMarkerName != null ? initialMapMarkerName : ""};
-        final String[] mapMarkerCustomIcon = {CitizenData.normalizeMapMarkerCustomIcon(initialMapMarkerCustomIcon)};
-        final float[] mapMarkerMaxDistance = {Math.max(0.0f, initialMapMarkerMaxDistance)};
-        final boolean[] modelNametagEnabled = {initialModelNametagEnabled};
-        final String[] currentNametagModelId = {initialNametagModelId};
-        final float[] currentNametagModelScale = {initialNametagModelScale};
-        final boolean[] rotateNametagTowardsPlayer = {initialRotateNametagTowardsPlayer};
-        final String[] currentModelId = {initialModelId.isEmpty() ? "PlayerTestModel_V" : initialModelId};
-        final float[] currentScale = {Math.max(0.01f, Math.min(100.0f, initialScale))};
-        final String[] currentPermission = {initialPermission};
-        final String[] currentPermMessage = {initialPermMessage};
-        final boolean[] isPlayerModel = {initialIsPlayerModel};
-        final boolean[] useLiveSkin = {initialUseLiveSkin};
-        final String[] skinUsername = {initialSkinUsername};
-        final PlayerSkin[] cachedSkin = {null};
-        final boolean[] rotateTowardsPlayer = {initialRotateTowardsPlayer};
-        final String[] currentGroup = {initialGroup};
-        final float[] lookAtDistance = {initialLookAtDistance};
+    private void setupCreateCitizenWizardListeners(@Nonnull PageBuilder page,
+                                                    @Nonnull PlayerRef playerRef,
+                                                    @Nonnull Store<EntityStore> store,
+                                                    @Nonnull CitizenCreationState state) {
+        int step = state.getEffectiveStep();
 
-        page.addEventListener("citizen-name", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
-            currentName[0] = ctx.getValue("citizen-name", String.class).orElse("");
-        });
-
-        if (!initialIsPlayerModel) {
-            try {
-                page.addEventListener("citizen-model-id", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
-                    currentModelId[0] = ctx.getValue("citizen-model-id", String.class).orElse("");
-                });
-            } catch (IllegalArgumentException ignored) {}
-
-            try {
-                page.addEventListener("entity-dropdown", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
-                    ctx.getValue("entity-dropdown", String.class).ifPresent(val -> {
-                        currentModelId[0] = val;
-                    });
-                });
-            } catch (IllegalArgumentException ignored) {}
-        }
-
-        if (initialIsPlayerModel) {
-            try {
-                page.addEventListener("skin-username", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
-                    skinUsername[0] = ctx.getValue("skin-username", String.class).orElse("");
-                });
-            } catch (IllegalArgumentException ignored) {}
-
-            try {
-                page.addEventListener("live-skin-check", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
-                    useLiveSkin[0] = ctx.getValue("live-skin-check", Boolean.class).orElse(false);
-                    if (CitizenData.isGeneratedSkinUsername(skinUsername[0])) {
-                        useLiveSkin[0] = false;
-                    }
-                });
-            } catch (IllegalArgumentException ignored) {}
-
-            try {
-                page.addEventListener("get-player-skin-btn", CustomUIEventBindingType.Activating, event -> {
-                    skinUsername[0] = playerRef.getUsername();
-                    cachedSkin[0] = null;
-                    playerRef.sendMessage(Message.raw("Using your skin for this citizen!").color(Color.GREEN));
-                });
-            } catch (IllegalArgumentException ignored) {}
-
-            try {
-                page.addEventListener("random-skin-btn", CustomUIEventBindingType.Activating, event -> {
-                    try {
-                        PlayerSkin randomSkin = CosmeticsModule.get().generateRandomSkin(RandomUtil.getSecureRandom());
-                        cachedSkin[0] = randomSkin;
-                        skinUsername[0] = "random_" + UUID.randomUUID().toString().substring(0, 8);
-                        useLiveSkin[0] = false;
-                        playerRef.sendMessage(Message.raw("Random skin generated successfully!").color(Color.GREEN));
-                    } catch (Exception e) {
-                        playerRef.sendMessage(Message.raw("Failed to generate random skin: " + e.getMessage()).color(Color.RED));
-                    }
-                });
-            } catch (IllegalArgumentException ignored) {}
-        }
-
-        page.addEventListener("rotate-towards-player", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
-            rotateTowardsPlayer[0] = ctx.getValue("rotate-towards-player", Boolean.class).orElse(false);
-        });
-
-        try {
-            page.addEventListener("look-at-distance", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
-                ctx.getValue("look-at-distance", Double.class).ifPresent(v -> lookAtDistance[0] = Math.max(0.0f, v.floatValue()));
+        // ------------------ STEP 1: IDENTITY & NAMETAG & HIDE NPC ------------------
+        if (step == 1) {
+            page.addEventListener("citizen-name", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
+                state.setName(ctx.getValue("citizen-name", String.class).orElse(""));
             });
-        } catch (IllegalArgumentException ignored) {
-            // Defensive guard in case an older cached UI layout without this field is still open.
-        }
 
-        page.addEventListener("nametag-settings-btn", CustomUIEventBindingType.Activating, event ->
+            page.addEventListener("hide-npc-check", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
+                boolean hideNpc = ctx.getValue("hide-npc-check", Boolean.class).orElse(false);
+                if (hideNpc != state.isHideNpc()) {
+                    state.setName(ctx.getValue("citizen-name", String.class).orElse(state.getName()));
+                    state.setHideNpc(hideNpc);
+                    openCreateCitizenWizard(playerRef, store, state);
+                }
+            });
+
+            page.addEventListener("nametag-settings-btn", CustomUIEventBindingType.Activating, (event, ctx) -> {
+                state.setName(ctx.getValue("citizen-name", String.class).orElse(state.getName()));
+                state.setHideNpc(ctx.getValue("hide-npc-check", Boolean.class).orElse(state.isHideNpc()));
                 openNametagSettingsGUI(
                         playerRef,
                         store,
-                        currentName[0],
-                        nametagOffset[0],
-                        hideNametag[0],
-                        modelNametagEnabled[0],
-                        currentNametagModelId[0],
-                        currentNametagModelScale[0],
-                        rotateNametagTowardsPlayer[0],
-                        updated -> openCreateCitizenGUI(
-                                playerRef, store, isPlayerModel[0], updated.name(), updated.offset(), updated.hideNametag(), hideNpc[0],
-                                mapMarkerEnabled[0], mapMarkerType[0], mapMarkerName[0], mapMarkerCustomIcon[0], mapMarkerMaxDistance[0],
-                                updated.modelEnabled(), updated.modelId(), updated.modelScale(), updated.rotateModelTowardsPlayer(),
-                                currentModelId[0], currentScale[0], currentPermission[0], currentPermMessage[0], useLiveSkin[0], true,
-                                skinUsername[0], rotateTowardsPlayer[0], currentGroup[0], lookAtDistance[0]
-                        ),
-                        () -> openCreateCitizenGUI(
-                                playerRef, store, isPlayerModel[0], currentName[0], nametagOffset[0], hideNametag[0], hideNpc[0],
-                                mapMarkerEnabled[0], mapMarkerType[0], mapMarkerName[0], mapMarkerCustomIcon[0], mapMarkerMaxDistance[0],
-                                modelNametagEnabled[0], currentNametagModelId[0], currentNametagModelScale[0], rotateNametagTowardsPlayer[0],
-                                currentModelId[0], currentScale[0], currentPermission[0], currentPermMessage[0], useLiveSkin[0], true,
-                                skinUsername[0], rotateTowardsPlayer[0], currentGroup[0], lookAtDistance[0]
-                        )
-                ));
+                        state.getName(),
+                        state.getNametagOffset(),
+                        state.isHideNametag(),
+                        state.isModelNametagEnabled(),
+                        state.getNametagModelId(),
+                        state.getNametagModelScale(),
+                        state.isRotateNametagTowardsPlayer(),
+                        updated -> {
+                            state.setName(updated.name());
+                            state.setNametagOffset(updated.offset());
+                            state.setHideNametag(updated.hideNametag());
+                            state.setModelNametagEnabled(updated.modelEnabled());
+                            state.setNametagModelId(updated.modelId());
+                            state.setNametagModelScale(updated.modelScale());
+                            state.setRotateNametagTowardsPlayer(updated.rotateModelTowardsPlayer());
+                            openCreateCitizenWizard(playerRef, store, state);
+                        },
+                        () -> openCreateCitizenWizard(playerRef, store, state)
+                );
+            });
 
-        page.addEventListener("hide-npc-check", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
-            hideNpc[0] = ctx.getValue("hide-npc-check", Boolean.class).orElse(false);
-        });
+            page.addEventListener("next-btn", CustomUIEventBindingType.Activating, (event, ctx) -> {
+                String enteredName = ctx.getValue("citizen-name", String.class).orElse(state.getName()).trim();
+                state.setName(enteredName);
+                state.setHideNpc(ctx.getValue("hide-npc-check", Boolean.class).orElse(state.isHideNpc()));
 
-        page.addEventListener("map-marker-check", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
-            boolean enabled = ctx.getValue("map-marker-check", Boolean.class).orElse(false);
-            if (mapMarkerEnabled[0]) {
-                mapMarkerName[0] = ctx.getValue("map-marker-name", String.class).orElse(mapMarkerName[0]);
-                mapMarkerCustomIcon[0] = CitizenData.normalizeMapMarkerCustomIcon(
-                        ctx.getValue("map-marker-custom-icon", String.class).orElse(mapMarkerCustomIcon[0]));
-                mapMarkerMaxDistance[0] = getNonNegativeFloatValue(ctx, "map-marker-max-distance", mapMarkerMaxDistance[0]);
-            }
-            if (enabled == mapMarkerEnabled[0]) {
-                return;
-            }
+                if (enteredName.isEmpty()) {
+                    playerRef.sendMessage(Message.raw("Please enter a citizen display name before proceeding!").color(Color.RED));
+                    return;
+                }
 
-            mapMarkerEnabled[0] = enabled;
-            openCreateCitizenGUI(playerRef, store, isPlayerModel[0], currentName[0], nametagOffset[0], hideNametag[0], hideNpc[0],
-                    mapMarkerEnabled[0], mapMarkerType[0], mapMarkerName[0], mapMarkerCustomIcon[0], mapMarkerMaxDistance[0],
-                    modelNametagEnabled[0], currentNametagModelId[0], currentNametagModelScale[0], rotateNametagTowardsPlayer[0],
-                    currentModelId[0], currentScale[0], currentPermission[0], currentPermMessage[0], useLiveSkin[0], true,
-                    skinUsername[0], rotateTowardsPlayer[0], currentGroup[0], lookAtDistance[0]);
-        });
+                state.setStep(2);
+                openCreateCitizenWizard(playerRef, store, state);
+            });
 
-        if (mapMarkerEnabled[0]) {
-            try {
-                page.addEventListener("map-marker-type", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
-                    boolean wasCustom = CitizenData.MAP_MARKER_TYPE_CUSTOM.equals(mapMarkerType[0]);
-                    mapMarkerType[0] = CitizenData.normalizeMapMarkerType(
-                            ctx.getValue("map-marker-type", String.class).orElse(CitizenData.MAP_MARKER_TYPE_PIN));
-                    boolean isCustom = CitizenData.MAP_MARKER_TYPE_CUSTOM.equals(mapMarkerType[0]);
-                    if (wasCustom != isCustom) {
-                        mapMarkerName[0] = ctx.getValue("map-marker-name", String.class).orElse(mapMarkerName[0]);
-                        mapMarkerMaxDistance[0] = getNonNegativeFloatValue(ctx, "map-marker-max-distance", mapMarkerMaxDistance[0]);
-                        openCreateCitizenGUI(playerRef, store, isPlayerModel[0], currentName[0], nametagOffset[0], hideNametag[0], hideNpc[0],
-                                mapMarkerEnabled[0], mapMarkerType[0], mapMarkerName[0], mapMarkerCustomIcon[0], mapMarkerMaxDistance[0],
-                                modelNametagEnabled[0], currentNametagModelId[0], currentNametagModelScale[0], rotateNametagTowardsPlayer[0],
-                                currentModelId[0], currentScale[0], currentPermission[0], currentPermMessage[0], useLiveSkin[0], true,
-                                skinUsername[0], rotateTowardsPlayer[0], currentGroup[0], lookAtDistance[0]);
-                    }
-                });
-            } catch (IllegalArgumentException ignored) {}
+            page.addEventListener("cancel-btn", CustomUIEventBindingType.Activating, event ->
+                    openCitizensGUI(playerRef, store, Tab.MANAGE));
+        }
 
-            try {
-                page.addEventListener("map-marker-name", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
-                    mapMarkerName[0] = ctx.getValue("map-marker-name", String.class).orElse("");
-                });
-            } catch (IllegalArgumentException ignored) {}
+        // ------------------ STEP 2: WORLD MAP MARKER ------------------
+        else if (step == 2) {
+            page.addEventListener("map-marker-check", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
+                boolean enabled = ctx.getValue("map-marker-check", Boolean.class).orElse(false);
+                if (state.isMapMarkerEnabled()) {
+                    state.setMapMarkerType(CitizenData.normalizeMapMarkerType(
+                            ctx.getValue("map-marker-type", String.class).orElse(state.getMapMarkerType())));
+                    state.setMapMarkerName(ctx.getValue("map-marker-name", String.class).orElse(state.getMapMarkerName()));
+                    state.setMapMarkerCustomIcon(CitizenData.normalizeMapMarkerCustomIcon(
+                            ctx.getValue("map-marker-custom-icon", String.class).orElse(state.getMapMarkerCustomIcon())));
+                    state.setMapMarkerMaxDistance(getNonNegativeFloatValue(ctx, "map-marker-max-distance", state.getMapMarkerMaxDistance()));
+                }
+                if (enabled != state.isMapMarkerEnabled()) {
+                    state.setMapMarkerEnabled(enabled);
+                    openCreateCitizenWizard(playerRef, store, state);
+                }
+            });
 
-            if (CitizenData.MAP_MARKER_TYPE_CUSTOM.equals(mapMarkerType[0])) {
+            if (state.isMapMarkerEnabled()) {
                 try {
-                    page.addEventListener("map-marker-custom-icon", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
-                        mapMarkerCustomIcon[0] = CitizenData.normalizeMapMarkerCustomIcon(
-                                ctx.getValue("map-marker-custom-icon", String.class).orElse(""));
+                    page.addEventListener("map-marker-type", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
+                        boolean wasCustom = CitizenData.MAP_MARKER_TYPE_CUSTOM.equals(state.getMapMarkerType());
+                        state.setMapMarkerType(CitizenData.normalizeMapMarkerType(
+                                ctx.getValue("map-marker-type", String.class).orElse(CitizenData.MAP_MARKER_TYPE_PIN)));
+                        boolean isCustom = CitizenData.MAP_MARKER_TYPE_CUSTOM.equals(state.getMapMarkerType());
+                        if (wasCustom != isCustom) {
+                            state.setMapMarkerName(ctx.getValue("map-marker-name", String.class).orElse(state.getMapMarkerName()));
+                            state.setMapMarkerMaxDistance(getNonNegativeFloatValue(ctx, "map-marker-max-distance", state.getMapMarkerMaxDistance()));
+                            openCreateCitizenWizard(playerRef, store, state);
+                        }
+                    });
+                } catch (IllegalArgumentException ignored) {}
+
+                try {
+                    page.addEventListener("map-marker-name", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
+                        state.setMapMarkerName(ctx.getValue("map-marker-name", String.class).orElse(""));
+                    });
+                } catch (IllegalArgumentException ignored) {}
+
+                if (CitizenData.MAP_MARKER_TYPE_CUSTOM.equals(state.getMapMarkerType())) {
+                    try {
+                        page.addEventListener("map-marker-custom-icon", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
+                            state.setMapMarkerCustomIcon(CitizenData.normalizeMapMarkerCustomIcon(
+                                    ctx.getValue("map-marker-custom-icon", String.class).orElse("")));
+                        });
+                    } catch (IllegalArgumentException ignored) {}
+                }
+
+                try {
+                    page.addEventListener("map-marker-max-distance", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
+                        state.setMapMarkerMaxDistance(getNonNegativeFloatValue(ctx, "map-marker-max-distance", state.getMapMarkerMaxDistance()));
                     });
                 } catch (IllegalArgumentException ignored) {}
             }
 
-            try {
-                page.addEventListener("map-marker-max-distance", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
-                    mapMarkerMaxDistance[0] = getNonNegativeFloatValue(ctx, "map-marker-max-distance", mapMarkerMaxDistance[0]);
-                });
-            } catch (IllegalArgumentException ignored) {}
+            page.addEventListener("prev-btn", CustomUIEventBindingType.Activating, (event, ctx) -> {
+                saveStep2Context(ctx, state);
+                state.setStep(1);
+                openCreateCitizenWizard(playerRef, store, state);
+            });
+
+            page.addEventListener("next-btn", CustomUIEventBindingType.Activating, (event, ctx) -> {
+                saveStep2Context(ctx, state);
+                if (state.isHideNpc()) {
+                    state.setStep(3); // Organization & Finish (total 3 steps)
+                } else {
+                    state.setStep(3); // Appearance (total 4 steps)
+                }
+                openCreateCitizenWizard(playerRef, store, state);
+            });
+
+            page.addEventListener("cancel-btn", CustomUIEventBindingType.Activating, event ->
+                    openCitizensGUI(playerRef, store, Tab.MANAGE));
         }
 
-        page.addEventListener("citizen-scale", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
-            ctx.getValue("citizen-scale", Double.class)
-                    .ifPresent(val -> currentScale[0] = Math.max(0.01f, Math.min(100.0f, val.floatValue())));
+        // ------------------ STEP 3: ENTITY TYPE & APPEARANCE (WHEN NOT HIDDEN) ------------------
+        else if (step == 3 && !state.isHideNpc()) {
+            page.addEventListener("type-player", CustomUIEventBindingType.Activating, (event, ctx) -> {
+                saveStep3Context(ctx, state);
+                state.setPlayerModel(true);
+                openCreateCitizenWizard(playerRef, store, state);
+            });
 
-            if (currentScale[0] == 1.0f) {
-                ctx.getValue("citizen-scale", String.class)
-                        .ifPresent(val -> {
-                            try {
-                                currentScale[0] = Math.max(0.01f, Math.min(100.0f, Float.parseFloat(val)));
-                            } catch (NumberFormatException e) {
-                            }
-                        });
-            }
-        });
+            page.addEventListener("type-entity", CustomUIEventBindingType.Activating, (event, ctx) -> {
+                saveStep3Context(ctx, state);
+                state.setPlayerModel(false);
+                if (state.getModelId().isEmpty() || "Player".equalsIgnoreCase(state.getModelId()) || "PlayerTestModel_V".equalsIgnoreCase(state.getModelId())) {
+                    state.setModelId("Sheep");
+                }
+                openCreateCitizenWizard(playerRef, store, state);
+            });
 
-        page.addEventListener("citizen-permission", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
-            currentPermission[0] = ctx.getValue("citizen-permission", String.class).orElse("");
-        });
+            if (state.isPlayerModel()) {
+                try {
+                    page.addEventListener("live-skin-check", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
+                        saveStep3Context(ctx, state);
+                        state.setUseLiveSkin(ctx.getValue("live-skin-check", Boolean.class).orElse(false));
+                        if (CitizenData.isGeneratedSkinUsername(state.getSkinUsername())) {
+                            state.setUseLiveSkin(false);
+                        }
+                        openCreateCitizenWizard(playerRef, store, state);
+                    });
+                } catch (IllegalArgumentException ignored) {}
 
-        page.addEventListener("citizen-perm-message", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
-            currentPermMessage[0] = ctx.getValue("citizen-perm-message", String.class).orElse("");
-        });
+                try {
+                    page.addEventListener("skin-username", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
+                        state.setSkinUsername(ctx.getValue("skin-username", String.class).orElse(""));
+                        state.setCachedSkin(null);
+                    });
+                } catch (IllegalArgumentException ignored) {}
 
-        page.addEventListener("group-dropdown", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
-            String selectedGroup = ctx.getValue("group-dropdown", String.class).orElse("");
-            // Only update if not the create new option
-            if (!"__CREATE_NEW__".equals(selectedGroup)) {
-                currentGroup[0] = selectedGroup;
-            }
-        });
+                try {
+                    page.addEventListener("get-player-skin-btn", CustomUIEventBindingType.Activating, (event, ctx) -> {
+                        saveStep3Context(ctx, state);
+                        state.setSkinUsername(playerRef.getUsername());
+                        state.setCachedSkin(null);
+                        state.setUseLiveSkin(false);
+                        playerRef.sendMessage(Message.raw("Selected your current player skin!").color(Color.GREEN));
+                        openCreateCitizenWizard(playerRef, store, state);
+                    });
+                } catch (IllegalArgumentException ignored) {}
 
-        page.addEventListener("group-custom", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
-            String customGroup = ctx.getValue("group-custom", String.class).orElse("").trim();
-            currentGroup[0] = customGroup;
-        });
-
-        page.addEventListener("type-player", CustomUIEventBindingType.Activating, (event, ctx) -> {
-            if (mapMarkerEnabled[0]) {
-                mapMarkerType[0] = CitizenData.normalizeMapMarkerType(
-                        ctx.getValue("map-marker-type", String.class).orElse(mapMarkerType[0]));
-                mapMarkerName[0] = ctx.getValue("map-marker-name", String.class).orElse(mapMarkerName[0]);
-                mapMarkerCustomIcon[0] = CitizenData.normalizeMapMarkerCustomIcon(
-                        ctx.getValue("map-marker-custom-icon", String.class).orElse(mapMarkerCustomIcon[0]));
-                mapMarkerMaxDistance[0] = getNonNegativeFloatValue(ctx, "map-marker-max-distance", mapMarkerMaxDistance[0]);
-            }
-            openCreateCitizenGUI(playerRef, store, true, currentName[0], nametagOffset[0], hideNametag[0], hideNpc[0],
-                    mapMarkerEnabled[0], mapMarkerType[0], mapMarkerName[0], mapMarkerCustomIcon[0], mapMarkerMaxDistance[0],
-                    modelNametagEnabled[0], currentNametagModelId[0], currentNametagModelScale[0], rotateNametagTowardsPlayer[0], currentModelId[0],
-                    currentScale[0], currentPermission[0], currentPermMessage[0], useLiveSkin[0], true,
-                    skinUsername[0], rotateTowardsPlayer[0], currentGroup[0], lookAtDistance[0]);
-        });
-
-        page.addEventListener("type-entity", CustomUIEventBindingType.Activating, (event, ctx) -> {
-            if (mapMarkerEnabled[0]) {
-                mapMarkerType[0] = CitizenData.normalizeMapMarkerType(
-                        ctx.getValue("map-marker-type", String.class).orElse(mapMarkerType[0]));
-                mapMarkerName[0] = ctx.getValue("map-marker-name", String.class).orElse(mapMarkerName[0]);
-                mapMarkerCustomIcon[0] = CitizenData.normalizeMapMarkerCustomIcon(
-                        ctx.getValue("map-marker-custom-icon", String.class).orElse(mapMarkerCustomIcon[0]));
-                mapMarkerMaxDistance[0] = getNonNegativeFloatValue(ctx, "map-marker-max-distance", mapMarkerMaxDistance[0]);
-            }
-            openCreateCitizenGUI(playerRef, store, false, currentName[0], nametagOffset[0], hideNametag[0], hideNpc[0],
-                    mapMarkerEnabled[0], mapMarkerType[0], mapMarkerName[0], mapMarkerCustomIcon[0], mapMarkerMaxDistance[0],
-                    modelNametagEnabled[0], currentNametagModelId[0], currentNametagModelScale[0], rotateNametagTowardsPlayer[0], currentModelId[0],
-                    currentScale[0], currentPermission[0], currentPermMessage[0], useLiveSkin[0], true,
-                    skinUsername[0], rotateTowardsPlayer[0], currentGroup[0], lookAtDistance[0]);
-        });
-
-        page.addEventListener("create-btn", CustomUIEventBindingType.Activating, (event, ctx) -> {
-            mapMarkerEnabled[0] = ctx.getValue("map-marker-check", Boolean.class).orElse(mapMarkerEnabled[0]);
-            if (mapMarkerEnabled[0]) {
-                mapMarkerType[0] = CitizenData.normalizeMapMarkerType(
-                        ctx.getValue("map-marker-type", String.class).orElse(mapMarkerType[0]));
-                mapMarkerName[0] = ctx.getValue("map-marker-name", String.class).orElse(mapMarkerName[0]);
-                mapMarkerCustomIcon[0] = CitizenData.normalizeMapMarkerCustomIcon(
-                        ctx.getValue("map-marker-custom-icon", String.class).orElse(mapMarkerCustomIcon[0]));
-                mapMarkerMaxDistance[0] = getNonNegativeFloatValue(ctx, "map-marker-max-distance", mapMarkerMaxDistance[0]);
-            }
-
-            String name = currentName[0].trim();
-
-            if (name.isEmpty()) {
-                playerRef.sendMessage(Message.raw("Please enter a citizen name!").color(Color.RED));
-                return;
-            }
-
-            String modelId;
-            if (isPlayerModel[0]) {
-                modelId = "Player";
+                try {
+                    page.addEventListener("random-skin-btn", CustomUIEventBindingType.Activating, (event, ctx) -> {
+                        saveStep3Context(ctx, state);
+                        try {
+                            PlayerSkin randomSkin = CosmeticsModule.get().generateRandomSkin(RandomUtil.getSecureRandom());
+                            state.setCachedSkin(randomSkin);
+                            state.setSkinUsername("random_" + UUID.randomUUID().toString().substring(0, 8));
+                            state.setUseLiveSkin(false);
+                            playerRef.sendMessage(Message.raw("Random skin generated successfully!").color(Color.GREEN));
+                        } catch (Exception e) {
+                            playerRef.sendMessage(Message.raw("Failed to generate random skin: " + e.getMessage()).color(Color.RED));
+                        }
+                        openCreateCitizenWizard(playerRef, store, state);
+                    });
+                } catch (IllegalArgumentException ignored) {}
             } else {
-                modelId = currentModelId[0].trim();
-                if (modelId.isEmpty()) {
-                    playerRef.sendMessage(Message.raw("Please select or enter a model ID!").color(Color.RED));
+                try {
+                    page.addEventListener("entity-dropdown", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
+                        String selected = ctx.getValue("entity-dropdown", String.class).orElse("");
+                        if (!selected.isEmpty()) {
+                            state.setModelId(selected);
+                        }
+                    });
+                } catch (IllegalArgumentException ignored) {}
+
+                try {
+                    page.addEventListener("citizen-model-id", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
+                        String custom = ctx.getValue("citizen-model-id", String.class).orElse("").trim();
+                        if (!custom.isEmpty()) {
+                            state.setModelId(custom);
+                        }
+                    });
+                } catch (IllegalArgumentException ignored) {}
+            }
+
+            page.addEventListener("citizen-scale", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
+                ctx.getValue("citizen-scale", Double.class).ifPresent(val -> state.setScale(val.floatValue()));
+            });
+
+            page.addEventListener("rotate-towards-player", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
+                state.setRotateTowardsPlayer(ctx.getValue("rotate-towards-player", Boolean.class).orElse(false));
+            });
+
+            try {
+                page.addEventListener("look-at-distance", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
+                    ctx.getValue("look-at-distance", Double.class).ifPresent(v -> state.setLookAtDistance(v.floatValue()));
+                });
+            } catch (IllegalArgumentException ignored) {}
+
+            page.addEventListener("prev-btn", CustomUIEventBindingType.Activating, (event, ctx) -> {
+                saveStep3Context(ctx, state);
+                state.setStep(2);
+                openCreateCitizenWizard(playerRef, store, state);
+            });
+
+            page.addEventListener("next-btn", CustomUIEventBindingType.Activating, (event, ctx) -> {
+                saveStep3Context(ctx, state);
+                if (!state.isPlayerModel() && state.getModelId().trim().isEmpty()) {
+                    playerRef.sendMessage(Message.raw("Please select or enter an entity model ID!").color(Color.RED));
                     return;
                 }
-            }
+                state.setStep(4);
+                openCreateCitizenWizard(playerRef, store, state);
+            });
 
-            Vector3d position = new Vector3d(playerRef.getTransform().getPosition());
-            Vector3f rotation = RotationUtil.toVector3f(playerRef.getTransform().getRotation());
+            page.addEventListener("cancel-btn", CustomUIEventBindingType.Activating, event ->
+                    openCitizensGUI(playerRef, store, Tab.MANAGE));
+        }
 
-            UUID worldUUID = playerRef.getWorldUuid();
-            if (worldUUID == null) {
-                playerRef.sendMessage(Message.raw("Failed to create citizen!").color(Color.RED));
-                return;
-            }
+        // ------------------ STEP 4 (OR STEP 3 IF HIDDEN): ORGANIZATION & PERMISSIONS & FINISH ------------------
+        else {
+            page.addEventListener("group-dropdown", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
+                String selected = ctx.getValue("group-dropdown", String.class).orElse("");
+                if (!"__CREATE_NEW__".equals(selected)) {
+                    state.setGroup(selected);
+                }
+            });
 
-            if (skinUsername[0].isEmpty()) {
-                skinUsername[0] = playerRef.getUsername();
-            }
+            page.addEventListener("group-custom", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
+                state.setGroup(ctx.getValue("group-custom", String.class).orElse("").trim());
+            });
 
-            CitizenData citizen = new CitizenData(
-                    UUID.randomUUID().toString(),
-                    name,
-                    modelId,
-                    worldUUID,
-                    position,
-                    rotation,
-                    currentScale[0],
-                    null,
-                    new ArrayList<>(),
-                    currentPermission[0].trim(),
-                    currentPermMessage[0].trim(),
-                    new ArrayList<>(tempActions),
-                    isPlayerModel[0],
-                    useLiveSkin[0],
-                    skinUsername[0].trim(),
-                    null,
-                    0L,
-                    rotateTowardsPlayer[0]
-            );
+            page.addEventListener("citizen-permission", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
+                state.setPermission(ctx.getValue("citizen-permission", String.class).orElse(""));
+            });
 
-            citizen.setNametagOffset(nametagOffset[0]);
-            citizen.setHideNametag(hideNametag[0]);
-            citizen.setModelNametagEnabled(modelNametagEnabled[0]);
-            citizen.setNametagModelId(currentNametagModelId[0].trim());
-            citizen.setNametagModelScale(currentNametagModelScale[0]);
-            citizen.setRotateNametagTowardsPlayer(rotateNametagTowardsPlayer[0]);
-            citizen.setHideNpc(hideNpc[0]);
-            citizen.setMapMarkerEnabled(mapMarkerEnabled[0]);
-            citizen.setMapMarkerType(mapMarkerType[0]);
-            citizen.setMapMarkerName(mapMarkerName[0]);
-            citizen.setMapMarkerCustomIcon(mapMarkerCustomIcon[0]);
-            citizen.setMapMarkerMaxDistance(mapMarkerMaxDistance[0]);
-            citizen.setGroup(currentGroup[0]);
-            citizen.setLookAtDistance(lookAtDistance[0]);
-            plugin.getCitizensManager().autoResolveAttackType(citizen);
+            page.addEventListener("citizen-perm-message", CustomUIEventBindingType.ValueChanged, (event, ctx) -> {
+                state.setPermMessage(ctx.getValue("citizen-perm-message", String.class).orElse(""));
+            });
 
-            if (isPlayerModel[0]) {
-                if (cachedSkin[0] != null) {
-                    // Use the pre-generated random skin
-                    citizen.setCachedSkin(cachedSkin[0]);
-                    citizen.setLastSkinUpdate(System.currentTimeMillis());
-                    plugin.getCitizensManager().addCitizen(citizen, true);
-                    playerRef.sendMessage(Message.raw("Citizen \"" + name + "\" created at your position!").color(Color.GREEN));
-                    openCitizensGUI(playerRef, store, Tab.MANAGE);
-                } else if (skinUsername[0].trim().isEmpty()) {
-                    plugin.getCitizensManager().updateCitizenSkinFromPlayer(citizen, playerRef, false);
-                    plugin.getCitizensManager().addCitizen(citizen, true);
-                    playerRef.sendMessage(Message.raw("Citizen \"" + name + "\" created at your position!").color(Color.GREEN));
-                    openCitizensGUI(playerRef, store, Tab.MANAGE);
+            page.addEventListener("prev-btn", CustomUIEventBindingType.Activating, (event, ctx) -> {
+                saveStep4Context(ctx, state);
+                if (state.isHideNpc()) {
+                    state.setStep(2); // Go back to Map Marker
                 } else {
-                    playerRef.sendMessage(Message.raw("Fetching skin for \"" + skinUsername[0] + "\"...").color(Color.YELLOW));
-                    SkinUtilities.getSkin(skinUsername[0].trim()).thenAccept(skin -> {
-                        if (skin != null) {
-                            citizen.setCachedSkin(skin);
-                            citizen.setLastSkinUpdate(System.currentTimeMillis());
-                        }
+                    state.setStep(3); // Go back to Appearance
+                }
+                openCreateCitizenWizard(playerRef, store, state);
+            });
+
+            page.addEventListener("cancel-btn", CustomUIEventBindingType.Activating, event ->
+                    openCitizensGUI(playerRef, store, Tab.MANAGE));
+
+            page.addEventListener("create-btn", CustomUIEventBindingType.Activating, (event, ctx) -> {
+                saveStep4Context(ctx, state);
+
+                String name = state.getName().trim();
+                if (name.isEmpty()) {
+                    playerRef.sendMessage(Message.raw("Please enter a citizen name!").color(Color.RED));
+                    state.setStep(1);
+                    openCreateCitizenWizard(playerRef, store, state);
+                    return;
+                }
+
+                String modelId;
+                if (state.isHideNpc()) {
+                    modelId = "Player";
+                    state.setPlayerModel(true);
+                    state.setScale(1.0f);
+                } else if (state.isPlayerModel()) {
+                    modelId = "Player";
+                } else {
+                    modelId = state.getModelId().trim();
+                    if (modelId.isEmpty()) {
+                        modelId = "Sheep";
+                    }
+                }
+
+                Vector3d position = new Vector3d(playerRef.getTransform().getPosition());
+                Vector3f rotation = RotationUtil.toVector3f(playerRef.getTransform().getRotation());
+
+                UUID worldUUID = playerRef.getWorldUuid();
+                if (worldUUID == null) {
+                    playerRef.sendMessage(Message.raw("Failed to create citizen: World UUID not found!").color(Color.RED));
+                    return;
+                }
+
+                String skinUser = state.getSkinUsername().trim();
+                if (skinUser.isEmpty()) {
+                    skinUser = playerRef.getUsername();
+                }
+
+                CitizenData citizen = new CitizenData(
+                        UUID.randomUUID().toString(),
+                        name,
+                        modelId,
+                        worldUUID,
+                        position,
+                        rotation,
+                        state.getScale(),
+                        null,
+                        new ArrayList<>(),
+                        state.getPermission().trim(),
+                        state.getPermMessage().trim(),
+                        new ArrayList<>(),
+                        state.isPlayerModel(),
+                        state.isUseLiveSkin(),
+                        skinUser,
+                        null,
+                        0L,
+                        state.getRotateTowardsPlayer()
+                );
+
+                citizen.setNametagOffset(state.getNametagOffset());
+                citizen.setHideNametag(state.isHideNametag());
+                citizen.setModelNametagEnabled(state.isModelNametagEnabled());
+                citizen.setNametagModelId(state.getNametagModelId().trim());
+                citizen.setNametagModelScale(state.getNametagModelScale());
+                citizen.setRotateNametagTowardsPlayer(state.isRotateNametagTowardsPlayer());
+                citizen.setHideNpc(state.isHideNpc());
+                citizen.setMapMarkerEnabled(state.isMapMarkerEnabled());
+                citizen.setMapMarkerType(state.getMapMarkerType());
+                citizen.setMapMarkerName(state.getMapMarkerName());
+                citizen.setMapMarkerCustomIcon(state.getMapMarkerCustomIcon());
+                citizen.setMapMarkerMaxDistance(state.getMapMarkerMaxDistance());
+                citizen.setGroup(state.getGroup());
+                citizen.setLookAtDistance(state.getLookAtDistance());
+                plugin.getCitizensManager().autoResolveAttackType(citizen);
+
+                if (state.isPlayerModel() && !state.isHideNpc()) {
+                    if (state.getCachedSkin() != null) {
+                        citizen.setCachedSkin(state.getCachedSkin());
+                        citizen.setLastSkinUpdate(System.currentTimeMillis());
                         plugin.getCitizensManager().addCitizen(citizen, true);
                         playerRef.sendMessage(Message.raw("Citizen \"" + name + "\" created at your position!").color(Color.GREEN));
                         openCitizensGUI(playerRef, store, Tab.MANAGE);
-                    });
+                    } else if (skinUser.isEmpty() || skinUser.equalsIgnoreCase(playerRef.getUsername())) {
+                        plugin.getCitizensManager().updateCitizenSkinFromPlayer(citizen, playerRef, false);
+                        plugin.getCitizensManager().addCitizen(citizen, true);
+                        playerRef.sendMessage(Message.raw("Citizen \"" + name + "\" created at your position!").color(Color.GREEN));
+                        openCitizensGUI(playerRef, store, Tab.MANAGE);
+                    } else {
+                        playerRef.sendMessage(Message.raw("Fetching skin for \"" + skinUser + "\"...").color(Color.YELLOW));
+                        SkinUtilities.getSkin(skinUser).thenAccept(skin -> {
+                            if (skin != null) {
+                                citizen.setCachedSkin(skin);
+                                citizen.setLastSkinUpdate(System.currentTimeMillis());
+                            }
+                            plugin.getCitizensManager().addCitizen(citizen, true);
+                            playerRef.sendMessage(Message.raw("Citizen \"" + name + "\" created at your position!").color(Color.GREEN));
+                            openCitizensGUI(playerRef, store, Tab.MANAGE);
+                        });
+                    }
+                } else {
+                    plugin.getCitizensManager().addCitizen(citizen, true);
+                    playerRef.sendMessage(Message.raw("Citizen \"" + name + "\" created at your position!").color(Color.GREEN));
+                    openCitizensGUI(playerRef, store, Tab.MANAGE);
                 }
-            } else {
-                plugin.getCitizensManager().addCitizen(citizen, true);
-                playerRef.sendMessage(Message.raw("Citizen \"" + name + "\" created at your position!").color(Color.GREEN));
-                openCitizensGUI(playerRef, store, Tab.MANAGE);
-            }
-        });
+            });
+        }
+    }
 
-        page.addEventListener("cancel-btn", CustomUIEventBindingType.Activating, event ->
-                openCitizensGUI(playerRef, store, Tab.CREATE));
+    private void saveStep2Context(@Nonnull UIContext ctx, @Nonnull CitizenCreationState state) {
+        state.setMapMarkerEnabled(ctx.getValue("map-marker-check", Boolean.class).orElse(state.isMapMarkerEnabled()));
+        if (state.isMapMarkerEnabled()) {
+            state.setMapMarkerType(CitizenData.normalizeMapMarkerType(
+                    ctx.getValue("map-marker-type", String.class).orElse(state.getMapMarkerType())));
+            state.setMapMarkerName(ctx.getValue("map-marker-name", String.class).orElse(state.getMapMarkerName()));
+            state.setMapMarkerCustomIcon(CitizenData.normalizeMapMarkerCustomIcon(
+                    ctx.getValue("map-marker-custom-icon", String.class).orElse(state.getMapMarkerCustomIcon())));
+            state.setMapMarkerMaxDistance(getNonNegativeFloatValue(ctx, "map-marker-max-distance", state.getMapMarkerMaxDistance()));
+        }
+    }
+
+    private void saveStep3Context(@Nonnull UIContext ctx, @Nonnull CitizenCreationState state) {
+        if (state.isPlayerModel()) {
+            state.setUseLiveSkin(ctx.getValue("live-skin-check", Boolean.class).orElse(state.isUseLiveSkin()));
+            state.setSkinUsername(ctx.getValue("skin-username", String.class).orElse(state.getSkinUsername()));
+        } else {
+            String customModel = ctx.getValue("citizen-model-id", String.class).orElse("").trim();
+            if (!customModel.isEmpty()) {
+                state.setModelId(customModel);
+            } else {
+                ctx.getValue("entity-dropdown", String.class).ifPresent(selected -> {
+                    if (!selected.isEmpty()) {
+                        state.setModelId(selected);
+                    }
+                });
+            }
+        }
+        ctx.getValue("citizen-scale", Double.class).ifPresent(val -> state.setScale(val.floatValue()));
+        state.setRotateTowardsPlayer(ctx.getValue("rotate-towards-player", Boolean.class).orElse(state.getRotateTowardsPlayer()));
+        ctx.getValue("look-at-distance", Double.class).ifPresent(v -> state.setLookAtDistance(v.floatValue()));
+    }
+
+    private void saveStep4Context(@Nonnull UIContext ctx, @Nonnull CitizenCreationState state) {
+        String selectedGroup = ctx.getValue("group-dropdown", String.class).orElse("");
+        if (!"__CREATE_NEW__".equals(selectedGroup) && !selectedGroup.isEmpty()) {
+            state.setGroup(selectedGroup);
+        }
+        String customGroup = ctx.getValue("group-custom", String.class).orElse("");
+        if (!customGroup.trim().isEmpty()) {
+            state.setGroup(customGroup.trim());
+        }
+        state.setPermission(ctx.getValue("citizen-permission", String.class).orElse(state.getPermission()));
+        state.setPermMessage(ctx.getValue("citizen-perm-message", String.class).orElse(state.getPermMessage()));
     }
 
     private void setupEditCitizenListeners(PageBuilder page, PlayerRef playerRef, Store<EntityStore> store,
@@ -11536,6 +11974,20 @@ public class CitizensUI {
 
     public void openDialogConfigGUI(@Nonnull PlayerRef playerRef, @Nonnull Store<EntityStore> store, @Nonnull CitizenData citizen) {
         LeftPanelContext ctx = prepareLeftPanelContext(playerRef, "", citizen.getGroup(), citizen);
+
+        String assignedDialogId = citizen.getInteractDialogueId();
+        IDialogue activeDialogue = (assignedDialogId != null && !assignedDialogId.isEmpty())
+                ? DialogueManager.get().getDialogue(assignedDialogId)
+                : null;
+        boolean hasActiveDialog = activeDialogue != null;
+        boolean hasBrokenActiveDialog = assignedDialogId != null && !assignedDialogId.isEmpty() && activeDialogue == null;
+
+        String triggerLabel = switch (citizen.getInteractDialogueTrigger()) {
+            case "LEFT_CLICK" -> "Left Click";
+            case "F_KEY" -> "F Key";
+            default -> "Both (Left Click / F Key)";
+        };
+
         List<IDialogue> dialoguesListStable = new ArrayList<>(DialogueManager.get().getDialogues().values());
         List<Map<String, Object>> dialogueList = new ArrayList<>();
         int dialogueListIndex = 0;
@@ -11543,26 +11995,37 @@ public class CitizensUI {
             Map<String, Object> map = new HashMap<>();
             map.put("index", dialogueListIndex++);
             map.put("id", d.getId());
-            map.put("title", d.getTitle().isEmpty() ? d.getId() : d.getTitle());
+            String rawTitle = d.getTitle().isEmpty() ? d.getId() : d.getTitle();
+            String displayTitle = (rawTitle.contains(d.getId()) || rawTitle.equals(d.getId()))
+                    ? rawTitle
+                    : rawTitle + " (" + d.getId() + ")";
+            map.put("title", displayTitle);
             map.put("startNode", d.getStartNodeId());
             map.put("nodeCount", d.getNodes().size());
-            
-            boolean isInteract = d.getId().equals(citizen.getInteractDialogueId());
-            map.put("isInteractActive", isInteract);
-            String triggerLabel = switch (citizen.getInteractDialogueTrigger()) {
-                case "LEFT_CLICK" -> "Left Click";
-                case "F_KEY" -> "F Key";
-                default -> "Both";
-            };
-            map.put("interactButtonText", isInteract ? "Interact: " + triggerLabel : "Set Interaction");
-            map.put("interactButtonClass", isInteract ? "primary-button" : "secondary-button");
+
+            boolean isAssigned = d.getId().equals(assignedDialogId);
+            map.put("isAssigned", isAssigned);
             dialogueList.add(map);
         }
 
+        String rawActiveTitle = activeDialogue != null ? (activeDialogue.getTitle().isEmpty() ? activeDialogue.getId() : activeDialogue.getTitle()) : "";
+        String activeDisplayTitle = (activeDialogue != null && (rawActiveTitle.contains(activeDialogue.getId()) || rawActiveTitle.equals(activeDialogue.getId())))
+                ? rawActiveTitle
+                : (activeDialogue != null ? rawActiveTitle + " (" + activeDialogue.getId() + ")" : "");
+
         TemplateProcessor template = createBaseTemplate()
                 .setVariable("citizenName", citizen.getName())
+                .setVariable("hasActiveDialog", hasActiveDialog)
+                .setVariable("hasBrokenActiveDialog", hasBrokenActiveDialog)
+                .setVariable("brokenDialogId", assignedDialogId != null ? assignedDialogId : "")
+                .setVariable("activeDialogTitle", activeDisplayTitle)
+                .setVariable("activeDialogId", activeDialogue != null ? activeDialogue.getId() : "")
+                .setVariable("activeStartNode", activeDialogue != null ? activeDialogue.getStartNodeId() : "")
+                .setVariable("activeNodeCount", activeDialogue != null ? activeDialogue.getNodes().size() : 0)
+                .setVariable("activeTrigger", triggerLabel)
                 .setVariable("dialogues", dialogueList)
-                .setVariable("hasDialogues", !dialogueList.isEmpty());
+                .setVariable("hasDialogues", !dialogueList.isEmpty())
+                .setVariable("presetCount", dialogueList.size());
 
         String rightPanelHtml = """
                     <!-- RIGHT PANEL: CITIZEN DIALOGS -->
@@ -11576,65 +12039,95 @@ public class CitizensUI {
                         </div>
 
                         <!-- Body -->
-                        <div class="body" data-hyui-scrollbar-style='"Common.ui" "DefaultScrollbarStyle"' style="layout-mode: TopScrolling; flex-weight: 1;">
+                        <div class="body" data-hyui-scrollbar-style='"Common.ui" "DefaultScrollbarStyle"' style="layout-mode: TopScrolling; flex-weight: 1; padding: 20; gap: 15;">
 
-                            <p class="page-description">Manage and test dialog trees for {{$citizenName}}</p>
+                            <p class="page-description">Configure and test dialog trees for {{$citizenName}}</p>
+
+                            <!-- SECTION 1: ACTIVE CITIZEN DIALOG -->
+                            <div class="section">
+                                {{@sectionHeader:title=Active Citizen Dialog,description=Dialog triggered when players interact with this citizen}}
+
+                                {{#if hasActiveDialog}}
+                                <div class="card" style="background-color: rgba(22, 26, 38, 0.85); border: 1 solid #388bfd; border-radius: 8; padding: 16;">
+                                    <div style="layout: left; justify-content: space-between; align-items: center;">
+                                        <div style="layout: top; gap: 4;">
+                                            <p style="font-size: 16; color: #ffd075; font-weight: bold;">{{$activeDialogTitle}}</p>
+                                            <p class="command-type" style="font-size: 12; color: #8b949e;">Start Node: <span style="color: #c9d1d9;">{{$activeStartNode}}</span> | Nodes: <span style="color: #c9d1d9;">{{$activeNodeCount}}</span> | Trigger: <span style="color: #58a6ff; font-weight: bold;">{{$activeTrigger}}</span></p>
+                                        </div>
+                                    </div>
+                                    <div class="spacer-sm"></div>
+                                    <div style="layout: left; flex-direction: row; gap: 8;">
+                                        <button id="change-trigger-btn" class="secondary-button small-secondary-button" style="anchor-width: 170;">Change Trigger</button>
+                                        <button id="test-active-dialog-btn" class="secondary-button small-secondary-button" style="anchor-width: 90;">Test</button>
+                                        <button id="edit-active-dialog-btn" class="primary-button small-secondary-button" style="anchor-width: 90;">Edit</button>
+                                        <button id="unassign-active-dialog-btn" class="secondary-button small-secondary-button" style="anchor-width: 120;">Unassign</button>
+                                    </div>
+                                </div>
+                                {{else}}
+                                {{#if hasBrokenActiveDialog}}
+                                <div class="card" style="background-color: rgba(239, 68, 68, 0.1); border: 1 solid #ef4444; border-radius: 8; padding: 14;">
+                                    <p style="font-size: 13; color: #f87171; font-weight: bold;">Missing Dialog Reference: "{{$brokenDialogId}}"</p>
+                                    <p style="font-size: 12; color: #8b949e;">The assigned dialog file was removed or renamed from the presets library.</p>
+                                    <div class="spacer-sm"></div>
+                                    <button id="unassign-active-dialog-btn" class="secondary-button small-secondary-button" style="anchor-width: 170;">Clear Missing Link</button>
+                                </div>
+                                {{else}}
+                                <div class="empty-state" style="padding: 16; border: 1 dashed #30363d; border-radius: 8; background-color: rgba(255, 255, 255, 0.01); layout: center; flex-direction: column; align-items: center; gap: 8;">
+                                    <p style="color: #8b949e; font-size: 13; text-align: center;">No dialog is currently assigned to {{$citizenName}}.</p>
+                                    <button id="create-citizen-dialog-btn" class="primary-button" style="anchor-width: 280; anchor-height: 38;">+ Create Dialog for this Citizen</button>
+                                </div>
+                                {{/if}}
+                                {{/if}}
+                            </div>
+
                             <div class="spacer-sm"></div>
 
-                            <!-- Info + Actions Section -->
+                            <!-- SECTION 2: SERVER PRESETS LIBRARY -->
                             <div class="section">
-                                {{@sectionHeader:title=Dialog Presets}}
-                                
-                                <div style="layout: center; flex-direction: row; justify-content: center; gap: 16;">
-                                    <button id="new-dialog-btn" class="primary-button" style="anchor-width: 180; anchor-height: 38;">+ New Dialog</button>
-                                    <div class="spacer-h-sm"></div>
-                                    <button id="reload-presets-btn" class="secondary-button" style="anchor-width: 180; anchor-height: 38;">Reload Presets</button>
+                                {{@sectionHeader:title=Server Presets Library ({{$presetCount}}),description=Global dialog presets available to assign to any citizen}}
+
+                                <div style="layout: left; flex-direction: row; gap: 12;">
+                                    <button id="new-dialog-btn" class="secondary-button" style="anchor-width: 160; anchor-height: 34;">+ New Preset</button>
+                                    <button id="reload-presets-btn" class="secondary-button" style="anchor-width: 160; anchor-height: 34;">Reload Presets</button>
                                 </div>
-                                
+
                                 <div class="spacer-sm"></div>
 
-                                <div class="card">
-                                    <div class="card-body">
-                                        <p style="color: #8b949e; font-size: 12; text-align: center;"><span style="color: #58a6ff;">Info:</span> Dialogs are saved automatically to <span style="color: #58a6ff;">mods/HyCitizensData/Dialogs/</span> when you edit them.</p>
-                                        <div class="spacer-xs"></div>
-                                        <p style="color: #8b949e; font-size: 12; text-align: center;">Use the "Edit in Browser" button to launch the visual editor. Use "Test Dialog" to execute and test.</p>
+                                {{#if hasDialogues}}
+                                <div class="list-container" data-hyui-scrollbar-style='"Common.ui" "DefaultScrollbarStyle"' style="anchor-height: 300;">
+                                    {{#each dialogues}}
+                                    <div class="command-item">
+                                        <div class="command-icon command-icon-player" style="background-color: rgba(56, 139, 253, 0.15);">
+                                            <p class="command-icon-text command-icon-text-player" style="font-size: 8; color: #58a6ff;">D</p>
+                                        </div>
+                                        <div class="command-content">
+                                            <p class="command-text" style="color: #ffd075; font-weight: bold;">{{$title}}</p>
+                                            <p class="command-type">Start Node: {{$startNode}} | Total Nodes: {{$nodeCount}}</p>
+                                        </div>
+                                        <div class="command-actions" style="anchor-width: 320;">
+                                            {{#if isAssigned}}
+                                            <button id="interact-dialog-{{$index}}" class="primary-button small-secondary-button" style="anchor-width: 95; opacity: 0.85;">Assigned</button>
+                                            {{else}}
+                                            <button id="interact-dialog-{{$index}}" class="secondary-button small-secondary-button" style="anchor-width: 95;">Assign</button>
+                                            {{/if}}
+                                            <div class="spacer-h-sm"></div>
+                                            <button id="run-dialog-{{$index}}" class="secondary-button small-secondary-button" style="anchor-width: 80;">Test</button>
+                                            <div class="spacer-h-sm"></div>
+                                            <button id="edit-dialog-{{$index}}" class="secondary-button small-secondary-button" style="anchor-width: 80;">Edit</button>
+                                        </div>
+                                    </div>
+                                    <div class="spacer-sm"></div>
+                                    {{/each}}
+                                </div>
+                                {{else}}
+                                <div class="empty-state">
+                                    <div class="empty-state-content">
+                                        <p class="empty-state-title">No Presets on Server</p>
+                                        <p class="empty-state-description">Click "+ New Preset" to create a server preset visually.</p>
                                     </div>
                                 </div>
+                                {{/if}}
                             </div>
-
-                            <div class="spacer-md"></div>
-
-                            <!-- Dialogs List -->
-                            {{#if hasDialogues}}
-                            <div class="list-container" data-hyui-scrollbar-style='"Common.ui" "DefaultScrollbarStyle"' style="anchor-height: 350;">
-                                {{#each dialogues}}
-                                <div class="command-item">
-                                    <div class="command-icon command-icon-player" style="background-color: rgba(56, 139, 253, 0.15);">
-                                        <p class="command-icon-text command-icon-text-player" style="font-size: 8; color: #58a6ff;">D</p>
-                                    </div>
-                                    <div class="command-content">
-                                        <p class="command-text" style="color: #ffd075; font-weight: bold;">{{$title}} ({{$id}})</p>
-                                        <p class="command-type">Start Node: {{$startNode}} | Total Nodes: {{$nodeCount}}</p>
-                                    </div>
-                                    <div class="command-actions" style="anchor-width: 480;">
-                                        <button id="interact-dialog-{{$index}}" class="{{$interactButtonClass}} small-secondary-button" style="anchor-width: 140;">{{$interactButtonText}}</button>
-                                        <div class="spacer-h-sm"></div>
-                                        <button id="run-dialog-{{$index}}" class="secondary-button small-secondary-button" style="anchor-width: 120;">Test Dialog</button>
-                                        <div class="spacer-h-sm"></div>
-                                        <button id="edit-dialog-{{$index}}" class="primary-button small-secondary-button" style="anchor-width: 140;">Edit in Browser</button>
-                                    </div>
-                                </div>
-                                <div class="spacer-sm"></div>
-                                {{/each}}
-                            </div>
-                            {{else}}
-                            <div class="empty-state">
-                                <div class="empty-state-content">
-                                    <p class="empty-state-title">No Dialogs Loaded</p>
-                                    <p class="empty-state-description">Click "+ New Dialog" to create a dialog configuration visually.</p>
-                                </div>
-                            </div>
-                            {{/if}}
 
                         </div>
 
@@ -11653,6 +12146,81 @@ public class CitizensUI {
                 .fromHtml(HtmlUtils.sanitizeHtmlForHyUI(html));
 
         setupMainEventListeners(page, playerRef, store, Tab.MANAGE, ctx.unifiedList(), ctx.searchQuery(), ctx.normalizedViewingGroup(), citizen);
+
+        if (hasActiveDialog) {
+            final IDialogue finalActiveDialog = activeDialogue;
+            page.addEventListener("change-trigger-btn", CustomUIEventBindingType.Activating, (event, eventCtx) -> {
+                openDialogInteractionGUI(playerRef, store, citizen, finalActiveDialog);
+            });
+
+            page.addEventListener("test-active-dialog-btn", CustomUIEventBindingType.Activating, (event, eventCtx) -> {
+                eventCtx.getPage().ifPresent(p -> p.close());
+                playerRef.sendMessage(Message.raw("Launching dialog '" + finalActiveDialog.getTitle() + "' in manual test mode...").color(Color.YELLOW));
+                ScriptContext scriptCtx = new ScriptContext(
+                        citizen,
+                        playerRef,
+                        Universe.get().getWorld(citizen.getWorldUUID()),
+                        store,
+                        "MANUAL_TEST",
+                        null
+                );
+                DialogueManager.get().startDialogueSession(playerRef, finalActiveDialog, scriptCtx, citizen.getId());
+            });
+
+            page.addEventListener("edit-active-dialog-btn", CustomUIEventBindingType.Activating, (event, eventCtx) -> {
+                eventCtx.getPage().ifPresent(p -> p.close());
+                DialogEditorManager.get().startEditSession(playerRef, finalActiveDialog.getId());
+            });
+
+            page.addEventListener("unassign-active-dialog-btn", CustomUIEventBindingType.Activating, (event, eventCtx) -> {
+                citizen.setInteractDialogueId(null);
+                HyCitizensPlugin.get().getCitizensManager().saveCitizen(citizen);
+                playerRef.sendMessage(Message.raw("[HyCitizens] Unassigned dialog from " + citizen.getName()).color(Color.GREEN));
+                openDialogConfigGUI(playerRef, store, citizen);
+            });
+        } else if (hasBrokenActiveDialog) {
+            page.addEventListener("unassign-active-dialog-btn", CustomUIEventBindingType.Activating, (event, eventCtx) -> {
+                citizen.setInteractDialogueId(null);
+                HyCitizensPlugin.get().getCitizensManager().saveCitizen(citizen);
+                playerRef.sendMessage(Message.raw("[HyCitizens] Cleared missing dialog link from " + citizen.getName()).color(Color.GREEN));
+                openDialogConfigGUI(playerRef, store, citizen);
+            });
+        } else {
+            page.addEventListener("create-citizen-dialog-btn", CustomUIEventBindingType.Activating, (event, eventCtx) -> {
+                String sanitizedCitizenId = citizen.getId().replaceAll("[^a-zA-Z0-9_.-]", "_");
+                String newId = "dialog_" + sanitizedCitizenId;
+                String newTitle = citizen.getName() + "'s Dialog";
+
+                Dialogue newDialogue = new Dialogue();
+                newDialogue.setId(newId);
+                newDialogue.setTitle(newTitle);
+                newDialogue.setStartNode("start_node");
+
+                DialogueNode startNode = new DialogueNode();
+                startNode.setId("start_node");
+                startNode.setText("Hello! How can I help you?");
+                startNode.setSpeaker(citizen.getName());
+                newDialogue.putNode(startNode);
+
+                try {
+                    Path dialogFile = DialogPaths.DIALOGS_DIRECTORY.resolve(newId + ".json");
+                    Files.createDirectories(dialogFile.getParent());
+                    String prettyJson = DialogueManager.get().getGson().toJson(newDialogue, IDialogue.class);
+                    Files.writeString(dialogFile, prettyJson, StandardCharsets.UTF_8);
+
+                    DialogueManager.get().registerDialogue(newDialogue);
+                    citizen.setInteractDialogueId(newId);
+                    citizen.setInteractDialogueTrigger("BOTH");
+                    HyCitizensPlugin.get().getCitizensManager().saveCitizen(citizen);
+                    playerRef.sendMessage(Message.raw("[HyCitizens] Created and assigned dialog '" + newId + "' to " + citizen.getName() + "!").color(Color.GREEN));
+                } catch (Exception e) {
+                    playerRef.sendMessage(Message.raw("[HyCitizens] Failed to create dialog file: " + e.getMessage()).color(Color.RED));
+                }
+
+                eventCtx.getPage().ifPresent(p -> p.close());
+                DialogEditorManager.get().startEditSession(playerRef, newId);
+            });
+        }
 
         page.addEventListener("new-dialog-btn", CustomUIEventBindingType.Activating, (event, eventCtx) -> {
             String newId = "dialog_" + UUID.randomUUID().toString().replace("-", "").substring(0, 8);
@@ -11699,7 +12267,7 @@ public class CitizensUI {
         for (IDialogue d : dialoguesListStable) {
             final IDialogue finalD = d;
             final int index = runIndex++;
-            
+
             page.addEventListener("interact-dialog-" + index, CustomUIEventBindingType.Activating, (event, eventCtx) -> {
                 openDialogInteractionGUI(playerRef, store, citizen, finalD);
             });
@@ -11734,6 +12302,7 @@ public class CitizensUI {
 
         TemplateProcessor template = createBaseTemplate()
                 .setVariable("dialogTitle", dialogue.getTitle().isEmpty() ? dialogue.getId() : dialogue.getTitle())
+                .setVariable("citizenName", citizen.getName())
                 .setVariable("isActive", isActive)
                 .setVariable("isLeftClick", "LEFT_CLICK".equals(currentTrigger))
                 .setVariable("isFKey", "F_KEY".equals(currentTrigger))
@@ -11748,8 +12317,8 @@ public class CitizensUI {
                             </div>
                         </div>
 
-                        <div class="body" data-hyui-scrollbar-style='"Common.ui" "DefaultScrollbarStyle"' style="layout-mode: TopScrolling; flex-weight: 1;">
-                            <p class="page-description">Choose how players start "{{$dialogTitle}}".</p>
+                        <div class="body" data-hyui-scrollbar-style='"Common.ui" "DefaultScrollbarStyle"' style="layout-mode: TopScrolling; flex-weight: 1; padding: 20; gap: 15;">
+                            <p class="page-description">Choose how players trigger "{{$dialogTitle}}" when interacting with {{$citizenName}}.</p>
                             <div class="spacer-md"></div>
 
                             <div class="section">
@@ -11759,20 +12328,20 @@ public class CitizensUI {
                                     <div class="spacer-sm"></div>
                                     <button id="dialog-trigger-f-key" class="{{#if isFKey}}primary-button{{else}}secondary-button{{/if}}" style="anchor-width: 250; anchor-height: 42;">F Key</button>
                                     <div class="spacer-sm"></div>
-                                    <button id="dialog-trigger-both" class="{{#if isBoth}}primary-button{{else}}secondary-button{{/if}}" style="anchor-width: 250; anchor-height: 42;">Both</button>
+                                    <button id="dialog-trigger-both" class="{{#if isBoth}}primary-button{{else}}secondary-button{{/if}}" style="anchor-width: 250; anchor-height: 42;">Both (Left Click / F Key)</button>
                                 </div>
                             </div>
 
                             {{#if isActive}}
                             <div class="spacer-md"></div>
                             <div style="layout: center;">
-                                <button id="clear-dialog-interaction" class="secondary-button" style="anchor-width: 250; anchor-height: 38;">Clear Interaction Dialog</button>
+                                <button id="clear-dialog-interaction" class="secondary-button" style="anchor-width: 250; anchor-height: 38;">Unassign Dialog</button>
                             </div>
                             {{/if}}
                         </div>
 
                         <div class="footer" style="layout: center; flex-weight: 0; padding: 26 16 26 16; border-top: 1 solid #1a293c; width: 100%; vertical-align: center;">
-                            <button id="cancel-dialog-interaction" class="secondary-button" style="anchor-width: 150;">Cancel</button>
+                            <button id="cancel-dialog-interaction" class="secondary-button" style="anchor-width: 150;">Back</button>
                         </div>
                     </div>
                 """;

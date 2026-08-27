@@ -89,12 +89,12 @@ public class ScriptingUI {
                                             <p class="command-type">ID: {{$id}} | Trigger: {{$trigger}} | Priority: {{$priority}}</p>
                                             <p class="command-type">{{$summary}}</p>
                                         </div>
-                                        <div class="command-actions">
-                                            <button id="toggle-script-{{$index}}" class="secondary-button small-secondary-button">{{#if enabled}}Disable{{else}}Enable{{/if}}</button>
+                                        <div class="command-actions" style="anchor-width: 310;">
+                                            <button id="toggle-script-{{$index}}" class="secondary-button small-secondary-button" style="anchor-width: 90;">{{#if enabled}}Disable{{else}}Enable{{/if}}</button>
                                             <div class="spacer-h-sm"></div>
-                                            <button id="run-script-{{$index}}" class="secondary-button small-secondary-button">Run/Test</button>
+                                            <button id="run-script-{{$index}}" class="secondary-button small-secondary-button" style="anchor-width: 80;">Test</button>
                                             <div class="spacer-h-sm"></div>
-                                            <button id="web-edit-btn-{{$index}}" class="primary-button small-secondary-button">Edit in Browser</button>
+                                            <button id="web-edit-btn-{{$index}}" class="primary-button small-secondary-button" style="anchor-width: 80;">Edit</button>
                                         </div>
                                     </div>
                                     <div class="spacer-sm"></div>
@@ -115,8 +115,8 @@ public class ScriptingUI {
                                     <p style="font-size: 13; color: #8b949e; text-align: center;">Create a new blank script and open the web editor to configure it.</p>
                                     <div class="spacer-sm"></div>
                                     <div class="form-row" style="horizontal-align: center; gap: 15;">
-                                        <button id="new-script-btn" class="primary-button" style="anchor-width: 250; anchor-height: 40;">+ New Script + Edit in Browser</button>
-                                        <button id="reload-scripts-btn" class="secondary-button" style="anchor-width: 180; anchor-height: 40;">Reload From Disk</button>
+                                        <button id="new-script-btn" class="primary-button" style="anchor-width: 170; anchor-height: 38;">+ New Script</button>
+                                        <button id="reload-scripts-btn" class="secondary-button" style="anchor-width: 170; anchor-height: 38;">Reload Scripts</button>
                                     </div>
                                 </div>
                             </div>

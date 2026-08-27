@@ -6,18 +6,24 @@ import com.electro.hycitizens.api.scripting.*;
 import com.electro.hycitizens.persistence.DataStore;
 import com.electro.hycitizens.persistence.DocumentEnvelope;
 import com.electro.hycitizens.persistence.PersistenceService;
+import com.electro.hycitizens.HyCitizensPlugin;
+import com.electro.hycitizens.models.CitizenData;
 import com.electro.hycitizens.ui.DialogUI;
 import com.electro.hycitizens.util.DialogPaths;
 import com.google.gson.*;
 import com.google.gson.reflect.TypeToken;
 import com.hypixel.hytale.protocol.SoundCategory;
+import com.hypixel.hytale.server.core.Message;
+import com.hypixel.hytale.server.core.asset.type.soundevent.config.SoundEvent;
 import com.hypixel.hytale.server.core.universe.PlayerRef;
 import com.hypixel.hytale.server.core.universe.Universe;
 import com.hypixel.hytale.server.core.universe.world.SoundUtil;
 import com.hypixel.hytale.server.core.universe.world.World;
+import org.joml.Vector3d;
 
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
+import java.awt.Color;
 import java.io.FileReader;
 import java.io.IOException;
 import java.lang.reflect.Type;
@@ -188,6 +194,12 @@ public class DialogueManager {
             }
         }
         if (!issues.isEmpty()) {
+            if (dialogues.isEmpty() && !candidate.isEmpty()) {
+                dialogues = Collections.unmodifiableMap(candidate);
+                getLogger().atWarning().log("[HyCitizens] Dialogue initial bootstrap loaded "
+                        + dialogues.size() + " valid definitions with " + issues.size() + " issue(s).");
+                return new DialogLoadReport(false, dialogues.size(), issues);
+            }
             getLogger().atWarning().log("[HyCitizens] Dialogue reload rejected; keeping "
                     + dialogues.size() + " previously loaded definitions.");
             return new DialogLoadReport(false, dialogues.size(), issues);
@@ -218,6 +230,16 @@ public class DialogueManager {
 
     public boolean isInDialogue(PlayerRef player) { return activeSessions.containsKey(player.getUuid()); }
     @Nullable public DialogueSession getDialogueSession(PlayerRef player) { return activeSessions.get(player.getUuid()); }
+
+    public boolean hasActiveDialogueForNpc(@Nullable String npcId) {
+        if (npcId == null || npcId.isEmpty()) return false;
+        long now = System.currentTimeMillis();
+        boolean hasOverride = overrides.values().stream()
+                .anyMatch(o -> !o.isExpired(now) && (o.scope() == DialogOverride.Scope.GLOBAL || (o.scope() == DialogOverride.Scope.NPC && Objects.equals(o.scopeId(), npcId))));
+        if (hasOverride) return true;
+        DialogProfile profile = profiles.get(npcId);
+        return profile != null && ((profile.getDefaultDialogId() != null && !profile.getDefaultDialogId().isEmpty()) || !profile.getRules().isEmpty());
+    }
 
     public boolean resolveAndStart(
             @Nonnull PlayerRef player,
@@ -344,6 +366,12 @@ public class DialogueManager {
 
     public void transitionToNode(DialogueSession session, String nodeId) {
         if (!isCurrent(session)) return;
+        if (session.incrementTransitionDepth() > 10) {
+            getLogger().atWarning().log("[HyCitizens] Dialogue transition recursion cap exceeded ("
+                    + session.getDialogue().getId() + " at " + nodeId + "). Ending session to prevent loop.");
+            endDialogueSession(session.getPlayer(), "RECURSION_DEPTH_EXCEEDED");
+            return;
+        }
         if (session.getDialogue().getNode(nodeId) == null) {
             finishDialogue(session, session.getCurrentNodeId(), "");
             return;
@@ -365,7 +393,16 @@ public class DialogueManager {
         }
         if (expectedRevision != session.getRenderRevision()) {
             rejectResponse(session, responseId, "STALE_REVISION");
-            displayCurrentNode(session);
+            return;
+        }
+        if (session.isResponseProcessing()) {
+            rejectResponse(session, responseId, "CONCURRENT_SELECTION");
+            return;
+        }
+        if (isDistanceExceeded(session)) {
+            rejectResponse(session, responseId, "DISTANCE_EXCEEDED");
+            endDialogueSession(session.getPlayer(), DialogCloseReason.DISTANCE_EXCEEDED.name());
+            session.getPlayer().sendMessage(Message.raw("[HyCitizens] Conversation ended because you moved too far away.").color(Color.YELLOW));
             return;
         }
         IDialogueNode node = session.getCurrentNode();
@@ -377,8 +414,19 @@ public class DialogueManager {
                 .filter(response -> response.getId().equals(responseId))
                 .findFirst().orElse(null);
         if (selected == null) {
-            if (node.getNextNodeId() != null && !node.getNextNodeId().isEmpty()) transitionToNode(session, node.getNextNodeId());
-            else finishDialogue(session, node.getId(), "");
+            runOnWorld(session, () -> {
+                if (!isCurrent(session)) return;
+                session.resetTransitionDepth();
+                session.setResponseProcessing(false);
+                if (node.getNextNodeId() != null && !node.getNextNodeId().isEmpty()
+                        && !node.getNextNodeId().equalsIgnoreCase("end")
+                        && !node.getNextNodeId().equalsIgnoreCase("close")
+                        && !node.getNextNodeId().equalsIgnoreCase("finish")) {
+                    transitionToNode(session, node.getNextNodeId());
+                } else {
+                    finishDialogue(session, node.getId(), "");
+                }
+            });
             return;
         }
         if (!conditionsPass(selected.getConditions(), session.getScriptContext())) {
@@ -390,22 +438,34 @@ public class DialogueManager {
                 session.getDialogue().getId(), node.getId(), selected.getId());
         if (responsePre.isCancelled()) {
             rejectResponse(session, responseId, responsePre.getCancellationReason());
+            displayCurrentNode(session);
             return;
         }
+
+        // Flag processing and reset transition depth
+        session.setResponseProcessing(true);
+        session.resetTransitionDepth();
 
         lifecycle(DialogueLifecycleEvent.Type.NODE_COMPLETED, session.getPlayer(), session.getNpcId(), session.getDialogue().getId(),
                 node.getId(), selected.getId(), session.getSessionId(), "RESPONSE", Map.of());
         lifecycle(DialogueLifecycleEvent.Type.RESPONSE_SELECTED, session.getPlayer(), session.getNpcId(), session.getDialogue().getId(),
-                node.getId(), selected.getId(), session.getSessionId(), "PLAYER", Map.of("revision", expectedRevision));
+                node.getId(), selected.getId(), session.getSessionId(), "PLAYER", Map.of());
         PlayerDialogState state = getMutablePlayerState(session.getPlayer().getUuid());
         state.recordResponse(session.getDialogue().getId(), selected.getId(), node.getId(), session.getNpcId(), System.currentTimeMillis());
         persistState(state);
         DialogueResponse finalSelected = selected;
-        executeWithPolicy(session, selected.getActions(), node.getNextNodeId(), () -> {
+        executeWithPolicy(session, selected.getActions(), selected.getNextNode() != null ? selected.getNextNode() : node.getNextNodeId(), () -> {
+            session.setResponseProcessing(false);
             String next = finalSelected.getNextNode();
-            if (next == null || next.isEmpty()) next = node.getNextNodeId();
-            if (next != null && !next.isEmpty()) transitionToNode(session, next);
-            else finishDialogue(session, node.getId(), finalSelected.getId());
+            if (next == null || next.trim().isEmpty()) next = node.getNextNodeId();
+            if (next != null && !next.isEmpty()
+                    && !next.equalsIgnoreCase("end")
+                    && !next.equalsIgnoreCase("close")
+                    && !next.equalsIgnoreCase("finish")) {
+                transitionToNode(session, next);
+            } else {
+                finishDialogue(session, node.getId(), finalSelected.getId());
+            }
         });
     }
 
@@ -414,8 +474,27 @@ public class DialogueManager {
                 session.getCurrentNodeId(), responseId, session.getSessionId(), reason, Map.of());
     }
 
+    private boolean isDistanceExceeded(DialogueSession session) {
+        if (session.getNpcId() == null || session.getNpcId().isEmpty()) return false;
+        CitizenData citizen = HyCitizensPlugin.get().getCitizensManager().getCitizen(session.getNpcId());
+        if (citizen == null) return false;
+        PlayerRef player = session.getPlayer();
+        if (player == null || player.getTransform() == null) return false;
+        if (!Objects.equals(player.getWorldUuid(), citizen.getWorldUUID())) return true;
+        Vector3d playerPos = player.getTransform().getPosition();
+        Vector3d citizenPos = citizen.getCurrentPosition() != null ? citizen.getCurrentPosition() : citizen.getPosition();
+        if (playerPos == null || citizenPos == null) return false;
+        double maxDist = HyCitizensPlugin.get().getConfigManager().getDouble("dialogue.maxDistance", 16.0);
+        return playerPos.distance(citizenPos) > maxDist;
+    }
+
     private void displayCurrentNode(DialogueSession session) {
         if (!isCurrent(session)) return;
+        if (isDistanceExceeded(session)) {
+            endDialogueSession(session.getPlayer(), DialogCloseReason.DISTANCE_EXCEEDED.name());
+            session.getPlayer().sendMessage(Message.raw("[HyCitizens] Conversation ended because you moved too far away.").color(Color.YELLOW));
+            return;
+        }
         IDialogueNode node = session.getCurrentNode();
         if (node == null) {
             endDialogueSession(session.getPlayer(), "INVALID_NODE");
@@ -453,13 +532,46 @@ public class DialogueManager {
 
     private void renderNode(DialogueSession session, IDialogueNode node) {
         if (!isCurrent(session)) return;
+        session.resetTransitionDepth();
+        session.setResponseProcessing(false);
         DialogueSound sound = node.getSound();
         if (sound != null && sound.getId() != null && !sound.getId().isEmpty()) {
+            int soundIndex = -1;
             try {
-                SoundUtil.playSoundEvent2dToPlayer(session.getPlayer(), Integer.parseInt(sound.getId()),
+                soundIndex = Integer.parseInt(sound.getId());
+            } catch (NumberFormatException e) {
+                try {
+                    soundIndex = SoundEvent.getAssetMap().getIndex(sound.getId());
+                } catch (Exception ignored) {}
+            }
+            if (soundIndex > 0) {
+                SoundUtil.playSoundEvent2dToPlayer(session.getPlayer(), soundIndex,
                         SoundCategory.SFX, sound.getVolume(), sound.getPitch());
-            } catch (NumberFormatException ignored) {}
+            } else {
+                getLogger().atFine().log("[HyCitizens] Sound ID not found: " + sound.getId());
+            }
         }
+
+        boolean echoToChat = HyCitizensPlugin.get().getConfigManager().getBoolean("dialogue.echoToChat", false);
+        if (echoToChat) {
+            CitizenData citizen = null;
+            if (session.getNpcId() != null) citizen = HyCitizensPlugin.get().getCitizensManager().getCitizen(session.getNpcId());
+            if (citizen == null && session.getScriptContext() != null) citizen = session.getScriptContext().getCitizen();
+            String speakerName = ScriptExpressionEvaluator.resolve(node.getSpeaker(), session.getScriptContext());
+            if (speakerName == null || speakerName.isEmpty() || speakerName.equalsIgnoreCase("NPC")) {
+                if (citizen != null && citizen.getName() != null && !citizen.getName().isEmpty()) {
+                    speakerName = citizen.getName();
+                } else if (session.getDialogue() != null && session.getDialogue().getTitle() != null && !session.getDialogue().getTitle().isEmpty()) {
+                    speakerName = session.getDialogue().getTitle();
+                } else {
+                    speakerName = (session.getNpcId() != null) ? session.getNpcId() : "NPC";
+                }
+            }
+            String nodeText = ScriptExpressionEvaluator.resolve(node.getText(), session.getScriptContext());
+            session.getPlayer().sendMessage(Message.raw("[" + speakerName + "] ").color(new Color(0xFFD075))
+                    .insert(Message.raw(nodeText != null ? nodeText : "").color(Color.WHITE)));
+        }
+
         List<DialogueResponse> eligible = node.getResponses().stream()
                 .filter(response -> conditionsPass(response.getConditions(), session.getScriptContext()))
                 .toList();
@@ -481,6 +593,7 @@ public class DialogueManager {
                     onSuccess.run();
                     return;
                 }
+                session.setResponseProcessing(false);
                 lifecycle(DialogueLifecycleEvent.Type.EXECUTION_FAILURE, session.getPlayer(), session.getNpcId(),
                         session.getDialogue().getId(), session.getCurrentNodeId(), null, session.getSessionId(),
                         session.getDialogue().getActionFailurePolicy().name(), Map.of(

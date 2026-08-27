@@ -22,6 +22,7 @@ import com.electro.hycitizens.util.ThreadedScheduler;
 import com.hypixel.hytale.component.*;
 import com.hypixel.hytale.component.query.Query;
 import com.hypixel.hytale.math.util.ChunkUtil;
+import com.hypixel.hytale.math.vector.Rotation3f;
 import org.joml.Vector3d;
 import org.joml.Vector3f;
 import com.hypixel.hytale.protocol.*;
@@ -333,14 +334,18 @@ public class CitizensManager {
                         }
 
                         Vector3d npcPosition = npcTransformComponent.getPosition();
+                        Rotation3f npcRotation = npcTransformComponent.getRotation();
 
                         long chunkIndex = ChunkUtil.indexChunkFromBlock(npcPosition.x, npcPosition.z);
                         WorldChunk chunk = world.getChunkIfLoaded(chunkIndex);
                         if (chunk == null)
                             continue;
 
-                        // Track the NPC's actual position
+                        // Track the NPC's actual position and rotation
                         citizen.setCurrentPosition(new Vector3d(npcPosition));
+                        if (npcRotation != null) {
+                            citizen.setCurrentRotation(npcRotation);
+                        }
 
                         if (citizen.getMovementBehavior().getType().equals("IDLE")) {
                             continue;
@@ -519,6 +524,9 @@ public class CitizensManager {
                         npcRef.getStore().getComponent(npcRef, TransformComponent.getComponentType());
                 if (transformComponent != null && transformComponent.getPosition() != null) {
                     citizen.setCurrentPosition(new Vector3d(transformComponent.getPosition()));
+                    if (transformComponent.getRotation() != null) {
+                        citizen.setCurrentRotation(transformComponent.getRotation());
+                    }
                 }
 
                 despawnCitizenHologram(citizen);
@@ -2332,6 +2340,9 @@ public class CitizensManager {
                 resolvedRef.getStore().getComponent(resolvedRef, TransformComponent.getComponentType());
         if (transformComponent != null && transformComponent.getPosition() != null) {
             citizen.setCurrentPosition(new Vector3d(transformComponent.getPosition()));
+            if (transformComponent.getRotation() != null) {
+                citizen.setCurrentRotation(transformComponent.getRotation());
+            }
         }
 
         World world = Universe.get().getWorld(citizen.getWorldUUID());
@@ -2700,10 +2711,6 @@ public class CitizensManager {
 
     @Nonnull
     private String resolveSpawnRoleName(@Nonnull CitizenData citizen) {
-        if (!usesMarkerDrivenRole(citizen)) {
-            return resolveRoleName(citizen);
-        }
-
         roleGenerator.generateRoleIfChanged(citizen);
         String safeRoleName = citizen.getScheduleConfig().isEnabled()
                 ? roleGenerator.getScheduleFallbackIdleRoleName(citizen)
@@ -2717,10 +2724,6 @@ public class CitizensManager {
     }
 
     private void promoteCitizenToDesiredRoleIfNeeded(@Nonnull CitizenData citizen) {
-        if (!usesMarkerDrivenRole(citizen)) {
-            return;
-        }
-
         Ref<EntityStore> npcRef = citizen.getNpcRef();
         if (npcRef == null || !npcRef.isValid()) {
             return;
@@ -2919,6 +2922,23 @@ public class CitizensManager {
         );
 
         if (npc == null) {
+            String fallbackRole = roleGenerator.getFallbackRoleName(citizen);
+            int fallbackIndex = NPCPlugin.get().getIndex(fallbackRole);
+            if (fallbackIndex != Integer.MIN_VALUE && !fallbackRole.equals(roleName)) {
+                getLogger().atWarning().log("Spawn failed with role '" + roleName + "', retrying with fallback role '" + fallbackRole + "' for citizen '" + citizen.getId() + "'");
+                npc = NPCPlugin.get().spawnEntity(
+                        world.getEntityStore().getStore(),
+                        fallbackIndex,
+                        citizen.getPosition(),
+                        RotationUtil.toRotation(citizen.getRotation()),
+                        spawnModel,
+                        (npcComponent, holder, store) -> npcComponent.setInitialModelScale(scale),
+                        null
+                );
+            }
+        }
+
+        if (npc == null) {
             citizensCurrentlySpawning.remove(citizen.getId());
             return;
         }
@@ -3033,6 +3053,23 @@ public class CitizensManager {
                 null,
                 null
         );
+
+        if (npc == null) {
+            String fallbackRole = roleGenerator.getFallbackRoleName(citizen);
+            int fallbackIndex = NPCPlugin.get().getIndex(fallbackRole);
+            if (fallbackIndex != Integer.MIN_VALUE && !fallbackRole.equals(roleName)) {
+                getLogger().atWarning().log("Spawn failed with role '" + roleName + "', retrying with fallback role '" + fallbackRole + "' for citizen '" + citizen.getId() + "'");
+                npc = NPCPlugin.get().spawnEntity(
+                        world.getEntityStore().getStore(),
+                        fallbackIndex,
+                        citizen.getPosition(),
+                        RotationUtil.toRotation(citizen.getRotation()),
+                        playerModel,
+                        null,
+                        null
+                );
+            }
+        }
 
         if (npc == null) {
             citizensCurrentlySpawning.remove(citizen.getId());
@@ -6170,6 +6207,9 @@ public class CitizensManager {
             }
 
             citizen.setCurrentPosition(new Vector3d(targetPosition.x, targetPosition.y, targetPosition.z));
+            if (targetRotation != null) {
+                citizen.setCurrentRotation(RotationUtil.toRotation(targetRotation));
+            }
         });
     }
 

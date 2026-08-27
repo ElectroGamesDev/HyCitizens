@@ -10,6 +10,7 @@ import com.electro.hycitizens.managers.DialogueManager;
 import com.electro.hycitizens.api.dialogue.DialogOverride;
 import com.electro.hycitizens.api.dialogue.DialogPatch;
 import com.electro.hycitizens.api.dialogue.IDialogue;
+import com.electro.hycitizens.api.dialogue.PlayerDialogState;
 import com.electro.hycitizens.models.FactionConfig;
 import com.electro.hycitizens.models.MovementBehavior;
 import com.electro.hycitizens.api.scripting.ScriptAction.Branch;
@@ -145,6 +146,71 @@ public class ScriptManager {
             }
             
             fireTrigger(citizen, "ON_STOP_FOLLOWING", args, player, entityStore);
+        }
+    }
+
+    public void handlePlayerDisconnect(PlayerRef playerRef) {
+        if (playerRef == null) return;
+        handlePlayerDisconnect(playerRef.getUuid(), playerRef);
+    }
+
+    public void handlePlayerDisconnect(UUID playerUuid) {
+        if (playerUuid == null) return;
+        PlayerRef playerRef = Universe.get().getPlayer(playerUuid);
+        handlePlayerDisconnect(playerUuid, playerRef);
+    }
+
+    public void handlePlayerDisconnect(UUID playerUuid, PlayerRef playerRef) {
+        if (playerUuid == null) return;
+
+        // Clean up any following players associated with this player
+        List<String> followingCitizenIds = new ArrayList<>();
+        for (Map.Entry<String, FollowPlayerState> entry : followingPlayers.entrySet()) {
+            if (playerUuid.equals(entry.getValue().playerUuid)) {
+                followingCitizenIds.add(entry.getKey());
+            }
+        }
+
+        for (String citizenId : followingCitizenIds) {
+            CitizenData citizen = HyCitizensPlugin.get().getCitizensManager().getCitizen(citizenId);
+            if (citizen != null) {
+                World world = Universe.get().getWorld(citizen.getWorldUUID());
+                Store<EntityStore> store = world != null ? world.getEntityStore().getStore() : null;
+                stopFollowingPlayer(citizen, "PLAYER_DISCONNECT", playerRef, store);
+                MovementBehavior mb = new MovementBehavior("IDLE", 2.0f, 0.0f, 0.0f, 0.0f);
+                citizen.setMovementBehavior(mb);
+                HyCitizensPlugin.get().getCitizensManager().stopCitizenMovement(citizenId);
+                HyCitizensPlugin.get().getCitizensManager().updateCitizenRoleImmediately(citizen);
+            } else {
+                followingPlayers.remove(citizenId);
+            }
+        }
+
+        // Clean up proximity tracking for this player
+        proximityStates.values().forEach(map -> map.remove(playerUuid));
+
+        // Fire ON_PLAYER_QUIT / ON_PLAYER_DISCONNECT trigger on citizens
+        for (CitizenData citizen : HyCitizensPlugin.get().getCitizensManager().getAllCitizens()) {
+            if (citizen == null) continue;
+            World world = Universe.get().getWorld(citizen.getWorldUUID());
+            if (world != null) {
+                Store<EntityStore> store = world.getEntityStore().getStore();
+                fireTrigger(citizen, "ON_PLAYER_QUIT", Map.of("player_uuid", playerUuid.toString()), playerRef, store);
+                fireTrigger(citizen, "ON_PLAYER_DISCONNECT", Map.of("player_uuid", playerUuid.toString()), playerRef, store);
+            }
+        }
+    }
+
+    public void handlePlayerConnect(PlayerRef playerRef) {
+        if (playerRef == null) return;
+        for (CitizenData citizen : HyCitizensPlugin.get().getCitizensManager().getAllCitizens()) {
+            if (citizen == null) continue;
+            World world = Universe.get().getWorld(citizen.getWorldUUID());
+            if (world != null && playerRef.getWorldUuid() != null && playerRef.getWorldUuid().equals(citizen.getWorldUUID())) {
+                Store<EntityStore> store = world.getEntityStore().getStore();
+                fireTrigger(citizen, "ON_PLAYER_JOIN", Map.of("player_uuid", playerRef.getUuid().toString()), playerRef, store);
+                fireTrigger(citizen, "ON_PLAYER_CONNECT", Map.of("player_uuid", playerRef.getUuid().toString()), playerRef, store);
+            }
         }
     }
 
@@ -299,7 +365,9 @@ public class ScriptManager {
         }
         for (String id : List.of("ON_INTERACT", "ON_LEFT_CLICK", "ON_FIRST_INTERACT", "ON_PROXIMITY_ENTER",
                 "ON_PROXIMITY_EXIT", "ON_DAMAGE", "ON_DEATH", "ON_SPAWN", "ON_DESPAWN", "ON_TICK",
-                "ON_TIMER", "ON_CUSTOM", "ON_COMMAND", "ON_SIGNAL", "ON_SCHEDULE_CHANGE")) {
+                "ON_TIMER", "ON_CUSTOM", "ON_COMMAND", "ON_SIGNAL", "ON_SCHEDULE_CHANGE", "ON_STOP_FOLLOWING",
+                "ON_PLAYER_QUIT", "ON_PLAYER_DISCONNECT", "ON_PLAYER_JOIN", "ON_PLAYER_CONNECT",
+                "ON_COMBAT_START", "ON_COMBAT_END", "ON_HEALTH_THRESHOLD", "ON_RESPAWN")) {
             registerTriggerDescriptor(new TriggerTypeDescriptor(id, 1, "hycitizens", Map.of("type", "object"), id));
         }
         for (String id : List.of("SESSION", "PLAYER", "CITIZEN", "GLOBAL")) {
@@ -709,6 +777,9 @@ public class ScriptManager {
             targetContext = createTargetedContext(context, resolvedTarget, resolvedRadius);
         }
 
+        if (action.getCondition() != null) {
+            resolvedParams.put("condition", action.getCondition());
+        }
         if (action.getActions() != null && !action.getActions().isEmpty()) {
             resolvedParams.put("_sub_actions", action.getActions());
         }
@@ -822,14 +893,14 @@ public class ScriptManager {
                         HyCitizensPlugin.get().getCitizensManager().stopCitizenMovement(citizenId);
                         HyCitizensPlugin.get().getCitizensManager().updateCitizenRoleImmediately(citizen);
                     } else {
-                        HyCitizensPlugin.get().getCitizensManager().stopCitizenMovement(citizenId);
+                        HyCitizensPlugin.get().getCitizensManager().updateCitizenMoveTarget(citizenId, cPos);
                     }
                 } else if (dist > followState.minDistance) {
                     // Update movement target
                     HyCitizensPlugin.get().getCitizensManager().updateCitizenMoveTarget(citizenId, pPos);
                 } else {
-                    // Destination reached
-                    HyCitizensPlugin.get().getCitizensManager().stopCitizenMovement(citizenId);
+                    // Destination reached - maintain target so Seek halts within stop distance
+                    HyCitizensPlugin.get().getCitizensManager().updateCitizenMoveTarget(citizenId, pPos);
                 }
         }
 
@@ -3418,6 +3489,80 @@ public class ScriptManager {
                             + questId + "': " + error.getMessage());
                     return false;
                 }
+            }
+        });
+
+        // HAS_SEEN_DIALOGUE Condition
+        registerCondition(new ScriptConditionHandler() {
+            @Override public String getType() { return "HAS_SEEN_DIALOGUE"; }
+            @Override public boolean evaluate(ScriptContext context, Map<String, Object> params) {
+                if (context.getPlayer() == null) return false;
+                String dialogueId = (String) params.get("dialogue_id");
+                if (dialogueId == null) dialogueId = (String) params.get("id");
+                if (dialogueId == null || dialogueId.isEmpty()) return false;
+                PlayerDialogState state = DialogueManager.get().getPlayerStateSnapshot(context.getPlayer().getUuid());
+                return state != null && state.getSeenDialogs().contains(dialogueId);
+            }
+        });
+
+        // HAS_COMPLETED_DIALOGUE Condition
+        registerCondition(new ScriptConditionHandler() {
+            @Override public String getType() { return "HAS_COMPLETED_DIALOGUE"; }
+            @Override public boolean evaluate(ScriptContext context, Map<String, Object> params) {
+                if (context.getPlayer() == null) return false;
+                String dialogueId = (String) params.get("dialogue_id");
+                if (dialogueId == null) dialogueId = (String) params.get("id");
+                if (dialogueId == null || dialogueId.isEmpty()) return false;
+                PlayerDialogState state = DialogueManager.get().getPlayerStateSnapshot(context.getPlayer().getUuid());
+                return state != null && state.getCompletedDialogs().contains(dialogueId);
+            }
+        });
+
+        // HAS_SEEN_DIALOGUE_NODE Condition
+        registerCondition(new ScriptConditionHandler() {
+            @Override public String getType() { return "HAS_SEEN_DIALOGUE_NODE"; }
+            @Override public boolean evaluate(ScriptContext context, Map<String, Object> params) {
+                if (context.getPlayer() == null) return false;
+                String dialogueId = (String) params.get("dialogue_id");
+                if (dialogueId == null) dialogueId = (String) params.get("id");
+                String nodeId = (String) params.get("node_id");
+                if (dialogueId == null || dialogueId.isEmpty() || nodeId == null || nodeId.isEmpty()) return false;
+                PlayerDialogState state = DialogueManager.get().getPlayerStateSnapshot(context.getPlayer().getUuid());
+                if (state == null) return false;
+                Set<String> nodes = state.getSeenNodes().get(dialogueId);
+                return nodes != null && nodes.contains(nodeId);
+            }
+        });
+
+        // DIALOGUE_VISIT_COUNT Condition
+        registerCondition(new ScriptConditionHandler() {
+            @Override public String getType() { return "DIALOGUE_VISIT_COUNT"; }
+            @Override public boolean evaluate(ScriptContext context, Map<String, Object> params) {
+                if (context.getPlayer() == null) return false;
+                String dialogueId = (String) params.get("dialogue_id");
+                if (dialogueId == null) dialogueId = (String) params.get("id");
+                if (dialogueId == null || dialogueId.isEmpty()) return false;
+                int requiredCount = getAsInt(params.get("count"), getAsInt(params.get("amount"), 1));
+                String operator = (String) params.getOrDefault("operator", "GREATER_EQUAL");
+                PlayerDialogState state = DialogueManager.get().getPlayerStateSnapshot(context.getPlayer().getUuid());
+                int actualCount = (state != null) ? state.getDialogVisits().getOrDefault(dialogueId, 0) : 0;
+                return evaluateComparison(String.valueOf(actualCount), operator, String.valueOf(requiredCount));
+            }
+        });
+
+        // DIALOGUE_RESPONSE_CHOSEN Condition
+        registerCondition(new ScriptConditionHandler() {
+            @Override public String getType() { return "DIALOGUE_RESPONSE_CHOSEN"; }
+            @Override public boolean evaluate(ScriptContext context, Map<String, Object> params) {
+                if (context.getPlayer() == null) return false;
+                String dialogueId = (String) params.get("dialogue_id");
+                if (dialogueId == null) dialogueId = (String) params.get("id");
+                String responseId = (String) params.get("response_id");
+                if (dialogueId == null || dialogueId.isEmpty() || responseId == null || responseId.isEmpty()) return false;
+                PlayerDialogState state = DialogueManager.get().getPlayerStateSnapshot(context.getPlayer().getUuid());
+                if (state == null) return false;
+                Map<String, Integer> choices = state.getResponseChoices().get(dialogueId);
+                return choices != null && choices.getOrDefault(responseId, 0) > 0;
             }
         });
     }

@@ -11,12 +11,13 @@ import com.electro.hycitizens.api.dialogue.IDialogueNode;
 import com.electro.hycitizens.api.scripting.ScriptExpressionEvaluator;
 import com.electro.hycitizens.models.CitizenData;
 import com.electro.hycitizens.util.HtmlUtils;
-import com.electro.hycitizens.util.SkinUtilities;
 import com.electro.hycitizens.managers.DialogueManager;
 import com.hypixel.hytale.component.Store;
 import com.hypixel.hytale.protocol.packets.interface_.CustomPageLifetime;
 import com.hypixel.hytale.protocol.packets.interface_.CustomUIEventBindingType;
 import com.hypixel.hytale.server.core.universe.PlayerRef;
+import com.hypixel.hytale.server.core.universe.Universe;
+import com.hypixel.hytale.server.core.universe.world.World;
 import com.hypixel.hytale.server.core.universe.world.storage.EntityStore;
 
 import javax.annotation.Nonnull;
@@ -27,9 +28,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 
 import static com.hypixel.hytale.logger.HytaleLogger.getLogger;
@@ -54,41 +53,55 @@ public class DialogUI {
     }
 
     public void openDialogueUI(@Nonnull PlayerRef player, @Nonnull DialogueSession session, @Nonnull IDialogueNode node, @Nonnull List<DialogueResponse> responses) {
-        boolean showNPCHeadshot = plugin.getConfigManager().getBoolean("dialogue.showNPCHeadshot", true);
         CitizenData citizen = null;
         if (session.getNpcId() != null) {
             citizen = plugin.getCitizensManager().getCitizen(session.getNpcId());
         }
 
-        CompletableFuture<String> headshotFuture;
-        if (showNPCHeadshot && citizen != null && citizen.getCachedSkin() != null) {
-            headshotFuture = SkinUtilities.cacheHeadshotAndGetUrl(session.getNpcId(), citizen.getCachedSkin());
-        } else {
-            headshotFuture = CompletableFuture.completedFuture("");
-        }
-
-        // Run the rendering pipeline when skin is cached (or timed out/errored)
         final CitizenData finalCitizen = citizen;
-        headshotFuture.orTimeout(1000, TimeUnit.MILLISECONDS)
-                .exceptionally(err -> {
-                    getLogger().atWarning().log("[HyCitizens] Headshot fetching timed out, proceeding with fallback display: " + err.getMessage());
-                    return "";
-                })
-                .thenAccept(url -> {
-                    openUIInternal(player, session, node, responses, url, finalCitizen);
-                });
+        final long renderedRevision = session.getRenderRevision();
+        World world = Universe.get().getWorld(player.getWorldUuid());
+        if (world != null) {
+            world.execute(() -> openUIInternal(player, session, node, responses, finalCitizen, renderedRevision));
+        } else {
+            openUIInternal(player, session, node, responses, finalCitizen, renderedRevision);
+        }
     }
 
-    private void openUIInternal(@Nonnull PlayerRef player, @Nonnull DialogueSession session, @Nonnull IDialogueNode node, @Nonnull List<DialogueResponse> responses, @Nonnull String headshotUrl, @Nullable CitizenData citizen) {
-        // 1. Interpolate string variables inside Node Speaker name and Body Text
-        String resolvedSpeaker = ScriptExpressionEvaluator.resolve(node.getSpeaker(), session.getScriptContext());
-        if (resolvedSpeaker == null || resolvedSpeaker.isEmpty()) {
-            resolvedSpeaker = (citizen != null) ? citizen.getName() : "NPC";
+    private void openUIInternal(@Nonnull PlayerRef player, @Nonnull DialogueSession session, @Nonnull IDialogueNode node, @Nonnull List<DialogueResponse> responses, @Nullable CitizenData citizen, long renderedRevision) {
+        DialogueSession activeSession = DialogueManager.get().getDialogueSession(player);
+        if (activeSession != session
+                || session.getRenderRevision() != renderedRevision
+                || !session.getCurrentNodeId().equals(node.getId())) {
+            return;
         }
-        
+
+        if (citizen == null && session.getNpcId() != null && !session.getNpcId().isEmpty()) {
+            citizen = plugin.getCitizensManager().getCitizen(session.getNpcId());
+        }
+        if (citizen == null && session.getScriptContext() != null && session.getScriptContext().getCitizen() != null) {
+            citizen = session.getScriptContext().getCitizen();
+        }
+
+        // 1. Resolve speaker name
+        String nodeSpeaker = node.getSpeaker();
+        String resolvedSpeaker = null;
+        if (nodeSpeaker != null && !nodeSpeaker.isEmpty()) {
+            resolvedSpeaker = ScriptExpressionEvaluator.resolve(nodeSpeaker, session.getScriptContext());
+        }
+        if (resolvedSpeaker == null || resolvedSpeaker.trim().isEmpty() || resolvedSpeaker.equalsIgnoreCase("NPC")) {
+            if (citizen != null && citizen.getName() != null && !citizen.getName().trim().isEmpty()) {
+                resolvedSpeaker = citizen.getName();
+            } else if (session.getDialogue() != null && session.getDialogue().getTitle() != null && !session.getDialogue().getTitle().trim().isEmpty()) {
+                resolvedSpeaker = session.getDialogue().getTitle();
+            } else {
+                resolvedSpeaker = (nodeSpeaker != null && !nodeSpeaker.trim().isEmpty()) ? nodeSpeaker : "Citizen";
+            }
+        }
+
         String resolvedText = ScriptExpressionEvaluator.resolve(node.getText(), session.getScriptContext());
 
-        // 2. Prepare dynamic lists for template rendering
+        // 2. Build response list
         List<Map<String, Object>> responseList = new ArrayList<>();
         for (int i = 0; i < responses.size(); i++) {
             DialogueResponse resp = responses.get(i);
@@ -96,119 +109,72 @@ public class DialogUI {
             map.put("index", i);
             map.put("id", resp.getId());
             map.put("text", ScriptExpressionEvaluator.resolve(resp.getText(), session.getScriptContext()));
+            map.put("hasSpacer", i > 0);
             responseList.add(map);
         }
 
-        // If there are no choices, add a generic "Continue" or "Close" button to let the conversation proceed
+        // If no choices, add a default Continue/Finish button
         boolean hasChoices = !responseList.isEmpty();
         if (!hasChoices) {
+            String nextNodeId = node.getNextNodeId();
+            boolean isContinue = nextNodeId != null && !nextNodeId.trim().isEmpty()
+                    && !nextNodeId.equalsIgnoreCase("end")
+                    && !nextNodeId.equalsIgnoreCase("close")
+                    && !nextNodeId.equalsIgnoreCase("finish");
             Map<String, Object> map = new HashMap<>();
             map.put("index", 0);
             map.put("id", "continue_next");
-            
-            String nextNodeId = node.getNextNodeId();
-            if (nextNodeId != null && !nextNodeId.isEmpty()) {
-                map.put("text", "Continue");
-            } else {
-                map.put("text", "Finish");
-            }
+            map.put("hasSpacer", false);
+            map.put("text", isContinue ? "Continue" : "Finish");
             responseList.add(map);
         }
 
+        int numResponses = responseList.size();
+        int buttonWidth;
+        if (numResponses == 1) {
+            buttonWidth = 240;
+        } else if (numResponses == 2) {
+            buttonWidth = 220;
+        } else if (numResponses == 3) {
+            buttonWidth = 200;
+        } else if (numResponses == 4) {
+            buttonWidth = 170;
+        } else {
+            buttonWidth = Math.max(110, (780 - (numResponses - 1) * 8) / numResponses);
+        }
+
+        int cardHeight = (resolvedText != null && resolvedText.length() > 200) ? 300 : 250;
+
         TemplateProcessor template = plugin.getCitizensUI().createBaseTemplate()
                 .setVariable("speaker", resolvedSpeaker)
-                .setVariable("bodyText", resolvedText)
+                .setVariable("bodyText", resolvedText != null ? resolvedText : "")
                 .setVariable("responses", responseList)
-                .setVariable("hasHeadshot", headshotUrl != null && !headshotUrl.isEmpty())
-                .setVariable("headshotUrl", headshotUrl);
+                .setVariable("buttonWidth", buttonWidth)
+                .setVariable("cardHeight", cardHeight);
 
-        // State-of-the-art premium Glassmorphism template
         String html = template.process(plugin.getCitizensUI().getSharedStyles() + """
-                <style>
-                    .dialogue-overlay {
-                        layout: center;
-                        flex-weight: 1;
-                        padding: 20;
-                    }
-
-                    .dialogue-card {
-                        background-color: #161a26(0.94);
-                        border-radius: 12;
-                        anchor-width: 820;
-                        anchor-height: 320;
-                        layout: left;
-                        padding: 24;
-                    }
-
-                    .portrait-frame {
-                        anchor-width: 140;
-                        anchor-height: 272;
-                        background-color: #ffffff(0.02);
-                        border-radius: 10;
-                        layout: center;
-                    }
-
-                    .portrait-img {
-                        anchor-width: 120;
-                        anchor-height: 120;
-                        border-radius: 8;
-                    }
-
-                    .dialogue-main-panel {
-                        layout: top;
-                        flex-weight: 1;
-                        padding-left: 24;
-                    }
-
-                    .speaker-header-label {
-                        font-size: 20;
-                        font-weight: bold;
-                        color: #ffd075;
-                        padding-bottom: 12;
-                    }
-
-                    .dialogue-text-body {
-                        font-size: 15;
-                        color: #e3e6e8;
-                        anchor-height: 100;
-                        padding-bottom: 12;
-                    }
-
-                    .dialogue-choices-wrapper {
-                        layout: TopScrolling;
-                        flex-weight: 1;
-                    }
-
-                    .dialogue-choice-btn {
-                        background-color: #ffffff(0.03);
-                        border-radius: 8;
-                        padding: 10 16;
-                        color: #c9d1d9;
-                        font-size: 14;
-                        layout: left;
-                    }
-
-                    .dialogue-choice-btn:hover {
-                        background-color: #ffffff(0.12);
-                        color: #ffffff;
-                    }
-                </style>
-
-                <div class="dialogue-overlay">
-                    <div class="dialogue-card">
-                        {{#if hasHeadshot}}
-                        <div class="portrait-frame">
-                            <img src="{{$headshotUrl}}" class="portrait-img dynamic-image" />
+                <div style="layout: bottom; horizontal-align: center; vertical-align: bottom; width: 100%; height: 100%; padding-bottom: 30;">
+                    <div class="main-container decorated-container" style="anchor-width: 860; anchor-height: {{$cardHeight}};">
+                        <!-- Header -->
+                        <div class="header container-title">
+                            <div class="header-content">
+                                <p class="header-title" style="color: #ffd075; font-size: 24; font-weight: bold; text-align: center;">{{$speaker}}</p>
+                            </div>
                         </div>
-                        {{/if}}
 
-                        <div class="dialogue-main-panel">
-                            <div class="speaker-header-label">{{$speaker}}</div>
-                            <p class="dialogue-text-body">{{$bodyText}}</p>
-                            
-                            <div class="dialogue-choices-wrapper" data-hyui-scrollbar-style='"Common.ui" "DefaultScrollbarStyle"'>
+                        <!-- Body -->
+                        <div class="body" data-hyui-scrollbar-style='"Common.ui" "DefaultScrollbarStyle"' style="layout-mode: TopScrolling; flex-weight: 1; padding: 12 24 12 24;">
+                            <p style="font-size: 16; color: #eaf2ff; text-align: center; width: 100%;">{{$bodyText}}</p>
+                        </div>
+
+                        <!-- Footer Buttons -->
+                        <div class="footer" style="layout: center; flex-weight: 0; padding: 14 16 16 16; border-top: 1 solid #1a293c; width: 100%; vertical-align: center;">
+                            <div class="form-row" style="layout: left; horizontal-align: center; vertical-align: center; width: 100%;">
                                 {{#each responses}}
-                                <button id="dialogue-choice-{{$index}}" class="dialogue-choice-btn">{{$text}}</button>
+                                {{#if hasSpacer}}
+                                <div class="spacer-h-sm"></div>
+                                {{/if}}
+                                <button id="dialogue-choice-{{$index}}" class="secondary-button" style="anchor-width: {{$buttonWidth}}; anchor-height: 40;">{{$text}}</button>
                                 {{/each}}
                             </div>
                         </div>
@@ -217,50 +183,50 @@ public class DialogUI {
                 """);
 
         Store<EntityStore> store = session.getScriptContext().getStore();
-        final long renderedRevision = session.getRenderRevision();
+        if (store == null && player.getReference() != null && player.getReference().isValid()) {
+            store = player.getReference().getStore();
+        }
         PageBuilder page = PageBuilder.pageForPlayer(player)
                 .withLifetime(CustomPageLifetime.CanDismiss)
                 .fromHtml(HtmlUtils.sanitizeHtmlForHyUI(html));
 
-        // Bind responses / button click events
+        // Bind button events - PageManager replaces this page when the next node opens.
         if (hasChoices) {
             for (int i = 0; i < responses.size(); i++) {
-                final int index = i;
                 final DialogueResponse resp = responses.get(i);
+                final int index = i;
                 page.addEventListener("dialogue-choice-" + index, CustomUIEventBindingType.Activating, (event, ctx) -> {
-                    ctx.getPage().ifPresent(this::closeInternally);
                     DialogueManager.get().selectResponse(session, resp.getId(), renderedRevision);
                 });
             }
         } else {
-            // Bind default continue/finish button
             page.addEventListener("dialogue-choice-0", CustomUIEventBindingType.Activating, (event, ctx) -> {
-                ctx.getPage().ifPresent(this::closeInternally);
-                // Calling selectResponse with non-existent choice triggers default nextNodeId/finish sequence
                 DialogueManager.get().selectResponse(session, "continue_next", renderedRevision);
             });
         }
 
-        // Close any active page first to avoid overlap
-        HyUIPage existingPage = activePages.get(player.getUuid());
-        if (existingPage != null) {
-            try {
-                closeInternally(existingPage);
-            } catch (Exception e) {
-                getLogger().atWarning().log("[HyCitizens] Error closing existing dialogue page: " + e.getMessage());
-            }
-        }
-
         page.onDismiss((uipage, dismissed) -> {
-            activePages.remove(player.getUuid(), uipage);
-            boolean internal = internallyClosing.remove(uipage);
-            DialogueSession active = DialogueManager.get().getDialogueSession(player);
-            if (dismissed && !internal && active != null
-                    && active.getSessionId().equals(session.getSessionId())
-                    && active.getRenderRevision() == renderedRevision) {
-                DialogueManager.get().endDialogueSession(player, DialogCloseReason.PLAYER_DISMISS.name());
+            HyUIPage currentActive = activePages.get(player.getUuid());
+            if (currentActive == uipage) {
+                activePages.remove(player.getUuid(), uipage);
+                boolean internal = internallyClosing.remove(uipage);
+                if (!internal) {
+                    // Player dismissed (e.g. ESC) without going through a button
+                    DialogueSession active = DialogueManager.get().getDialogueSession(player);
+                    if (active != null && active.getSessionId().equals(session.getSessionId())) {
+                        DialogueManager.get().endDialogueSession(player, DialogCloseReason.PLAYER_DISMISS.name());
+                    }
+                }
+            } else {
+                internallyClosing.remove(uipage);
             }
         });
+
+        // PageManager dismisses the old custom page while opening the new one.
+        HyUIPage existingPage = activePages.get(player.getUuid());
+        if (existingPage != null) {
+            internallyClosing.add(existingPage);
+        }
 
         HyUIPage uiPage = page.open(store);
         activePages.put(player.getUuid(), uiPage);
@@ -277,6 +243,17 @@ public class DialogUI {
         }
     }
 
+    private void closeInternally(HyUIPage page) {
+        if (page == null) return;
+        internallyClosing.add(page);
+        try {
+            page.close();
+        } catch (Exception e) {
+            internallyClosing.remove(page);
+            getLogger().atWarning().log("[HyCitizens] Error closing dialogue page internally: " + e.getMessage());
+        }
+    }
+
     public void openDialogueUI(@Nonnull PlayerRef player, @Nonnull Store<EntityStore> store, @Nullable String title, @Nullable String body, @Nonnull List<Map<String, Object>> responses, @Nonnull Consumer<String> callback) {
         List<Map<String, Object>> responseList = new ArrayList<>();
         for (int i = 0; i < responses.size(); i++) {
@@ -285,6 +262,7 @@ public class DialogUI {
             map.put("index", i);
             map.put("id", respMap.get("id"));
             map.put("text", respMap.get("text"));
+            map.put("hasSpacer", i > 0);
             responseList.add(map);
         }
 
@@ -293,85 +271,60 @@ public class DialogUI {
             Map<String, Object> map = new HashMap<>();
             map.put("index", 0);
             map.put("id", "continue_next");
+            map.put("hasSpacer", false);
             map.put("text", "Close");
             responseList.add(map);
         }
 
-        String resolvedSpeaker = title != null ? title : "NPC";
-        String resolvedBody = body != null ? body : "";
+        String resolvedSpeaker = (title != null && !title.trim().isEmpty()) ? title : "Citizen";
+        String resolvedBody = (body != null) ? body : "";
+
+        int numResponses = responseList.size();
+        int buttonWidth;
+        if (numResponses == 1) {
+            buttonWidth = 240;
+        } else if (numResponses == 2) {
+            buttonWidth = 220;
+        } else if (numResponses == 3) {
+            buttonWidth = 200;
+        } else if (numResponses == 4) {
+            buttonWidth = 170;
+        } else {
+            buttonWidth = Math.max(110, (780 - (numResponses - 1) * 8) / numResponses);
+        }
+
+        int cardHeight = (resolvedBody.length() > 200) ? 300 : 250;
 
         TemplateProcessor template = plugin.getCitizensUI().createBaseTemplate()
                 .setVariable("speaker", resolvedSpeaker)
                 .setVariable("bodyText", resolvedBody)
                 .setVariable("responses", responseList)
-                .setVariable("hasHeadshot", false)
-                .setVariable("headshotUrl", "");
+                .setVariable("buttonWidth", buttonWidth)
+                .setVariable("cardHeight", cardHeight);
 
         String html = template.process(plugin.getCitizensUI().getSharedStyles() + """
-                <style>
-                    .dialogue-overlay {
-                        layout: center;
-                        flex-weight: 1;
-                        padding: 20;
-                    }
+                <div style="layout: bottom; horizontal-align: center; vertical-align: bottom; width: 100%; height: 100%; padding-bottom: 30;">
+                    <div class="main-container decorated-container" style="anchor-width: 860; anchor-height: {{$cardHeight}};">
+                        <!-- Header -->
+                        <div class="header container-title">
+                            <div class="header-content">
+                                <p class="header-title" style="color: #ffd075; font-size: 24; font-weight: bold; text-align: center;">{{$speaker}}</p>
+                            </div>
+                        </div>
 
-                    .dialogue-card {
-                        background-color: #161a26(0.94);
-                        border-radius: 12;
-                        anchor-width: 820;
-                        anchor-height: 320;
-                        layout: top;
-                        padding: 24;
-                    }
+                        <!-- Body -->
+                        <div class="body" data-hyui-scrollbar-style='"Common.ui" "DefaultScrollbarStyle"' style="layout-mode: TopScrolling; flex-weight: 1; padding: 12 24 12 24;">
+                            <p style="font-size: 16; color: #eaf2ff; text-align: center; width: 100%;">{{$bodyText}}</p>
+                        </div>
 
-                    .dialogue-main-panel {
-                        layout: top;
-                        flex-weight: 1;
-                    }
-
-                    .speaker-header-label {
-                        font-size: 20;
-                        font-weight: bold;
-                        color: #ffd075;
-                        padding-bottom: 12;
-                    }
-
-                    .dialogue-text-body {
-                        font-size: 15;
-                        color: #e3e6e8;
-                        anchor-height: 100;
-                        padding-bottom: 12;
-                    }
-
-                    .dialogue-choices-wrapper {
-                        layout: TopScrolling;
-                        flex-weight: 1;
-                    }
-
-                    .dialogue-choice-btn {
-                        background-color: #ffffff(0.03);
-                        border-radius: 8;
-                        padding: 10 16;
-                        color: #c9d1d9;
-                        font-size: 14;
-                        layout: left;
-                    }
-
-                    .dialogue-choice-btn:hover {
-                        background-color: #ffffff(0.12);
-                        color: #ffffff;
-                    }
-                </style>
-
-                <div class="dialogue-overlay">
-                    <div class="dialogue-card">
-                        <div class="dialogue-main-panel">
-                            <div class="speaker-header-label">{{$speaker}}</div>
-                            <p class="dialogue-text-body">{{$bodyText}}</p>
-                            
-                            <div class="dialogue-choices-wrapper" data-hyui-scrollbar-style='"Common.ui" "DefaultScrollbarStyle"'>
+                        <!-- Footer Buttons -->
+                        <div class="footer" style="layout: center; flex-weight: 0; padding: 14 16 16 16; border-top: 1 solid #1a293c; width: 100%; vertical-align: center;">
+                            <div class="form-row" style="layout: left; horizontal-align: center; vertical-align: center; width: 100%;">
                                 {{#each responses}}
-                                <button id="dialogue-choice-{{$index}}" class="dialogue-choice-btn">{{$text}}</button>
+                                {{#if hasSpacer}}
+                                <div class="spacer-h-sm"></div>
+                                {{/if}}
+                                <button id="dialogue-choice-{{$index}}" class="secondary-button" style="anchor-width: {{$buttonWidth}}; anchor-height: 40;">{{$text}}</button>
                                 {{/each}}
                             </div>
                         </div>
@@ -385,50 +338,39 @@ public class DialogUI {
 
         if (hasChoices) {
             for (int i = 0; i < responses.size(); i++) {
-                final int index = i;
                 final Map<String, Object> respMap = responses.get(i);
                 final String respId = (String) respMap.get("id");
+                final int index = i;
                 page.addEventListener("dialogue-choice-" + index, CustomUIEventBindingType.Activating, (event, ctx) -> {
-                    ctx.getPage().ifPresent(this::closeInternally);
-                    callback.accept(respId);
+            callback.accept(respId);
                 });
             }
         } else {
             page.addEventListener("dialogue-choice-0", CustomUIEventBindingType.Activating, (event, ctx) -> {
-                ctx.getPage().ifPresent(this::closeInternally);
                 callback.accept("");
             });
         }
 
-        // Close any active page first to avoid overlap
-        HyUIPage existingPage = activePages.get(player.getUuid());
-        if (existingPage != null) {
-            try {
-                closeInternally(existingPage);
-            } catch (Exception e) {
-                getLogger().atWarning().log("[HyCitizens] Error closing existing dialogue page: " + e.getMessage());
-            }
-        }
-
         page.onDismiss((uipage, dismissed) -> {
-            activePages.remove(player.getUuid(), uipage);
-            boolean internal = internallyClosing.remove(uipage);
-            if (dismissed && !internal) {
-                DialogueManager.get().endDialogueSession(player);
+            HyUIPage currentActive = activePages.get(player.getUuid());
+            if (currentActive == uipage) {
+                activePages.remove(player.getUuid(), uipage);
+                boolean internal = internallyClosing.remove(uipage);
+                if (!internal) {
+                    DialogueManager.get().endDialogueSession(player, DialogCloseReason.PLAYER_DISMISS.name());
+                }
+            } else {
+                internallyClosing.remove(uipage);
             }
         });
 
+        // PageManager dismisses the old custom page while opening the new one.
+        HyUIPage existingPage = activePages.get(player.getUuid());
+        if (existingPage != null) {
+            internallyClosing.add(existingPage);
+        }
+
         HyUIPage uiPage = page.open(store);
         activePages.put(player.getUuid(), uiPage);
-    }
-
-    private void closeInternally(HyUIPage page) {
-        internallyClosing.add(page);
-        try {
-            page.close();
-        } catch (RuntimeException error) {
-            internallyClosing.remove(page);
-            throw error;
-        }
     }
 }

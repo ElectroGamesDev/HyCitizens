@@ -50,7 +50,7 @@ public class DialogEditorManager {
             .connectTimeout(Duration.ofSeconds(10))
             .build();
 
-    // token → session
+    // token -> session
     private final Map<String, PendingDialogEditSession> sessions = new ConcurrentHashMap<>();
 
     public static DialogEditorManager get() {
@@ -137,7 +137,7 @@ public class DialogEditorManager {
                             Message.raw("[HyCitizens] ").color(new Color(0x00D4FF))
                                 .insert(Message.raw("Edit dialog for ").color(Color.WHITE))
                                 .insert(Message.raw(dialogue.getTitle().isEmpty() ? dialogId : dialogue.getTitle()).color(new Color(0x00D4FF)))
-                                .insert(Message.raw(" → ").color(new Color(0xA0A0B0)))
+                                .insert(Message.raw(" -> ").color(new Color(0xA0A0B0)))
                                 .insert(Message.raw("[Open Editor]").color(new Color(0x8B5CF6)).link(editorUrl))
                         );
                         playerRef.sendMessage(

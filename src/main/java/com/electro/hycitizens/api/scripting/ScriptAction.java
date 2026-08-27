@@ -12,6 +12,7 @@ public class ScriptAction {
     private Double targetRadius;
 
     // Control flow sub-actions
+    private ScriptCondition condition;
     private List<ScriptAction> actions = new ArrayList<>();
     private List<ScriptAction> trueActions = new ArrayList<>();
     private List<ScriptAction> falseActions = new ArrayList<>();
@@ -91,6 +92,14 @@ public class ScriptAction {
         this.targetRadius = targetRadius;
     }
 
+    public ScriptCondition getCondition() {
+        return condition;
+    }
+
+    public void setCondition(ScriptCondition condition) {
+        this.condition = condition;
+    }
+
     public List<ScriptAction> getActions() {
         return actions;
     }
@@ -129,6 +138,9 @@ public class ScriptAction {
         copy.setTarget(this.target);
         copy.setTargetRadius(this.targetRadius);
 
+        if (this.condition != null) {
+            copy.setCondition(this.condition.copy());
+        }
         if (this.actions != null) {
             List<ScriptAction> subCopies = new ArrayList<>();
             for (ScriptAction sa : this.actions) {

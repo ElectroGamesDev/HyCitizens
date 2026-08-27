@@ -37,6 +37,7 @@ public class DataAssetPackManager {
 
     private static final Path LEGACY_ASSET_PACK_PATH = Paths.get("mods", "HyCitizensRoles");
     private static final Path MIGRATION_CONFLICTS_PATH = DATA_PACK_PATH.resolve("MigrationConflicts");
+    public static final String SERVER_VERSION = ">=0.6.0-pre.13.1 <0.7.0";
 
     public static boolean setup() {
         Path configPath = Paths.get("config.json");
@@ -327,6 +328,27 @@ public class DataAssetPackManager {
     private static void createManifest() throws IOException {
         Path manifestPath = DATA_PACK_PATH.resolve("manifest.json");
         if (Files.exists(manifestPath)) {
+            try {
+                String manifestContent = new String(Files.readAllBytes(manifestPath), StandardCharsets.UTF_8);
+                JsonReader reader = new JsonReader(new StringReader(manifestContent));
+                reader.setStrictness(Strictness.LENIENT);
+                JsonElement parsed = JsonParser.parseReader(reader);
+                if (parsed.isJsonObject()) {
+                    JsonObject manifest = parsed.getAsJsonObject();
+                    String currentServerVersion = manifest.has("ServerVersion") && !manifest.get("ServerVersion").isJsonNull()
+                            ? manifest.get("ServerVersion").getAsString()
+                            : null;
+
+                    if (!SERVER_VERSION.equals(currentServerVersion)) {
+                        manifest.addProperty("ServerVersion", SERVER_VERSION);
+                        Gson gson = new GsonBuilder().setPrettyPrinting().create();
+                        Files.write(manifestPath, gson.toJson(manifest).getBytes(StandardCharsets.UTF_8));
+                        getLogger().atInfo().log("[HyCitizens] Updated ServerVersion in manifest.json to " + SERVER_VERSION);
+                    }
+                }
+            } catch (Exception e) {
+                getLogger().atWarning().log("[HyCitizens] Failed to check or update ServerVersion in manifest.json: " + e.getMessage());
+            }
             return;
         }
 
@@ -335,7 +357,7 @@ public class DataAssetPackManager {
         manifest.addProperty("Name", "HyCitizensData");
         manifest.addProperty("Description", "Dynamically generated assets for HyCitizens plugin");
         manifest.addProperty("Version", "1.0.0");
-        manifest.addProperty("ServerVersion", ">=0.5.0-pre.9 <0.6.0");
+        manifest.addProperty("ServerVersion", SERVER_VERSION);
 
         Gson gson = new GsonBuilder().setPrettyPrinting().create();
         Files.write(manifestPath, gson.toJson(manifest).getBytes(StandardCharsets.UTF_8));

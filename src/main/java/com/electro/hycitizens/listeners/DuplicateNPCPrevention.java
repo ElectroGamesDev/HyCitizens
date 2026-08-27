@@ -1,6 +1,10 @@
 package com.electro.hycitizens.listeners;
 
+import com.electro.hycitizens.HyCitizensPlugin;
 import com.electro.hycitizens.components.CitizenNpcIdentityComponent;
+import com.electro.hycitizens.managers.CitizensManager;
+import com.electro.hycitizens.managers.PatrolManager;
+import com.electro.hycitizens.models.CitizenData;
 import com.hypixel.hytale.component.AddReason;
 import com.hypixel.hytale.component.CommandBuffer;
 import com.hypixel.hytale.component.Ref;
@@ -9,9 +13,12 @@ import com.hypixel.hytale.component.Store;
 import com.hypixel.hytale.component.query.Query;
 import com.hypixel.hytale.component.system.RefSystem;
 import com.hypixel.hytale.server.core.entity.UUIDComponent;
+import com.hypixel.hytale.server.core.modules.entity.component.TransformComponent;
+import com.hypixel.hytale.server.core.universe.world.World;
 import com.hypixel.hytale.server.core.universe.world.storage.EntityStore;
 import com.hypixel.hytale.server.npc.entities.NPCEntity;
 import com.hypixel.hytale.server.npc.role.Role;
+import org.joml.Vector3d;
 
 import java.util.Map;
 import java.util.UUID;
@@ -62,6 +69,32 @@ public class DuplicateNPCPrevention extends RefSystem<EntityStore> {
         }
 
         this.activeCitizenRoles.put(citizenKey, ref);
+
+        CitizensManager citizensManager = HyCitizensPlugin.get().getCitizensManager();
+        if (citizensManager != null) {
+            CitizenData citizen = citizensManager.getCitizen(citizenKey);
+            if (citizen != null) {
+                citizen.setNpcRef(ref);
+                UUIDComponent uuidComponent = store.getComponent(ref, UUIDComponent.getComponentType());
+                if (uuidComponent != null) {
+                    citizen.setSpawnedUUID(uuidComponent.getUuid());
+                }
+                TransformComponent transformComponent = store.getComponent(ref, TransformComponent.getComponentType());
+                if (transformComponent != null && transformComponent.getPosition() != null) {
+                    citizen.setCurrentPosition(new Vector3d(transformComponent.getPosition()));
+                    if (transformComponent.getRotation() != null) {
+                        citizen.setCurrentRotation(transformComponent.getRotation());
+                    }
+                }
+                PatrolManager patrolManager = citizensManager.getPatrolManager();
+                if (patrolManager != null) {
+                    World world = store.getExternalData().getWorld();
+                    if (world != null) {
+                        patrolManager.ensureMoveTargetNow(citizen, world, null);
+                    }
+                }
+            }
+        }
     }
 
     @Override

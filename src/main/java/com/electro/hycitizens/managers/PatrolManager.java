@@ -10,7 +10,6 @@ import org.joml.Vector3d;
 import com.hypixel.hytale.server.core.HytaleServer;
 import com.hypixel.hytale.server.core.entity.UUIDComponent;
 import com.hypixel.hytale.server.core.entity.entities.ProjectileComponent;
-import com.hypixel.hytale.server.core.modules.entity.component.Intangible;
 import com.hypixel.hytale.server.core.modules.entity.component.TransformComponent;
 import com.hypixel.hytale.server.core.modules.entity.tracker.NetworkId;
 import com.hypixel.hytale.server.core.universe.Universe;
@@ -165,6 +164,12 @@ public class PatrolManager {
 
             PatrolWaypoint currentWaypoint = waypoints.get(currentIndex);
             Vector3d npcPos = npcTransform.getPosition();
+            if (npcPos != null) {
+                citizen.setCurrentPosition(new Vector3d(npcPos));
+            }
+            if (npcTransform.getRotation() != null) {
+                citizen.setCurrentRotation(npcTransform.getRotation());
+            }
             Vector3d wp = waypointPosition;
             double dx = wp.x - npcPos.x;
             double dy = wp.y - npcPos.y;
@@ -349,7 +354,6 @@ public class PatrolManager {
 
             holder.putComponent(TransformComponent.getComponentType(), new TransformComponent(position, new Rotation3f()));
             holder.ensureComponent(UUIDComponent.getComponentType());
-            holder.ensureComponent(Intangible.getComponentType());
             holder.addComponent(NetworkId.getComponentType(),
                     new NetworkId(world.getEntityStore().getStore().getExternalData().takeNextNetworkId()));
 
@@ -363,15 +367,7 @@ public class PatrolManager {
 
             moveTargets.put(citizen.getId(), targetRef);
 
-            Ref<EntityStore> npcRef = citizen.getNpcRef();
-            if (npcRef == null || !npcRef.isValid()) {
-                return;
-            }
-
-            MarkedEntitySupport markedEntitySupport = npcRef.getStore().getComponent(npcRef, MarkedEntitySupport.getComponentType());
-            if (markedEntitySupport != null) {
-                markedEntitySupport.setMarkedEntity(getMovementTargetSlot(npcRef), targetRef);
-            }
+            bindMoveTarget(citizen, targetRef);
         } catch (Exception e) {
             getLogger().atWarning().log("Failed to create move target for citizen " + citizen.getId() + ": " + e.getMessage());
         }
@@ -380,7 +376,7 @@ public class PatrolManager {
     @Nullable
     private Ref<EntityStore> ensureMoveTarget(@Nonnull CitizenData citizen, @Nonnull World world, @Nonnull Vector3d position) {
         Ref<EntityStore> targetRef = moveTargets.get(citizen.getId());
-        if (targetRef != null && targetRef.isValid()) {
+        if (targetRef != null && targetRef.isValid() && targetRef.getStore() == world.getEntityStore().getStore()) {
             TransformComponent targetTransform = targetRef.getStore().getComponent(targetRef, TransformComponent.getComponentType());
             if (targetTransform != null) {
                 targetTransform.setPosition(new Vector3d(position.x, position.y, position.z));
@@ -389,6 +385,7 @@ public class PatrolManager {
             }
         }
 
+        cleanupMoveTarget(citizen, world);
         spawnMoveTarget(citizen, world, position);
         Ref<EntityStore> spawnedRef = moveTargets.get(citizen.getId());
         if (spawnedRef != null && spawnedRef.isValid()) {
@@ -413,7 +410,10 @@ public class PatrolManager {
             return;
         }
 
-        markedEntitySupport.setMarkedEntity(getMovementTargetSlot(npcRef), targetRef);
+        markedEntitySupport.setMarkedEntity(MOVE_TARGET_SLOT, targetRef);
+        if (markedEntitySupport.getMarkedEntityRef(MOVE_TARGET_SLOT) == null) {
+            markedEntitySupport.setMarkedEntity(LOCKED_TARGET_SLOT, targetRef);
+        }
         NPCEntity npcEntity = npcRef.getStore().getComponent(npcRef, NPCEntity.getComponentType());
         if (npcEntity != null) {
             npcEntity.setLeashPoint(targetTransform.getPosition());

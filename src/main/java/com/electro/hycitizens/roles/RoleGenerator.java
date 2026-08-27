@@ -631,6 +631,10 @@ public class RoleGenerator {
         //role.addProperty("KnockbackScale", citizen.getKnockbackScale());
         role.addProperty("KnockbackScale", 0);
 
+        JsonArray instructions = new JsonArray();
+        instructions.add(new JsonObject());
+        role.add("Instructions", instructions);
+
         role.addProperty("NameTranslationKey", citizen.getNameTranslationKey());
 
         return role;

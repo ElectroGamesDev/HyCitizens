@@ -15,6 +15,8 @@ public class DialogueSession {
     private final String npcId;
     private long renderRevision;
     private final long createdAt = System.currentTimeMillis();
+    private int transitionDepth = 0;
+    private volatile boolean responseProcessing = false;
 
     public DialogueSession(@Nonnull PlayerRef player, @Nonnull IDialogue dialogue, @Nonnull ScriptContext scriptContext, @Nullable String npcId) {
         this(UUID.randomUUID(), player, dialogue, scriptContext, npcId);
@@ -48,6 +50,13 @@ public class DialogueSession {
     public long nextRenderRevision() { return ++renderRevision; }
     public long getRenderRevision() { return renderRevision; }
     public long getCreatedAt() { return createdAt; }
+
+    public int incrementTransitionDepth() { return ++transitionDepth; }
+    public void resetTransitionDepth() { this.transitionDepth = 0; }
+    public int getTransitionDepth() { return transitionDepth; }
+
+    public boolean isResponseProcessing() { return responseProcessing; }
+    public void setResponseProcessing(boolean responseProcessing) { this.responseProcessing = responseProcessing; }
 
     @Nullable
     public IDialogueNode getCurrentNode() {

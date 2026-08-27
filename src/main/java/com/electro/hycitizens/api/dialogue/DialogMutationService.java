@@ -10,7 +10,13 @@ import java.util.function.IntConsumer;
 
 public final class DialogMutationService {
     private final Map<UUID, DialogPatch> patches = new ConcurrentHashMap<>();
-    private final Map<String, String> materializedCache = new ConcurrentHashMap<>();
+    private static final int MAX_CACHE_ENTRIES = 256;
+    private final Map<String, String> materializedCache = Collections.synchronizedMap(new LinkedHashMap<>(64, 0.75f, true) {
+        @Override
+        protected boolean removeEldestEntry(Map.Entry<String, String> eldest) {
+            return size() > MAX_CACHE_ENTRIES;
+        }
+    });
     private final Gson gson;
 
     public DialogMutationService(Gson gson) {
@@ -34,6 +40,12 @@ public final class DialogMutationService {
         materializedCache.clear();
     }
 
+    public int getMaterializedCacheSize() {
+        synchronized (materializedCache) {
+            return materializedCache.size();
+        }
+    }
+
     public IDialogue materialize(IDialogue base, String npcId, UUID playerId, UUID sessionId) {
         long now = System.currentTimeMillis();
         List<DialogPatch> applicable = patches.values().stream()
@@ -42,18 +54,26 @@ public final class DialogMutationService {
                 .filter(patch -> matches(patch, npcId, playerId, sessionId))
                 .sorted(Comparator.comparingInt(DialogPatch::priority).thenComparing(patch -> patch.id().toString()))
                 .toList();
+        if (applicable.isEmpty()) {
+            return gson.fromJson(gson.toJson(base, IDialogue.class), IDialogue.class);
+        }
         String key = base.getId() + ":" + base.getRevision() + ":" + applicable.stream()
                 .map(patch -> patch.id() + "@" + patch.priority()).toList();
-        String serialized = materializedCache.computeIfAbsent(key, ignored -> {
-            IDialogue copy = gson.fromJson(gson.toJson(base, IDialogue.class), IDialogue.class);
-            if (copy instanceof Dialogue standard) {
-                applicable.forEach(patch -> applyTo(standard, patch));
-            } else if (!applicable.isEmpty()) {
-                throw new IllegalArgumentException("Mutation overlays require a compatible mutable codec for dialog type "
-                        + copy.getClass().getName());
+        String serialized;
+        synchronized (materializedCache) {
+            serialized = materializedCache.get(key);
+            if (serialized == null) {
+                IDialogue copy = gson.fromJson(gson.toJson(base, IDialogue.class), IDialogue.class);
+                if (copy instanceof Dialogue standard) {
+                    applicable.forEach(patch -> applyTo(standard, patch));
+                } else {
+                    throw new IllegalArgumentException("Mutation overlays require a compatible mutable codec for dialog type "
+                            + copy.getClass().getName());
+                }
+                serialized = gson.toJson(copy, IDialogue.class);
+                materializedCache.put(key, serialized);
             }
-            return gson.toJson(copy, IDialogue.class);
-        });
+        }
         return gson.fromJson(serialized, IDialogue.class);
     }
 
