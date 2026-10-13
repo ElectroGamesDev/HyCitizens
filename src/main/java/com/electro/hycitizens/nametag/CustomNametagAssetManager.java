@@ -50,6 +50,22 @@ public class CustomNametagAssetManager {
             Files.createDirectories(CACHE_DIR);
             Files.createDirectories(COMMON_DIR);
             Files.createDirectories(SERVER_MODELS_DIR);
+            if (Files.exists(SERVER_MODELS_DIR)) {
+                try (Stream<Path> files = Files.list(SERVER_MODELS_DIR)) {
+                    files.filter(p -> {
+                        String name = p.getFileName().toString();
+                        if (name.startsWith("Nametag_")) return true;
+                        if (name.startsWith("CustomNametag_") && name.length() > 14) {
+                            return Character.isLowerCase(name.charAt(14));
+                        }
+                        return false;
+                    }).forEach(p -> {
+                        try {
+                            Files.deleteIfExists(p);
+                        } catch (Exception ignored) {}
+                    });
+                } catch (Exception ignored) {}
+            }
             loadCachedAssets();
             initialized = true;
             getLogger().atInfo().log("[HyCitizens] CustomNametagAssetManager initialized, loaded " + formatHashToAssetId.size() + " cached nametag(s)");
@@ -84,8 +100,28 @@ public class CustomNametagAssetManager {
                                 String itemJson = new String(Files.readAllBytes(modelJsonPath), StandardCharsets.UTF_8);
                                 String itemAssetId = new String(Files.readAllBytes(metaPath), StandardCharsets.UTF_8).trim();
 
+                                String formattedHash = Character.toUpperCase(hash.charAt(0)) + hash.substring(1);
+                                String expectedAssetId = "CustomNametag_" + formattedHash;
+
+                                if (!itemAssetId.equals(expectedAssetId)) {
+                                    try {
+                                        Files.deleteIfExists(SERVER_MODELS_DIR.resolve(itemAssetId + ".json"));
+                                    } catch (Exception ignored) {}
+                                    itemAssetId = expectedAssetId;
+                                    try {
+                                        Files.writeString(metaPath, itemAssetId);
+                                    } catch (Exception ignored) {}
+                                }
+
                                 String texturePath2 = TEXTURE_PATH_PREFIX + hash + ".png";
                                 String blockymodelPath2 = MODEL_PATH_PREFIX + hash + ".blockymodel";
+
+                                if (!itemJson.contains("\"HitBox\"")) {
+                                    itemJson = NametagItemGenerator.generateModelAssetJson(blockymodelPath2, texturePath2);
+                                    try {
+                                        Files.writeString(modelJsonPath, itemJson);
+                                    } catch (Exception ignored) {}
+                                }
 
                                 registerTexture(texturePath2, textureBytes);
                                 registerModel(blockymodelPath2, blockymodelJson);
@@ -169,7 +205,8 @@ public class CustomNametagAssetManager {
                 return null;
             }
 
-            String modelAssetId = "CustomNametag_" + hash;
+            String formattedHash = Character.toUpperCase(hash.charAt(0)) + hash.substring(1);
+            String modelAssetId = "CustomNametag_" + formattedHash;
             String modelAssetJsonContent = NametagItemGenerator.generateModelAssetJson(blockymodelPath, texturePath);
 
             Path modelAssetJsonPath = writeAssetsToDisk(texturePath, textureBytes, blockymodelPath, blockymodelJson, modelAssetId, modelAssetJsonContent);

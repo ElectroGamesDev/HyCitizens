@@ -80,6 +80,11 @@ public class HyCitizensPlugin extends JavaPlugin {
             return;
         }
 
+        NPCPlugin npcPlugin = NPCPlugin.get();
+        if (npcPlugin != null) {
+            npcPlugin.registerCoreComponentType("CitizenInteraction", BuilderActionInteract::new);
+        }
+
         // Load map marker assets
         CitizenMapMarkerAsset.ensureBuiltInMarkerFiles();
         CitizenMapMarkerAsset.loadUserCustomMarkers();
@@ -157,10 +162,10 @@ public class HyCitizensPlugin extends JavaPlugin {
         ScriptManager.get().shutdown();
 
         if (citizensManager != null) {
+            citizensManager.shutdown();
             if (citizensManager.getRoleGenerator() != null) {
                 citizensManager.getRoleGenerator().cleanup();
             }
-            citizensManager.shutdown();
         }
 
         GeneratedAssetReloader.cleanup();
@@ -263,5 +268,9 @@ public class HyCitizensPlugin extends JavaPlugin {
     @Nonnull
     public ComponentType<EntityStore, CitizenNametagComponent> getCitizenNametagComponent() {
         return citizenNametagComponent;
+    }
+
+    public ChunkPreLoadListener getChunkPreLoadListener() {
+        return chunkPreLoadListener;
     }
 }

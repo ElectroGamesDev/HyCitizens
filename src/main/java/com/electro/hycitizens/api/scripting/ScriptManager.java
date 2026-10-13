@@ -1,7 +1,11 @@
 package com.electro.hycitizens.api.scripting;
 
 import com.electro.hycitizens.HyCitizensPlugin;
+import com.hypixel.hytale.protocol.packets.interface_.EventTitleStyle;
+import com.hypixel.hytale.server.core.asset.type.blocktype.config.BlockType;
 import com.hypixel.hytale.server.core.universe.world.SetBlockSettings;
+import com.hypixel.hytale.server.core.universe.world.chunk.BlockOperations;
+import com.hypixel.hytale.server.core.universe.world.storage.ChunkStore;
 import com.hypixel.hytale.server.npc.NPCPlugin;
 import it.unimi.dsi.fastutil.Pair;
 import com.hypixel.hytale.server.core.universe.world.npc.INonPlayerCharacter;
@@ -263,9 +267,25 @@ public class ScriptManager {
     public void shutdown() {
         if (proximityScheduler != null) {
             proximityScheduler.shutdown();
+            try {
+                if (!proximityScheduler.awaitTermination(500, TimeUnit.MILLISECONDS)) {
+                    proximityScheduler.shutdownNow();
+                }
+            } catch (InterruptedException e) {
+                proximityScheduler.shutdownNow();
+                Thread.currentThread().interrupt();
+            }
         }
         if (tickScheduler != null) {
             tickScheduler.shutdown();
+            try {
+                if (!tickScheduler.awaitTermination(500, TimeUnit.MILLISECONDS)) {
+                    tickScheduler.shutdownNow();
+                }
+            } catch (InterruptedException e) {
+                tickScheduler.shutdownNow();
+                Thread.currentThread().interrupt();
+            }
         }
         // Cancel all active timers
         for (Map<String, ScheduledFuture<?>> citizenTimers : activeTimers.values()) {
@@ -279,6 +299,117 @@ public class ScriptManager {
     public float getFollowPlayerMinDistance(String citizenId) {
         FollowPlayerState state = followingPlayers.get(citizenId);
         return state != null ? (float) state.minDistance : 2.0f;
+    }
+
+    public boolean hasFollowPlayerScript(CitizenData citizen) {
+        return findFollowPlayerAction(citizen) != null;
+    }
+
+    public float getConfiguredFollowPlayerSpeed(CitizenData citizen, float defaultSpeed) {
+        if (citizen == null) {
+            return defaultSpeed;
+        }
+        FollowPlayerState state = followingPlayers.get(citizen.getId());
+        if (state != null) {
+            return (float) state.speed;
+        }
+        ScriptAction action = findFollowPlayerAction(citizen);
+        if (action != null && action.getParameters() != null) {
+            Object speedObj = action.getParameters().get("speed");
+            if (speedObj instanceof Number num) {
+                return num.floatValue();
+            }
+            if (speedObj != null) {
+                try {
+                    return Float.parseFloat(speedObj.toString());
+                } catch (NumberFormatException ignored) {
+                }
+            }
+            return 1.2f;
+        }
+        return defaultSpeed;
+    }
+
+    public float getConfiguredFollowPlayerMinDistance(CitizenData citizen, float defaultMinDistance) {
+        if (citizen == null) {
+            return defaultMinDistance;
+        }
+        FollowPlayerState state = followingPlayers.get(citizen.getId());
+        if (state != null) {
+            return (float) state.minDistance;
+        }
+        ScriptAction action = findFollowPlayerAction(citizen);
+        if (action != null && action.getParameters() != null) {
+            Object minDistObj = action.getParameters().get("min_distance");
+            if (minDistObj instanceof Number num) {
+                return num.floatValue();
+            }
+            if (minDistObj != null) {
+                try {
+                    return Float.parseFloat(minDistObj.toString());
+                } catch (NumberFormatException ignored) {
+                }
+            }
+            return 2.0f;
+        }
+        return defaultMinDistance;
+    }
+
+    private ScriptAction findFollowPlayerAction(CitizenData citizen) {
+        if (citizen == null) {
+            return null;
+        }
+        List<ScriptBlock> scripts = getCitizenScripts(citizen);
+        if (scripts == null || scripts.isEmpty()) {
+            return null;
+        }
+        for (ScriptBlock block : scripts) {
+            if (block == null || !block.isEnabled()) {
+                continue;
+            }
+            ScriptAction found = findFollowPlayerActionInList(block.getActions());
+            if (found != null) {
+                return found;
+            }
+        }
+        return null;
+    }
+
+    private ScriptAction findFollowPlayerActionInList(List<ScriptAction> actionsList) {
+        if (actionsList == null || actionsList.isEmpty()) {
+            return null;
+        }
+        for (ScriptAction action : actionsList) {
+            if (action == null) {
+                continue;
+            }
+            if ("FOLLOW_PLAYER".equalsIgnoreCase(action.getType())) {
+                return action;
+            }
+            ScriptAction sub = findFollowPlayerActionInList(action.getActions());
+            if (sub != null) {
+                return sub;
+            }
+            sub = findFollowPlayerActionInList(action.getTrueActions());
+            if (sub != null) {
+                return sub;
+            }
+            sub = findFollowPlayerActionInList(action.getFalseActions());
+            if (sub != null) {
+                return sub;
+            }
+            if (action.getBranches() != null) {
+                for (ScriptAction.Branch branch : action.getBranches()) {
+                    if (branch != null) {
+                        sub = findFollowPlayerActionInList(branch.getActions());
+                        if (sub != null) {
+                            return sub;
+                        }
+                    }
+                }
+            }
+        }
+        return null;
     }
 
     public void registerCondition(ScriptConditionHandler handler) {
@@ -878,11 +1009,25 @@ public class ScriptManager {
                     MovementBehavior mb = new MovementBehavior("IDLE", 2.0f, 0.0f, 0.0f, 0.0f);
                     citizen.setMovementBehavior(mb);
                     HyCitizensPlugin.get().getCitizensManager().stopCitizenMovement(citizenId);
-                    HyCitizensPlugin.get().getCitizensManager().updateCitizenRoleImmediately(citizen);
                     continue;
                 }
                 Vector3d pPos = player.getTransform().getPosition();
+                Ref<EntityStore> playerRef = player.getReference();
+                if (playerRef != null && playerRef.isValid()) {
+                    TransformComponent playerTransform = playerRef.getStore().getComponent(playerRef, TransformComponent.getComponentType());
+                    if (playerTransform != null && playerTransform.getPosition() != null) {
+                        pPos = playerTransform.getPosition();
+                    }
+                }
                 Vector3d cPos = citizen.getCurrentPosition() != null ? citizen.getCurrentPosition() : citizen.getPosition();
+                Ref<EntityStore> npcRef = citizen.getNpcRef();
+                if (npcRef != null && npcRef.isValid()) {
+                    TransformComponent npcTransform = npcRef.getStore().getComponent(npcRef, TransformComponent.getComponentType());
+                    if (npcTransform != null && npcTransform.getPosition() != null) {
+                        cPos = npcTransform.getPosition();
+                        citizen.setCurrentPosition(new Vector3d(cPos));
+                    }
+                }
                 double dist = cPos.distance(pPos);
 
                 if (dist > followState.maxDistance) {
@@ -891,15 +1036,10 @@ public class ScriptManager {
                         MovementBehavior mb = new MovementBehavior("IDLE", 2.0f, 0.0f, 0.0f, 0.0f);
                         citizen.setMovementBehavior(mb);
                         HyCitizensPlugin.get().getCitizensManager().stopCitizenMovement(citizenId);
-                        HyCitizensPlugin.get().getCitizensManager().updateCitizenRoleImmediately(citizen);
                     } else {
-                        HyCitizensPlugin.get().getCitizensManager().updateCitizenMoveTarget(citizenId, cPos);
+                        HyCitizensPlugin.get().getCitizensManager().stopCitizenMovement(citizenId);
                     }
-                } else if (dist > followState.minDistance) {
-                    // Update movement target
-                    HyCitizensPlugin.get().getCitizensManager().updateCitizenMoveTarget(citizenId, pPos);
                 } else {
-                    // Destination reached - maintain target so Seek halts within stop distance
                     HyCitizensPlugin.get().getCitizensManager().updateCitizenMoveTarget(citizenId, pPos);
                 }
         }
@@ -2186,12 +2326,33 @@ public class ScriptManager {
                 double maxDistance = maxDistanceNum != null ? maxDistanceNum.doubleValue() : 15.0;
 
                 CitizenData citizen = context.getCitizen();
+                float configuredSpeed = getConfiguredFollowPlayerSpeed(citizen, citizen.getMovementBehavior().getWalkSpeed());
+                float configuredMinDist = getConfiguredFollowPlayerMinDistance(citizen, citizen.getFollowDistance());
+
                 MovementBehavior mb = new MovementBehavior("FOLLOW_PLAYER", (float) speed, 1f, 1f, 1f);
                 citizen.setMovementBehavior(mb);
 
                 HyCitizensPlugin.get().getCitizensManager().stopCitizenPatrol(citizen.getId());
                 followingPlayers.put(citizen.getId(), new FollowPlayerState(context.getPlayer().getUuid(), speed, minDistance, maxDistance, hardStop));
-                HyCitizensPlugin.get().getCitizensManager().updateCitizenRoleImmediately(citizen);
+
+                boolean roleConfigChanged = Math.abs(configuredSpeed - (float) speed) > 0.01f
+                        || Math.abs(configuredMinDist - (float) minDistance) > 0.01f;
+                if (roleConfigChanged) {
+                    HyCitizensPlugin.get().getCitizensManager().updateCitizenRoleImmediately(citizen);
+                }
+
+                PlayerRef player = context.getPlayer();
+                Vector3d pPos = player.getTransform().getPosition();
+                Ref<EntityStore> playerRef = player.getReference();
+                if (playerRef != null && playerRef.isValid()) {
+                    TransformComponent playerTransform = playerRef.getStore().getComponent(playerRef, TransformComponent.getComponentType());
+                    if (playerTransform != null && playerTransform.getPosition() != null) {
+                        pPos = playerTransform.getPosition();
+                    }
+                }
+                if (pPos != null) {
+                    HyCitizensPlugin.get().getCitizensManager().updateCitizenMoveTarget(citizen.getId(), new Vector3d(pPos));
+                }
 
                 return CompletableFuture.completedFuture(null);
             }
@@ -2206,7 +2367,6 @@ public class ScriptManager {
                 MovementBehavior mb = new MovementBehavior("IDLE", 2.0f, 0f, 0f, 0f);
                 citizen.setMovementBehavior(mb);
                 HyCitizensPlugin.get().getCitizensManager().stopCitizenMovement(citizen.getId());
-                HyCitizensPlugin.get().getCitizensManager().updateCitizenRoleImmediately(citizen);
                 return CompletableFuture.completedFuture(null);
             }
         });
@@ -2691,11 +2851,21 @@ public class ScriptManager {
                 Number xVal = (Number) params.get("x");
                 Number yVal = (Number) params.get("y");
                 Number zVal = (Number) params.get("z");
-                if (xVal == null || yVal == null || zVal == null) return CompletableFuture.completedFuture(null);
+                World world = context.getWorld();
+                if (xVal == null || yVal == null || zVal == null || world == null) return CompletableFuture.completedFuture(null);
 
-                try {
-                    context.getWorld().breakBlock(xVal.intValue(), yVal.intValue(), zVal.intValue(), SetBlockSettings.FORCE_CHANGED);
-                } catch (Exception _) {}
+                int x = xVal.intValue();
+                int y = yVal.intValue();
+                int z = zVal.intValue();
+                world.execute(() -> {
+                    try {
+                        ChunkStore chunkStore = world.getChunkStore();
+                        Ref<ChunkStore> sectionRef = chunkStore.getChunkSectionReferenceAtBlock(x, y, z);
+                        if (sectionRef != null && sectionRef.isValid()) {
+                            BlockOperations.setBlock(chunkStore, sectionRef, x, y, z, BlockType.EMPTY_ID, BlockType.EMPTY, 0, 0, SetBlockSettings.FORCE_CHANGED);
+                        }
+                    } catch (Exception _) {}
+                });
                 return CompletableFuture.completedFuture(null);
             }
         });
@@ -2707,11 +2877,25 @@ public class ScriptManager {
                 Number yVal = (Number) params.get("y");
                 Number zVal = (Number) params.get("z");
                 String blockId = (String) params.get("block_id");
-                if (xVal == null || yVal == null || zVal == null || blockId == null) return CompletableFuture.completedFuture(null);
-                
-                try {
-                    context.getWorld().setBlock(xVal.intValue(), yVal.intValue(), zVal.intValue(), blockId);
-                } catch (Exception _) {}
+                World world = context.getWorld();
+                if (xVal == null || yVal == null || zVal == null || blockId == null || world == null) return CompletableFuture.completedFuture(null);
+
+                int x = xVal.intValue();
+                int y = yVal.intValue();
+                int z = zVal.intValue();
+                world.execute(() -> {
+                    try {
+                        ChunkStore chunkStore = world.getChunkStore();
+                        Ref<ChunkStore> sectionRef = chunkStore.getChunkSectionReferenceAtBlock(x, y, z);
+                        if (sectionRef != null && sectionRef.isValid()) {
+                            BlockType blockType = BlockType.getAssetMap().getAsset(blockId);
+                            if (blockType != null) {
+                                int blockIndex = BlockType.getAssetMap().getIndex(blockType.getId());
+                                BlockOperations.setBlock(chunkStore, sectionRef, x, y, z, blockIndex, blockType, 0, 0, 0);
+                            }
+                        }
+                    } catch (Exception _) {}
+                });
                 return CompletableFuture.completedFuture(null);
             }
         });
@@ -3089,7 +3273,7 @@ public class ScriptManager {
                 String title = (String) params.get("title");
                 String subtitle = (String) params.getOrDefault("subtitle", "");
 
-                EventTitleUtil.showEventTitleToPlayer(context.getPlayer(), Message.raw(title), Message.raw(subtitle), true);
+                EventTitleUtil.showEventTitleToPlayer(context.getPlayer(), Message.raw(title), Message.raw(subtitle), EventTitleStyle.Major);
                 return CompletableFuture.completedFuture(null);
             }
         });

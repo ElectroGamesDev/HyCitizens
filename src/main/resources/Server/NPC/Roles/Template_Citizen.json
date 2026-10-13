@@ -58,6 +58,10 @@
       "Value": "Component_Instruction_Waking_Idle",
       "Description": "The component used for waking idle behavior."
     },
+    "RetaliateOnDamage": {
+      "Value": false,
+      "Description": "Whether the citizen enters combat or search states when damaged or alerted by under-attack beacons."
+    },
     "DayFlavorAnimation": {
       "Value": "",
       "Description": "A flavor animation to play during the day. Ignored if null or empty."
@@ -84,7 +88,7 @@
       "Description": "How far to wander when patrolling and not following a path before taking a break."
     },
     "FollowMoveTarget": {
-      "Value": false,
+      "Value": true,
       "Description": "Whether this NPC should seek a plugin-managed movement marker while still using the normal combat state machine."
     },
     "MoveTargetStopDistance": {
@@ -262,7 +266,7 @@
       "Description": "This NPC's attitude group."
     },
     "DefaultPlayerAttitude": {
-      "Value": "Hostile",
+      "Value": "Ignore",
       "Description": "Default attitude towards players."
     },
     "DefaultNPCAttitude": {
@@ -436,6 +440,7 @@
           "Instructions": [
             {
               "$Comment": "Potentially go to look to see what's happening if getting a message.",
+              "Enabled": { "Compute": "RetaliateOnDamage" },
               "Sensor": {
                 "Type": "Beacon",
                 "Message": "Under_Attack",
@@ -466,6 +471,7 @@
               ]
             },
             {
+              "Enabled": { "Compute": "RetaliateOnDamage" },
               "Reference": "Component_Instruction_Damage_Check",
               "Modify": {
                 "_ExportStates": [ "Combat", "Search.Confused" ],
@@ -977,7 +983,7 @@
                   "ViewSector": { "Compute": "ViewSector" },
                   "HearingRange": { "Compute": "HearingRange" },
                   "AbsoluteDetectionRange": { "Compute": "AbsoluteDetectionRange" },
-                  "Attitudes": [ "Hostile", "Neutral" ]
+                  "Attitudes": [ "Hostile" ]
                 }
               },
               "Actions": [
@@ -1022,20 +1028,6 @@
             "State": "Alerted"
           },
           "Instructions": [
-            {
-              "Continue": true,
-              "Sensor": {
-                "Type": "Any",
-                "Once": true
-              },
-              "Actions": [
-                {
-                  "Type": "PlayAnimation",
-                  "Slot": "Status",
-                  "Animation": "Alerted"
-                }
-              ]
-            },
             {
               "Continue": true,
               "Sensor": {
@@ -1812,7 +1804,7 @@
                       "ViewSector": { "Compute": "ViewSector" },
                       "HearingRange": { "Compute": "HearingRange / 2" },
                       "AbsoluteDetectionRange": { "Compute": "AbsoluteDetectionRange" },
-                      "Attitudes": [ "Hostile", "Neutral" ]
+                      "Attitudes": [ "Hostile" ]
                     }
                   },
                   "Actions": [
@@ -1857,7 +1849,7 @@
                       "ViewSector": { "Compute": "ViewSector" },
                       "HearingRange": { "Compute": "HearingRange" },
                       "AbsoluteDetectionRange": { "Compute": "AbsoluteDetectionRange" },
-                      "Attitudes": [ "Hostile", "Neutral" ]
+                      "Attitudes": [ "Hostile" ]
                     }
                   },
                   "Actions": [
@@ -1913,7 +1905,7 @@
                     },
                     {
                       "Type": "State",
-                      "State": "Idle"
+                      "State": "ReturnHome"
                     }
                   ]
                 }

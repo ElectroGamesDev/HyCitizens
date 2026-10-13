@@ -1,9 +1,11 @@
 package com.electro.hycitizens.interactions;
 
 import com.electro.hycitizens.HyCitizensPlugin;
+import com.electro.hycitizens.components.CitizenNpcIdentityComponent;
 import com.electro.hycitizens.models.CitizenData;
 import com.hypixel.hytale.component.Ref;
 import com.hypixel.hytale.component.Store;
+import com.hypixel.hytale.server.npc.entities.NPCEntity;
 import com.hypixel.hytale.protocol.InteractionType;
 import com.hypixel.hytale.protocol.Packet;
 import com.hypixel.hytale.protocol.packets.interaction.SyncInteractionChain;
@@ -123,36 +125,73 @@ public class PlayerInteractionHandler implements PacketWatcher {
             interactedUuid = uuidComponent.getUuid();
         }
 
-        List<CitizenData> citizens = HyCitizensPlugin.get().getCitizensManager().getAllCitizens();
-        for (CitizenData citizen : citizens) {
-            Ref<EntityStore> npcRef = citizen.getNpcRef();
-            boolean isDirectRefMatch = npcRef != null && npcRef.isValid() && npcRef.equals(entity);
-            boolean isUuidMatch = interactedUuid != null && citizen.getSpawnedUUID() != null
-                    && citizen.getSpawnedUUID().equals(interactedUuid);
+        CitizenNpcIdentityComponent identityComponent =
+                entity.getStore().getComponent(entity, CitizenNpcIdentityComponent.getComponentType());
+        String identityCitizenId = (identityComponent != null) ? identityComponent.getCitizenId() : null;
 
-            if (!isDirectRefMatch && !isUuidMatch) {
-                continue;
+        NPCEntity npc = entity.getStore().getComponent(entity, NPCEntity.getComponentType());
+        String roleName = null;
+        if (npc != null) {
+            roleName = npc.getRole() != null ? npc.getRole().getRoleName() : npc.getRoleName();
+        }
+
+        CitizenData citizen = null;
+        if (identityCitizenId != null) {
+            citizen = HyCitizensPlugin.get().getCitizensManager().getCitizen(identityCitizenId);
+        }
+        if (citizen == null && roleName != null && roleName.startsWith("HyCitizens_")) {
+            int secondUnderscore = roleName.indexOf('_', 11);
+            if (secondUnderscore > 11) {
+                String idCandidate = roleName.substring(11, secondUnderscore);
+                citizen = HyCitizensPlugin.get().getCitizensManager().getCitizen(idCandidate);
             }
+        }
 
-            // If the ref became stale after chunk/entity reattachment, repair it from the interacted entity.
-            if (!isDirectRefMatch) {
-                //getLogger().atInfo().log("Recovered citizen NPC ref from UUID match for " + citizen.getId());
-                HyCitizensPlugin.get().getCitizensManager().bindCitizenEntityRef(citizen, entity);
-                World world = Universe.get().getWorld(citizen.getWorldUUID());
-                if (world != null) {
-                    world.execute(() -> HyCitizensPlugin.get().getCitizensManager().restoreResolvedCitizenState(citizen, entity, false));
+        if (citizen == null) {
+            List<CitizenData> citizens = HyCitizensPlugin.get().getCitizensManager().getAllCitizens();
+            for (CitizenData candidate : citizens) {
+                Ref<EntityStore> npcRef = candidate.getNpcRef();
+                boolean isDirectRefMatch = npcRef != null && npcRef.isValid() && npcRef.equals(entity);
+                boolean isUuidMatch = interactedUuid != null && candidate.getSpawnedUUID() != null
+                        && candidate.getSpawnedUUID().equals(interactedUuid);
+
+                if (isDirectRefMatch || isUuidMatch) {
+                    citizen = candidate;
+                    break;
                 }
             }
+        }
 
-            if (type != InteractionType.Use
-                    && HyCitizensPlugin.get().getCitizensUI().tryCompleteFollowTargetSelection(playerRef, citizen)) {
-                break;
-            }
+        if (citizen == null) {
+            return;
+        }
 
-            if (!handleCitizenStick(playerRef, citizen)) {
-                CitizenInteraction.handleInteraction(citizen, playerRef, interactionSource);
+        final CitizenData matchedCitizen = citizen;
+        Ref<EntityStore> npcRef = matchedCitizen.getNpcRef();
+        boolean isDirectRefMatch = npcRef != null && npcRef.isValid() && npcRef.equals(entity);
+
+        World entityWorld = store.getExternalData() != null ? store.getExternalData().getWorld() : null;
+        UUID entityWorldUuid = (entityWorld != null && entityWorld.getWorldConfig() != null)
+                ? entityWorld.getWorldConfig().getUuid()
+                : null;
+        boolean isPrimaryWorld = entityWorldUuid != null && entityWorldUuid.equals(matchedCitizen.getWorldUUID());
+
+        if (isPrimaryWorld && !isDirectRefMatch) {
+            HyCitizensPlugin.get().getCitizensManager().bindCitizenEntityRef(matchedCitizen, entity);
+            if (entityWorld != null) {
+                entityWorld.execute(() -> HyCitizensPlugin.get().getCitizensManager().restoreResolvedCitizenState(matchedCitizen, entity, false));
             }
-            break;
+        } else if (!isPrimaryWorld) {
+            HyCitizensPlugin.get().getCitizensManager().applyCitizenComponentsToEntity(store, entity, matchedCitizen);
+        }
+
+        if (type != InteractionType.Use
+                && HyCitizensPlugin.get().getCitizensUI().tryCompleteFollowTargetSelection(playerRef, matchedCitizen)) {
+            return;
+        }
+
+        if (!handleCitizenStick(playerRef, matchedCitizen)) {
+            CitizenInteraction.handleInteraction(matchedCitizen, playerRef, interactionSource);
         }
     }
 

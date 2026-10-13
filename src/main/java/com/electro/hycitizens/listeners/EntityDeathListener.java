@@ -1,6 +1,7 @@
 package com.electro.hycitizens.listeners;
 
 import com.electro.hycitizens.HyCitizensPlugin;
+import com.electro.hycitizens.components.CitizenNpcIdentityComponent;
 import com.electro.hycitizens.events.CitizenDeathEvent;
 import com.electro.hycitizens.interactions.CitizenInteraction;
 import com.electro.hycitizens.models.*;
@@ -73,16 +74,23 @@ public class EntityDeathListener extends DeathSystems.OnDeathSystem {
             return;
         }
 
-        // Todo: Should create and switch to a citizen component
-
-        CitizenData foundCitizen = plugin.getCitizensManager().getAllCitizens().stream()
-                .filter(citizen -> citizen.getSpawnedUUID() != null && citizen.getSpawnedUUID().equals(uuidComponent.getUuid()))
-                .findFirst()
-                .orElse(null);
+        CitizenNpcIdentityComponent identityComponent = store.getComponent(ref, CitizenNpcIdentityComponent.getComponentType());
+        CitizenData foundCitizen = null;
+        if (identityComponent != null) {
+            foundCitizen = plugin.getCitizensManager().getCitizen(identityComponent.getCitizenId());
+        }
+        if (foundCitizen == null) {
+            foundCitizen = plugin.getCitizensManager().getAllCitizens().stream()
+                    .filter(citizen -> citizen.getSpawnedUUID() != null && citizen.getSpawnedUUID().equals(uuidComponent.getUuid()))
+                    .findFirst()
+                    .orElse(null);
+        }
 
         if (foundCitizen == null) {
             return;
         }
+
+        boolean isPrimaryInstance = uuidComponent.getUuid().equals(foundCitizen.getSpawnedUUID());
 
         long now = System.currentTimeMillis();
 
@@ -113,7 +121,7 @@ public class EntityDeathListener extends DeathSystems.OnDeathSystem {
 
         TransformComponent npcTransformComponent = store.getComponent(ref, TransformComponent.getComponentType());
         if (npcTransformComponent != null) {
-            handleDeathDrops(foundCitizen, dc, npcTransformComponent.getPosition());
+            handleDeathDrops(foundCitizen, dc, npcTransformComponent.getPosition(), store);
         }
 
         // Fire ON_DEATH scripting trigger
@@ -128,21 +136,23 @@ public class EntityDeathListener extends DeathSystems.OnDeathSystem {
         ScriptManager.get().fireTrigger(foundCitizen, "ON_DEATH", triggerArgs, attackerPlayerRef, store);
         foundCitizen.clearRecentDamageDealers();
 
-        foundCitizen.setLastDeathTime(now);
+        if (isPrimaryInstance) {
+            foundCitizen.setLastDeathTime(now);
 
-        if (plugin.getCitizensManager().getPatrolManager() != null) {
-            plugin.getCitizensManager().getPatrolManager().onCitizenDespawned(foundCitizen.getId());
-        }
-        plugin.getCitizensManager().despawnCitizenHologram(foundCitizen);
-        plugin.getCitizensManager().clearCitizenEntityRef(foundCitizen);
+            if (plugin.getCitizensManager().getPatrolManager() != null) {
+                plugin.getCitizensManager().getPatrolManager().onCitizenDespawned(foundCitizen.getId());
+            }
+            plugin.getCitizensManager().despawnCitizenHologram(foundCitizen);
+            plugin.getCitizensManager().clearCitizenEntityRef(foundCitizen);
 
-        // Mark for respawn
-        if (foundCitizen.isRespawnOnDeath()) {
-            plugin.getCitizensManager().scheduleCitizenRespawn(foundCitizen, (long)(foundCitizen.getRespawnDelaySeconds() * 1000));
+            // Mark for respawn
+            if (foundCitizen.isRespawnOnDeath()) {
+                plugin.getCitizensManager().scheduleCitizenRespawn(foundCitizen, (long)(foundCitizen.getRespawnDelaySeconds() * 1000));
+            }
         }
     }
 
-    private void handleDeathDrops(@Nonnull CitizenData citizen, @Nonnull DeathConfig dc, Vector3d position) {
+    private void handleDeathDrops(@Nonnull CitizenData citizen, @Nonnull DeathConfig dc, Vector3d position, @Nonnull Store<EntityStore> store) {
         List<DeathDropItem> drops = dc.getDropItems();
         if (drops.isEmpty()) {
             return;
@@ -170,7 +180,7 @@ public class EntityDeathListener extends DeathSystems.OnDeathSystem {
             toDrop = new ArrayList<>(toDrop.subList(0, desiredCount));
         }
 
-        World world = Universe.get().getWorld(citizen.getWorldUUID());
+        World world = store.getExternalData() != null ? store.getExternalData().getWorld() : Universe.get().getWorld(citizen.getWorldUUID());
         if (world == null) {
             return;
         }

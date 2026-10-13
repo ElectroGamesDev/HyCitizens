@@ -167,6 +167,15 @@ public class CitizenData {
     private transient String currentScheduleEntryId = "";
     private transient String currentScheduleRoleName = "";
     private transient String currentScheduleStatusText = "Inactive";
+    private transient Vector3d lastMotionCheckPosition = null;
+    private transient long lastMotionDetectedTime = 0L;
+    private transient boolean hasTrackedNametagTransform = false;
+    private transient double lastNametagX = 0.0;
+    private transient double lastNametagY = 0.0;
+    private transient double lastNametagZ = 0.0;
+    private transient float lastNametagYaw = 0.0f;
+    private transient float lastNametagPitch = 0.0f;
+    private transient float lastNametagRoll = 0.0f;
 
     // Citizen follow fields
     private boolean followCitizenEnabled = false;
@@ -229,7 +238,7 @@ public class CitizenData {
                        boolean rotateTowardsPlayer) {
         this.id = id;
         this.name = name;
-        this.modelId = modelId;
+        this.modelId = RoleGenerator.normalizeModelId(modelId);
         this.worldUUID = worldUUID;
         this.position = position;
         this.rotation = rotation;
@@ -301,7 +310,7 @@ public class CitizenData {
     }
 
     public void setModelId(@Nonnull String modelId) {
-        this.modelId = modelId;
+        this.modelId = RoleGenerator.normalizeModelId(modelId);
     }
 
     @Nonnull
@@ -1315,5 +1324,55 @@ public class CitizenData {
     public boolean isInteractDialogueTriggeredBy(@Nonnull String interactionSource) {
         String trigger = getInteractDialogueTrigger();
         return "BOTH".equals(trigger) || trigger.equalsIgnoreCase(interactionSource);
+    }
+
+    @Nullable
+    public Vector3d getLastMotionCheckPosition() {
+        return lastMotionCheckPosition;
+    }
+
+    public void setLastMotionCheckPosition(@Nullable Vector3d position) {
+        this.lastMotionCheckPosition = position;
+    }
+
+    public long getLastMotionDetectedTime() {
+        return lastMotionDetectedTime;
+    }
+
+    public void setLastMotionDetectedTime(long lastMotionDetectedTime) {
+        this.lastMotionDetectedTime = lastMotionDetectedTime;
+    }
+
+    public boolean checkAndUpdateNametagTransform(@Nonnull Vector3d position, @Nullable Rotation3f rotation) {
+        float yaw = rotation != null ? rotation.yaw() : 0.0f;
+        float pitch = rotation != null ? rotation.pitch() : 0.0f;
+        float roll = rotation != null ? rotation.roll() : 0.0f;
+
+        if (hasTrackedNametagTransform) {
+            double dx = position.x - lastNametagX;
+            double dy = position.y - lastNametagY;
+            double dz = position.z - lastNametagZ;
+            double distSq = dx * dx + dy * dy + dz * dz;
+            boolean posUnchanged = distSq < 1.0e-8;
+            boolean rotUnchanged = Math.abs(yaw - lastNametagYaw) < 1.0e-4f
+                    && Math.abs(pitch - lastNametagPitch) < 1.0e-4f
+                    && Math.abs(roll - lastNametagRoll) < 1.0e-4f;
+            if (posUnchanged && rotUnchanged) {
+                return false;
+            }
+        }
+
+        hasTrackedNametagTransform = true;
+        lastNametagX = position.x;
+        lastNametagY = position.y;
+        lastNametagZ = position.z;
+        lastNametagYaw = yaw;
+        lastNametagPitch = pitch;
+        lastNametagRoll = roll;
+        return true;
+    }
+
+    public void resetNametagTransformTracking() {
+        this.hasTrackedNametagTransform = false;
     }
 }

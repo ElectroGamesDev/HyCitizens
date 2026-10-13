@@ -247,7 +247,7 @@ public class ScheduleManager {
     private void maintainTravel(@Nonnull CitizenData citizen, @Nonnull ScheduleEntry entry,
                                 @Nonnull ScheduleLocation location, @Nonnull ScheduleSession session) {
         String travelRoleName = citizensManager.getRoleGenerator().getScheduleTravelRoleName(citizen, entry);
-        if (!travelRoleName.equals(session.currentRoleName)) {
+        if (!travelRoleName.equals(session.currentRoleName) || !isNpcOnRole(citizen, travelRoleName)) {
             switchCitizenRole(citizen, travelRoleName, true, location.getPosition());
             session.currentRoleName = travelRoleName;
             citizen.setCurrentScheduleRoleName(travelRoleName);
@@ -309,7 +309,7 @@ public class ScheduleManager {
     private void maintainActiveEntry(@Nonnull CitizenData citizen, @Nonnull ScheduleEntry entry,
                                      @Nonnull ScheduleLocation location, @Nonnull ScheduleSession session) {
         String desiredRoleName = citizensManager.getRoleGenerator().getScheduleEntryRoleName(citizen, entry);
-        if (!desiredRoleName.equals(session.currentRoleName)) {
+        if (!desiredRoleName.equals(session.currentRoleName) || !isNpcOnRole(citizen, desiredRoleName)) {
             boolean roleNeedsMoveTarget = entry.getActivityType() == ScheduleActivityType.PATROL
                     || entry.getActivityType() == ScheduleActivityType.FOLLOW_CITIZEN;
             switchCitizenRole(citizen, desiredRoleName, roleNeedsMoveTarget);
@@ -368,7 +368,7 @@ public class ScheduleManager {
 
         if (!arrived) {
             String travelRoleName = citizensManager.getRoleGenerator().getScheduleFallbackTravelRoleName(citizen);
-            boolean roleChanged = !travelRoleName.equals(session.currentRoleName);
+            boolean roleChanged = !travelRoleName.equals(session.currentRoleName) || !isNpcOnRole(citizen, travelRoleName);
             boolean locationChanged = !location.getId().equals(session.currentLocationId);
             if (roleChanged) {
                 switchCitizenRole(citizen, travelRoleName, true, location.getPosition());
@@ -394,7 +394,7 @@ public class ScheduleManager {
         citizensManager.stopCitizenMovement(citizen.getId());
         citizensManager.stopCitizenPatrol(citizen.getId());
         String idleRoleName = citizensManager.getRoleGenerator().getScheduleFallbackIdleRoleName(citizen);
-        if (!idleRoleName.equals(session.currentRoleName)) {
+        if (!idleRoleName.equals(session.currentRoleName) || !isNpcOnRole(citizen, idleRoleName)) {
             switchCitizenRole(citizen, idleRoleName, false);
         }
         updateCitizenLeashPoint(citizen, location.getPosition());
@@ -415,7 +415,9 @@ public class ScheduleManager {
         boolean patrolShouldBeRunning = "PATROL".equals(citizen.getMovementBehavior().getType())
                 && !citizen.getPathConfig().getPluginPatrolPath().isEmpty();
 
-        if (session.state == ScheduleRuntimeState.INACTIVE && baseRoleName.equals(session.currentRoleName)) {
+        if (session.state == ScheduleRuntimeState.INACTIVE
+                && baseRoleName.equals(session.currentRoleName)
+                && isNpcOnRole(citizen, baseRoleName)) {
             if (patrolShouldBeRunning) {
                 String activePatrol = citizensManager.getCitizenActivePatrolPath(citizen.getId());
                 if (activePatrol == null || !activePatrol.equals(citizen.getPathConfig().getPluginPatrolPath())) {
@@ -429,19 +431,25 @@ public class ScheduleManager {
             return;
         }
 
-        citizensManager.stopCitizenMovement(citizen.getId());
-        citizensManager.stopCitizenPatrol(citizen.getId());
-        boolean roleNeedsMoveTarget = "PATROL".equals(citizen.getMovementBehavior().getType())
-                || "FOLLOW_CITIZEN".equals(citizen.getMovementBehavior().getType());
-        switchCitizenRole(citizen, baseRoleName, roleNeedsMoveTarget);
+        Ref<EntityStore> npcRef = citizen.getNpcRef();
+        if (npcRef != null && npcRef.isValid()) {
+            citizensManager.stopCitizenMovement(citizen.getId());
+            citizensManager.stopCitizenPatrol(citizen.getId());
+            boolean roleNeedsMoveTarget = "PATROL".equals(citizen.getMovementBehavior().getType())
+                    || "FOLLOW_CITIZEN".equals(citizen.getMovementBehavior().getType())
+                    || "FOLLOW_PLAYER".equals(citizen.getMovementBehavior().getType());
+            switchCitizenRole(citizen, baseRoleName, roleNeedsMoveTarget);
 
-        if (patrolShouldBeRunning) {
-            citizensManager.getPatrolManager().startPatrol(citizen.getId(), citizen.getPathConfig().getPluginPatrolPath());
+            if (patrolShouldBeRunning) {
+                citizensManager.getPatrolManager().startPatrol(citizen.getId(), citizen.getPathConfig().getPluginPatrolPath());
+            }
+            session.currentRoleName = baseRoleName;
+        } else {
+            session.currentRoleName = "";
         }
 
         session.activeEntryId = "";
         session.currentLocationId = "";
-        session.currentRoleName = baseRoleName;
         session.state = ScheduleRuntimeState.INACTIVE;
         session.arrivalAnimationPlayed = false;
         resetFollowSession(session);
@@ -450,6 +458,19 @@ public class ScheduleManager {
         citizen.setCurrentScheduleRoleName(baseRoleName);
         citizen.setCurrentScheduleRuntimeState(ScheduleRuntimeState.INACTIVE);
         citizen.setCurrentScheduleStatusText(status);
+    }
+
+    private boolean isNpcOnRole(@Nonnull CitizenData citizen, @Nonnull String expectedRoleName) {
+        Ref<EntityStore> npcRef = citizen.getNpcRef();
+        if (npcRef == null || !npcRef.isValid()) {
+            return false;
+        }
+        NPCEntity npcEntity = npcRef.getStore().getComponent(npcRef, NPCEntity.getComponentType());
+        if (npcEntity == null) {
+            return false;
+        }
+        String actualRoleName = npcEntity.getRole() != null ? npcEntity.getRole().getRoleName() : npcEntity.getRoleName();
+        return expectedRoleName.equals(actualRoleName);
     }
 
     private void setBlockedState(@Nonnull CitizenData citizen, @Nonnull String message) {
@@ -742,29 +763,19 @@ public class ScheduleManager {
                 return;
             }
             if (ensureMoveTarget && citizensManager.getPatrolManager() != null) {
-                TransformComponent transformComponent =
-                        npcRef.getStore().getComponent(npcRef, TransformComponent.getComponentType());
-                Vector3d markerPosition = moveTargetPosition != null
-                        ? moveTargetPosition
-                        : transformComponent != null
-                        ? transformComponent.getPosition()
-                        : (citizen.getCurrentPosition() != null ? citizen.getCurrentPosition() : citizen.getPosition());
                 citizensManager.getPatrolManager().ensureMoveTargetNow(
                         citizen,
                         world,
-                        markerPosition
+                        moveTargetPosition
                 );
             }
             RoleChangeSystem.requestRoleChange(npcRef, npcEntity.getRole(), finalRoleIndex, true, npcRef.getStore());
-            if (ensureMoveTarget && citizensManager.getPatrolManager() != null) {
+            if (ensureMoveTarget && citizensManager.getPatrolManager() != null && moveTargetPosition != null) {
                 HytaleServer.SCHEDULED_EXECUTOR.schedule(() -> world.execute(() -> {
-                    Vector3d targetPosition = moveTargetPosition != null
-                            ? moveTargetPosition
-                            : (citizen.getCurrentPosition() != null ? citizen.getCurrentPosition() : citizen.getPosition());
                     citizensManager.getPatrolManager().ensureMoveTargetNow(
                             citizen,
                             world,
-                            targetPosition
+                            moveTargetPosition
                     );
                 }), 100, TimeUnit.MILLISECONDS);
             }

@@ -1,32 +1,11 @@
-﻿{
-  "Type": "Variant",
-  "Reference": "Template_Citizen",
-  "Appearance": "Player",
-  "Parameters": {
-    "DefaultPlayerAttitude": {
-      "Value": "Ignore",
-      "Description": "NPC ignores players"
-    },
-    "ViewRange": {
-      "Value": 0,
-      "Description": "Visual detection range"
-    },
-    "HearingRange": {
-      "Value": 0,
-      "Description": "Hearing detection range"
-    },
-    "AbsoluteDetectionRange": {
-      "Value": 0,
-      "Description": "Absolute detection range"
-    },
-    "MaxHealth": {
-      "Value": 100,
-      "Description": "Max health for the NPC"
-    },
-    "WanderRadius": {
-      "Value": 10,
-      "Description": "Wander circle radius in blocks"
-    }
-  },
-  "NameTranslationKey": "Citizen"
+{
+    "Type":  "Variant",
+    "Reference":  "Template_Citizen",
+    "Modify":  {
+                   "DefaultPlayerAttitude":  "Ignore",
+                   "MaxHealth":  100,
+                   "WanderRadius":  10,
+                   "NameTranslationKey":  "Citizen",
+                   "RetaliateOnDamage":  false
+               }
 }

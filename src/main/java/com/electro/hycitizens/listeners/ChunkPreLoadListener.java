@@ -14,11 +14,11 @@ import com.hypixel.hytale.server.core.asset.type.model.config.Model;
 import com.hypixel.hytale.server.core.HytaleServer;
 import com.hypixel.hytale.server.core.entity.UUIDComponent;
 import com.hypixel.hytale.server.core.modules.entity.component.PersistentModel;
+import com.hypixel.hytale.server.core.modules.entity.component.TransformComponent;
 import com.hypixel.hytale.server.core.universe.Universe;
 import com.hypixel.hytale.server.core.universe.world.World;
 import com.hypixel.hytale.server.core.universe.world.chunk.ChunkColumn;
 import com.hypixel.hytale.server.core.universe.world.chunk.section.EntitySection;
-import com.hypixel.hytale.server.core.universe.world.chunk.WorldChunk;
 import com.hypixel.hytale.server.core.universe.world.storage.ChunkStore;
 import com.hypixel.hytale.server.core.universe.world.events.ChunkPreLoadProcessEvent;
 import com.hypixel.hytale.server.core.universe.world.storage.EntityStore;
@@ -36,7 +36,6 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
@@ -81,8 +80,12 @@ public class ChunkPreLoadListener {
         skippedRecoverySummaries.clear();
     }
 
+    public boolean isCitizenPendingResolution(@Nonnull String citizenId) {
+        return citizensPendingNpcResolution.contains(citizenId);
+    }
+
     public void onChunkPreload(ChunkPreLoadProcessEvent event) {
-        World world = event.getChunk().getWorld();
+        World world = event.getWorld();
         long eventChunkIndex = event.getChunk().getIndex();
         UUID worldUUID = world.getWorldConfig().getUuid();
 
@@ -182,18 +185,14 @@ public class ChunkPreLoadListener {
         }
 
         NPCEntity npc = entityHolder.getComponent(NPCEntity.getComponentType());
-        if (npc == null || npc.getRole() == null) {
+        if (npc == null) {
             return null;
         }
 
         CitizenNpcIdentityComponent identityComponent =
                 entityHolder.getComponent(CitizenNpcIdentityComponent.getComponentType());
         if (identityComponent != null) {
-            for (CitizenData citizen : worldCitizens) {
-                if (citizen.getId().equals(identityComponent.getCitizenId())) {
-                    return citizen;
-                }
-            }
+            return plugin.getCitizensManager().getCitizen(identityComponent.getCitizenId());
         }
 
         UUIDComponent uuidComponent = entityHolder.getComponent(UUIDComponent.getComponentType());
@@ -204,14 +203,51 @@ public class ChunkPreLoadListener {
             }
         }
 
-        String roleName = npc.getRole().getRoleName();
-        if (roleName == null || !roleName.startsWith("HyCitizens_")) {
+        String roleName = npc.getRole() != null ? npc.getRole().getRoleName() : npc.getRoleName();
+        if (roleName == null) {
             return null;
         }
 
-        for (CitizenData citizen : worldCitizens) {
-            if (roleName.startsWith("HyCitizens_" + citizen.getId() + "_")) {
-                return citizen;
+        if (roleName.startsWith("HyCitizens_")) {
+            int secondUnderscore = roleName.indexOf('_', 11);
+            if (secondUnderscore > 11) {
+                String idCandidate = roleName.substring(11, secondUnderscore);
+                CitizenData citizen = plugin.getCitizensManager().getCitizen(idCandidate);
+                if (citizen != null) {
+                    return citizen;
+                }
+            }
+
+            for (CitizenData citizen : worldCitizens) {
+                if (roleName.startsWith("HyCitizens_" + citizen.getId() + "_")) {
+                    return citizen;
+                }
+            }
+        }
+
+        if (roleName.startsWith("Citizen_") || roleName.startsWith("Citizens_")) {
+            TransformComponent transform = entityHolder.getComponent(TransformComponent.getComponentType());
+            if (transform != null && transform.getPosition() != null) {
+                Vector3d pos = transform.getPosition();
+                CitizenData closestCitizen = null;
+                double closestDistSq = 2.25;
+                for (CitizenData citizen : worldCitizens) {
+                    if (citizen.getSpawnedUUID() != null) {
+                        continue;
+                    }
+                    Vector3d cPos = citizen.getPosition();
+                    double dx = pos.x - cPos.x;
+                    double dy = pos.y - cPos.y;
+                    double dz = pos.z - cPos.z;
+                    double distSq = dx * dx + dy * dy + dz * dz;
+                    if (distSq < closestDistSq) {
+                        closestDistSq = distSq;
+                        closestCitizen = citizen;
+                    }
+                }
+                if (closestCitizen != null) {
+                    return closestCitizen;
+                }
             }
         }
 
@@ -261,7 +297,8 @@ public class ChunkPreLoadListener {
 
         World world = process.getWorld();
         long chunkIndex = process.getChunkIndex();
-        boolean loaded = world.getChunkIfLoaded(chunkIndex) != null;
+        Ref<ChunkStore> chunkRef = world.getChunkStore().getChunkReference(chunkIndex);
+        boolean loaded = chunkRef != null && chunkRef.isValid();
         long elapsedMs = System.currentTimeMillis() - process.getStartedAt();
 
         if (!loaded && elapsedMs < CHUNK_PROCESS_TIMEOUT_MS) {
@@ -270,16 +307,11 @@ public class ChunkPreLoadListener {
         }
 
         if (!loaded) {
-            WorldChunk chunkInMemory = world.getChunkIfInMemory(chunkIndex);
-            if (chunkInMemory == null) {
-                List<CitizenData> skippedCitizens = finishPendingChunkProcess(processKey, process);
-                if (!skippedCitizens.isEmpty()) {
-                    recordSkippedChunkRecovery(world, skippedCitizens.size());
-                }
-                return;
+            List<CitizenData> skippedCitizens = finishPendingChunkProcess(processKey, process);
+            if (!skippedCitizens.isEmpty()) {
+                recordSkippedChunkRecovery(world, skippedCitizens.size());
             }
-
-            world.loadChunkIfInMemory(chunkIndex);
+            return;
         }
 
         world.execute(() -> processChunkCitizens(world, finishPendingChunkProcess(processKey, process)));
@@ -469,6 +501,10 @@ public class ChunkPreLoadListener {
             return;
         }
 
+        if (!plugin.getCitizensManager().isPositionChunkLoadedAndTicking(world, citizen.getPosition())) {
+            return;
+        }
+
         UUID storedUuid = citizen.getSpawnedUUID();
         if (storedUuid == null) {
             plugin.getCitizensManager().spawnCitizenNPC(citizen, save);
@@ -611,50 +647,74 @@ public class ChunkPreLoadListener {
 
         if (totalRepairedCount > 0) {
             getLogger().atWarning().log("Repaired " + totalRepairedCount + " invalid PersistentModel scale values while loading chunk "
-                    + event.getChunk().getX() + ", " + event.getChunk().getZ() + " in world '" + event.getChunk().getWorld().getName() + "'.");
+                    + event.getChunk().getX() + ", " + event.getChunk().getZ() + " in world '" + event.getWorld().getName() + "'.");
         }
     }
 
     Ref<EntityStore> checkIfNpcExists(Store<EntityStore> store, CitizenData citizen) {
         String rolePrefix = "HyCitizens_" + citizen.getId() + "_";
         Query<EntityStore> query = NPCEntity.getComponentType();
-        CompletableFuture<Ref<EntityStore>> found = new CompletableFuture<>();
+        AtomicReference<Ref<EntityStore>> found = new AtomicReference<>();
 
-        store.forEachEntityParallel(query, (index, archetypeChunk, cb) -> {
-            if (found.isDone()) {
-                return;
-            }
+        store.forEachChunk(query, (chunk, cb) -> {
+            for (int index = 0; index < chunk.size(); index++) {
+                NPCEntity npc = chunk.getComponent(index, NPCEntity.getComponentType());
+                if (npc == null) {
+                    continue;
+                }
 
-            Ref<EntityStore> otherRef = archetypeChunk.getReferenceTo(index);
-            if (otherRef == null || !otherRef.isValid()) {
-                return;
-            }
+                Ref<EntityStore> otherRef = chunk.getReferenceTo(index);
+                if (otherRef == null || !otherRef.isValid()) {
+                    continue;
+                }
 
-            NPCEntity npc = archetypeChunk.getComponent(index, NPCEntity.getComponentType());
-            if (npc == null || npc.getRole() == null) {
-                return;
-            }
+                CitizenNpcIdentityComponent identityComponent =
+                        chunk.getComponent(index, CitizenNpcIdentityComponent.getComponentType());
+                if (identityComponent != null) {
+                    if (citizen.getId().equals(identityComponent.getCitizenId())) {
+                        found.set(otherRef);
+                        return false;
+                    }
+                    continue;
+                }
 
-            CitizenNpcIdentityComponent identityComponent =
-                    archetypeChunk.getComponent(index, CitizenNpcIdentityComponent.getComponentType());
-            if (identityComponent != null && citizen.getId().equals(identityComponent.getCitizenId())) {
-                found.complete(otherRef);
-                return;
-            }
+                UUIDComponent uuidComponent = chunk.getComponent(index, UUIDComponent.getComponentType());
+                if (uuidComponent != null && uuidComponent.getUuid() != null) {
+                    if (citizen.getSpawnedUUID() != null && citizen.getSpawnedUUID().equals(uuidComponent.getUuid())) {
+                        found.set(otherRef);
+                        return false;
+                    }
+                    CitizenData owner = plugin.getCitizensManager().getCitizenBySpawnedUUID(uuidComponent.getUuid());
+                    if (owner != null && !owner.getId().equals(citizen.getId())) {
+                        continue;
+                    }
+                }
 
-            UUIDComponent uuidComponent = archetypeChunk.getComponent(index, UUIDComponent.getComponentType());
-            if (citizen.getSpawnedUUID() != null && uuidComponent != null
-                    && citizen.getSpawnedUUID().equals(uuidComponent.getUuid())) {
-                found.complete(otherRef);
-                return;
-            }
+                String roleName = npc.getRole() != null ? npc.getRole().getRoleName() : npc.getRoleName();
+                if (roleName != null && roleName.startsWith(rolePrefix)) {
+                    found.set(otherRef);
+                    return false;
+                }
 
-            String roleName = npc.getRole().getRoleName();
-            if (roleName != null && roleName.startsWith(rolePrefix)) {
-                found.complete(otherRef);
+                if (citizen.getSpawnedUUID() == null && roleName != null
+                        && (roleName.startsWith("Citizen_") || roleName.startsWith("Citizens_"))) {
+                    TransformComponent transform = chunk.getComponent(index, TransformComponent.getComponentType());
+                    if (transform != null && transform.getPosition() != null) {
+                        Vector3d pos = transform.getPosition();
+                        Vector3d citizenPos = citizen.getPosition();
+                        double dx = pos.x - citizenPos.x;
+                        double dy = pos.y - citizenPos.y;
+                        double dz = pos.z - citizenPos.z;
+                        if ((dx * dx + dy * dy + dz * dz) <= 2.25) {
+                            found.set(otherRef);
+                            return false;
+                        }
+                    }
+                }
             }
+            return true;
         });
 
-        return found.isDone() ? found.join() : null;
+        return found.get();
     }
 }

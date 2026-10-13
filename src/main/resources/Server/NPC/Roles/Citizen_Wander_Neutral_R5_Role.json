@@ -1,16 +1,11 @@
-﻿{
-  "Type": "Variant",
-  "Reference": "Template_Citizen",
-  "Modify": {
-    "DefaultPlayerAttitude": "Neutral",
-    "WanderRadius": 5
-  },
-  "Appearance": "Player",
-  "Parameters": {
-    "MaxHealth": {
-      "Value": 100,
-      "Description": "Max health for the NPC"
-    }
-  },
-  "NameTranslationKey": "Citizen"
+{
+    "Type":  "Variant",
+    "Reference":  "Template_Citizen",
+    "Modify":  {
+                   "DefaultPlayerAttitude":  "Neutral",
+                   "WanderRadius":  5,
+                   "MaxHealth":  100,
+                   "NameTranslationKey":  "Citizen",
+                   "RetaliateOnDamage":  true
+               }
 }

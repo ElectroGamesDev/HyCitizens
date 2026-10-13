@@ -1,45 +1,12 @@
-﻿{
-  "Type": "Variant",
-  "Reference": "Template_Citizen",
-  "Modify": {
-    "DefaultPlayerAttitude": "Neutral"
-  },
-  "Appearance": "Player",
-  "Parameters": {
-    "MaxHealth": {
-      "Value": 100,
-      "Description": "Max health for the NPC"
-    },
-    "WanderRadius": {
-      "Value": 1,
-      "Description": "Wander radius in blocks"
-    }
-  },
-  "InteractionInstruction": {
-    "Instructions": [
-      {
-        "Continue": true,
-        "Sensor": {
-          "Type": "Any"
-        },
-        "Actions": [
-          {
-            "Type": "SetInteractable",
-            "Interactable": true
-          }
-        ]
-      },
-      {
-        "Sensor": {
-          "Type": "HasInteracted"
-        },
-        "Actions": [
-          {
-            "Type": "CitizenInteraction"
-          }
-        ]
-      }
-    ]
-  },
-  "NameTranslationKey": "Citizen"
+{
+    "Type":  "Variant",
+    "Reference":  "Template_Citizen",
+    "Modify":  {
+                   "DefaultPlayerAttitude":  "Neutral",
+                   "MaxHealth":  100,
+                   "WanderRadius":  1,
+                   "NameTranslationKey":  "Citizen",
+                   "WakingIdleBehaviorComponent":  "Component_Instruction_Stationary_Idle",
+                   "RetaliateOnDamage":  true
+               }
 }

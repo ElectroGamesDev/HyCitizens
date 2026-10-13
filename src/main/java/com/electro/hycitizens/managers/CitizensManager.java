@@ -40,6 +40,7 @@ import com.hypixel.hytale.server.core.inventory.InventoryComponent;
 import com.hypixel.hytale.server.npc.role.support.StateSupport;
 import com.hypixel.hytale.server.npc.role.support.CombatSupport;
 import com.hypixel.hytale.server.core.modules.entity.component.*;
+import com.hypixel.hytale.server.core.modules.entity.damage.DeathComponent;
 import com.hypixel.hytale.server.core.modules.entity.player.PlayerSkinComponent;
 import com.hypixel.hytale.server.core.modules.entity.tracker.NetworkId;
 import com.hypixel.hytale.server.core.modules.entitystats.EntityStatMap;
@@ -51,11 +52,13 @@ import com.hypixel.hytale.server.core.modules.entitystats.modifier.StaticModifie
 import com.hypixel.hytale.server.core.universe.PlayerRef;
 import com.hypixel.hytale.server.core.universe.Universe;
 import com.hypixel.hytale.server.core.universe.world.World;
-import com.hypixel.hytale.server.core.universe.world.chunk.WorldChunk;
+import com.hypixel.hytale.server.core.universe.world.storage.ChunkStore;
 import com.hypixel.hytale.server.core.universe.world.storage.EntityStore;
 import com.hypixel.hytale.server.npc.NPCPlugin;
 import com.hypixel.hytale.server.npc.entities.NPCEntity;
+import com.hypixel.hytale.server.npc.entities.PathManager;
 import com.hypixel.hytale.server.npc.systems.RoleChangeSystem;
+import com.hypixel.hytale.server.core.modules.physics.component.Velocity;
 import it.unimi.dsi.fastutil.Pair;
 
 
@@ -163,6 +166,7 @@ public class CitizensManager {
     private final Map<String, ScheduledFuture<?>> pendingTemporaryNametagRecoveryTasks = new ConcurrentHashMap<>();
     private final Set<String> pendingDeferredCitizenSaves = ConcurrentHashMap.newKeySet();
     private ScheduledFuture<?> pendingDeferredCitizenSaveTask;
+    private volatile boolean shuttingDown = false;
     private PatrolManager patrolManager;
     private ScheduleManager scheduleManager;
     private ThreadedScheduler followCitizenTask = new ThreadedScheduler();
@@ -250,10 +254,10 @@ public class CitizensManager {
 
                         Vector3d citizenPos = citizen.getCurrentPosition() != null ? citizen.getCurrentPosition() : citizen.getPosition();
 
-                        long chunkIndex = ChunkUtil.indexChunkFromBlock(citizenPos.x, citizenPos.z);
-                        WorldChunk chunk = world.getChunkIfLoaded(chunkIndex);
-                        if (chunk == null)
+                        if (!isPositionChunkLoadedAndTicking(world, citizenPos))
                             continue;
+
+                        boolean isWalking = isCitizenWalking(citizen);
 
                         for (PlayerRef playerRef : players) {
                             if (!isPlayerRefValid(playerRef)) {
@@ -276,13 +280,17 @@ public class CitizensManager {
 
                             boolean shouldRotateCitizen = withinLookDistance
                                     && citizen.getRotateTowardsPlayer()
-                                    && citizen.getMovementBehavior().getType().equals("IDLE")
+                                    && !isWalking
                                     && citizen.getCurrentScheduleRuntimeState() == ScheduleRuntimeState.INACTIVE;
                             if (shouldRotateCitizen) {
                                 cancelPendingLookReset(citizen, playerRef.getUuid());
                                 rotateCitizenToPlayer(citizen, playerRef, finalDt);
                             } else {
-                                scheduleLookResetIfNeeded(citizen, playerRef.getUuid());
+                                if (isWalking && citizen.lastLookDirections.containsKey(playerRef.getUuid())) {
+                                    resetCitizenLookForPlayerImmediate(citizen, playerRef.getUuid(), world);
+                                } else {
+                                    scheduleLookResetIfNeeded(citizen, playerRef.getUuid());
+                                }
                             }
 
                             if (withinLookDistance && shouldRotateModelNametagTowardsPlayer(citizen, playerRef)) {
@@ -334,24 +342,22 @@ public class CitizensManager {
                         }
 
                         Vector3d npcPosition = npcTransformComponent.getPosition();
+                        if (npcPosition == null) {
+                            continue;
+                        }
                         Rotation3f npcRotation = npcTransformComponent.getRotation();
 
-                        long chunkIndex = ChunkUtil.indexChunkFromBlock(npcPosition.x, npcPosition.z);
-                        WorldChunk chunk = world.getChunkIfLoaded(chunkIndex);
-                        if (chunk == null)
+                        if (!isPositionChunkLoadedAndTicking(world, npcPosition))
                             continue;
 
-                        // Track the NPC's actual position and rotation
+                        if (!citizen.checkAndUpdateNametagTransform(npcPosition, npcRotation)) {
+                            continue;
+                        }
+
                         citizen.setCurrentPosition(new Vector3d(npcPosition));
                         if (npcRotation != null) {
                             citizen.setCurrentRotation(npcRotation);
                         }
-
-                        if (citizen.getMovementBehavior().getType().equals("IDLE")) {
-                            continue;
-                        }
-
-                        // Todo: It would be better to store the nametags as a ref
 
                         int totalLines = citizen.getHologramLineUuids().size();
                         if (totalLines == 0) {
@@ -360,7 +366,7 @@ public class CitizensManager {
 
                         // Calculate the same offsets as in spawn
                         double scale = Math.max(0.01, citizen.getScale() + citizen.getNametagOffset());
-                        double baseOffset = 1.65;
+                        double baseOffset = 2.05;
                         double extraPerScale = 0.40;
                         double yOffset = baseOffset * scale + (scale - 1.0) * extraPerScale;
                         double lineSpacing = 0.25;
@@ -390,7 +396,7 @@ public class CitizensManager {
                             );
 
                             nametagTransformComponent.setPosition(linePos);
-                            nametagTransformComponent.setRotation(npcTransformComponent.getRotation());
+                            nametagTransformComponent.setRotation(npcRotation);
                         }
                     }
                 });
@@ -427,10 +433,9 @@ public class CitizensManager {
             Map<UUID, List<CitizenData>> unresolvedByWorld = new HashMap<>();
 
             for (CitizenData citizen : citizens.values()) {
-                if (citizen.getSpawnedUUID() == null) {
+                if (citizen.isAwaitingRespawn() || isCitizenSpawning(citizen.getId()) || citizen.isHideNpc()) {
                     continue;
                 }
-
                 Ref<EntityStore> npcRef = citizen.getNpcRef();
                 if (npcRef != null && npcRef.isValid()) {
                     continue;
@@ -443,38 +448,63 @@ public class CitizensManager {
                 UUID worldUUID = entry.getKey();
                 List<CitizenData> unresolvedCitizens = entry.getValue();
                 World world = Universe.get().getWorld(worldUUID);
-                if (world == null) {
+                if (world == null || !world.isAlive()) {
                     continue;
                 }
 
-                world.execute(() -> {
-                    for (CitizenData citizen : unresolvedCitizens) {
-                        UUID npcUuid = citizen.getSpawnedUUID();
-                        if (npcUuid == null) {
-                            continue;
-                        }
-
-                        Ref<EntityStore> resolvedRef = world.getEntityRef(npcUuid);
-                        if (resolvedRef == null || !resolvedRef.isValid()) {
-                            resolvedRef = findExistingCitizenNpcRef(world.getEntityStore().getStore(), citizen);
-                        }
-
-                        if (resolvedRef == null || !resolvedRef.isValid()) {
-                            if (citizen.isAwaitingRespawn() || isCitizenSpawning(citizen.getId())) {
+                try {
+                    world.execute(() -> {
+                        for (CitizenData citizen : unresolvedCitizens) {
+                            if (citizen.isAwaitingRespawn() || isCitizenSpawning(citizen.getId()) || citizen.isHideNpc()
+                                    || (plugin.getChunkPreLoadListener() != null && plugin.getChunkPreLoadListener().isCitizenPendingResolution(citizen.getId()))) {
                                 continue;
                             }
 
-                            if (!isCitizenChunkLoaded(world, citizen)) {
+                            Ref<EntityStore> currentRef = citizen.getNpcRef();
+                            if (currentRef != null && currentRef.isValid()
+                                    && currentRef.getStore().getComponent(currentRef, DeathComponent.getComponentType()) == null) {
                                 continue;
                             }
 
-                            spawnCitizenNPC(citizen, true);
-                            continue;
-                        }
+                            Ref<EntityStore> resolvedRef = null;
+                            UUID npcUuid = citizen.getSpawnedUUID();
+                            if (npcUuid != null) {
+                                resolvedRef = world.getEntityRef(npcUuid);
+                                if (resolvedRef != null && resolvedRef.isValid()) {
+                                    if (resolvedRef.getStore().getComponent(resolvedRef, DeathComponent.getComponentType()) != null) {
+                                        resolvedRef = null;
+                                    } else {
+                                        CitizenNpcIdentityComponent identityComponent =
+                                                resolvedRef.getStore().getComponent(resolvedRef, CitizenNpcIdentityComponent.getComponentType());
+                                        boolean ownedByAnother = isRefBoundToAnotherCitizen(resolvedRef, citizen.getId())
+                                                || (identityComponent != null && !identityComponent.getCitizenId().isEmpty()
+                                                && !citizen.getId().equals(identityComponent.getCitizenId()));
+                                        if (ownedByAnother) {
+                                            citizen.setSpawnedUUID(null);
+                                            saveCitizenDeferred(citizen);
+                                            resolvedRef = null;
+                                        }
+                                    }
+                                }
+                            }
+                            if (resolvedRef == null || !resolvedRef.isValid()) {
+                                resolvedRef = findExistingCitizenNpcRef(world.getEntityStore().getStore(), citizen);
+                            }
 
-                        restoreResolvedCitizenStateDeferredSave(citizen, resolvedRef);
-                    }
-                });
+                            if (resolvedRef == null || !resolvedRef.isValid()) {
+                                if (!isPositionChunkLoadedAndTicking(world, citizen.getPosition())) {
+                                    continue;
+                                }
+
+                                spawnCitizenNPC(citizen, true);
+                                continue;
+                            }
+
+                            restoreResolvedCitizenStateDeferredSave(citizen, resolvedRef);
+                        }
+                    });
+                } catch (Exception ignored) {
+                }
             }
         }, 1, 1, TimeUnit.SECONDS);
     }
@@ -536,16 +566,44 @@ public class CitizensManager {
         pendingTemporaryNametagRecoveryTasks.put(citizenId, recoveryTask);
     }
 
-    private boolean isCitizenChunkLoaded(@Nonnull World world, @Nonnull CitizenData citizen) {
-        Vector3d currentPosition = citizen.getCurrentPosition() != null ? citizen.getCurrentPosition() : citizen.getPosition();
-        long currentChunkIndex = ChunkUtil.indexChunkFromBlock(currentPosition.x, currentPosition.z);
-        if (world.getChunkIfLoaded(currentChunkIndex) != null) {
+    public boolean isPositionChunkLoadedAndTicking(@Nonnull World world, @Nonnull Vector3d position) {
+        if (!Double.isFinite(position.x) || !Double.isFinite(position.y) || !Double.isFinite(position.z)) {
+            return false;
+        }
+        long chunkIndex = ChunkUtil.indexChunkFromBlock(position.x, position.z);
+        Ref<ChunkStore> chunkRef = world.getChunkStore().getChunkReference(chunkIndex);
+        if (chunkRef == null || !chunkRef.isValid()) {
+            return false;
+        }
+        if (chunkRef.getStore().getComponent(chunkRef, ChunkStore.REGISTRY.getNonTickingComponentType()) != null) {
+            return false;
+        }
+        int chunkX = ChunkUtil.chunkCoordinate(position.x);
+        int chunkY = ChunkUtil.chunkCoordinate(position.y);
+        int chunkZ = ChunkUtil.chunkCoordinate(position.z);
+        Ref<ChunkStore> sectionRef = world.getChunkStore().getChunkSectionReference(chunkX, chunkY, chunkZ);
+        if (sectionRef != null && sectionRef.isValid()) {
+            return sectionRef.getStore().getComponent(sectionRef, ChunkStore.REGISTRY.getNonTickingComponentType()) == null;
+        }
+        return true;
+    }
+
+    public boolean isCitizenChunkLoaded(@Nonnull World world, @Nonnull CitizenData citizen) {
+        Vector3d currentPosition = citizen.getCurrentPosition();
+        if (currentPosition != null && isPositionChunkLoadedAndTicking(world, currentPosition)) {
             return true;
         }
+        return isPositionChunkLoadedAndTicking(world, citizen.getPosition());
+    }
 
-        Vector3d basePosition = citizen.getPosition();
-        long baseChunkIndex = ChunkUtil.indexChunkFromBlock(basePosition.x, basePosition.z);
-        return world.getChunkIfLoaded(baseChunkIndex) != null;
+    @Nullable
+    public CitizenData getCitizenBySpawnedUUID(@Nonnull UUID uuid) {
+        for (CitizenData citizen : citizens.values()) {
+            if (uuid.equals(citizen.getSpawnedUUID())) {
+                return citizen;
+            }
+        }
+        return null;
     }
 
     @Nullable
@@ -558,53 +616,92 @@ public class CitizensManager {
     private List<Ref<EntityStore>> findExistingCitizenNpcRefs(@Nonnull Store<EntityStore> store, @Nonnull CitizenData citizen) {
         String rolePrefix = "HyCitizens_" + citizen.getId() + "_";
         Query<EntityStore> query = NPCEntity.getComponentType();
-        List<Ref<EntityStore>> foundRefs = Collections.synchronizedList(new ArrayList<>());
+        List<Ref<EntityStore>> foundRefs = new ArrayList<>();
+        Vector3d citizenPos = citizen.getPosition();
 
-        store.forEachEntityParallel(query, (index, archetypeChunk, cb) -> {
-            NPCEntity npc = archetypeChunk.getComponent(index, NPCEntity.getComponentType());
-            if (npc == null || npc.getRole() == null) {
-                return;
-            }
-
-            UUIDComponent uuidComponent = archetypeChunk.getComponent(index, UUIDComponent.getComponentType());
-            if (uuidComponent != null && pendingImmediateNpcDespawns.contains(uuidComponent.getUuid())) {
-                return;
-            }
-
-            CitizenNpcIdentityComponent identityComponent =
-                    archetypeChunk.getComponent(index, CitizenNpcIdentityComponent.getComponentType());
-            if (identityComponent != null && citizen.getId().equals(identityComponent.getCitizenId())) {
-                Ref<EntityStore> ref = archetypeChunk.getReferenceTo(index);
-                if (ref != null && ref.isValid()) {
-                    foundRefs.add(ref);
+        store.forEachChunk(query, (chunk, cb) -> {
+            for (int index = 0; index < chunk.size(); index++) {
+                NPCEntity npc = chunk.getComponent(index, NPCEntity.getComponentType());
+                if (npc == null) {
+                    continue;
                 }
-                return;
-            }
-            if (citizen.getSpawnedUUID() != null && uuidComponent != null
-                    && citizen.getSpawnedUUID().equals(uuidComponent.getUuid())) {
-                Ref<EntityStore> ref = archetypeChunk.getReferenceTo(index);
-                if (ref != null && ref.isValid()) {
-                    foundRefs.add(ref);
+
+                if (chunk.getComponent(index, DeathComponent.getComponentType()) != null) {
+                    continue;
                 }
-                return;
-            }
 
-            String roleName = npc.getRole().getRoleName();
-            if (roleName == null || !roleName.startsWith(rolePrefix)) {
-                return;
-            }
+                UUIDComponent uuidComponent = chunk.getComponent(index, UUIDComponent.getComponentType());
+                if (uuidComponent != null && pendingImmediateNpcDespawns.contains(uuidComponent.getUuid())) {
+                    continue;
+                }
 
-            Ref<EntityStore> ref = archetypeChunk.getReferenceTo(index);
-            if (ref == null || !ref.isValid()) {
-                return;
-            }
+                CitizenNpcIdentityComponent identityComponent =
+                        chunk.getComponent(index, CitizenNpcIdentityComponent.getComponentType());
+                if (identityComponent != null) {
+                    if (citizen.getId().equals(identityComponent.getCitizenId())) {
+                        Ref<EntityStore> ref = chunk.getReferenceTo(index);
+                        if (ref != null && ref.isValid() && !isRefBoundToAnotherCitizen(ref, citizen.getId())) {
+                            foundRefs.add(ref);
+                        }
+                    }
+                    continue;
+                }
+                if (uuidComponent != null && uuidComponent.getUuid() != null) {
+                    if (citizen.getSpawnedUUID() != null && citizen.getSpawnedUUID().equals(uuidComponent.getUuid())) {
+                        Ref<EntityStore> ref = chunk.getReferenceTo(index);
+                        if (ref != null && ref.isValid() && !isRefBoundToAnotherCitizen(ref, citizen.getId())) {
+                            foundRefs.add(ref);
+                        }
+                        continue;
+                    }
+                    CitizenData owner = getCitizenBySpawnedUUID(uuidComponent.getUuid());
+                    if (owner != null && !owner.getId().equals(citizen.getId())) {
+                        continue;
+                    }
+                }
 
-            foundRefs.add(ref);
+                Ref<EntityStore> candidateRef = chunk.getReferenceTo(index);
+                if (candidateRef == null || !candidateRef.isValid() || isRefBoundToAnotherCitizen(candidateRef, citizen.getId())) {
+                    continue;
+                }
+
+                String roleName = npc.getRole() != null ? npc.getRole().getRoleName() : npc.getRoleName();
+                if (roleName != null && roleName.startsWith(rolePrefix)) {
+                    foundRefs.add(candidateRef);
+                    continue;
+                }
+
+                if (citizen.getSpawnedUUID() == null && roleName != null
+                        && (roleName.startsWith("Citizen_") || roleName.startsWith("Citizens_"))) {
+                    TransformComponent transform = chunk.getComponent(index, TransformComponent.getComponentType());
+                    if (transform != null && transform.getPosition() != null) {
+                        Vector3d pos = transform.getPosition();
+                        double dx = pos.x - citizenPos.x;
+                        double dy = pos.y - citizenPos.y;
+                        double dz = pos.z - citizenPos.z;
+                        if ((dx * dx + dy * dy + dz * dz) <= 2.25) {
+                            foundRefs.add(candidateRef);
+                        }
+                    }
+                }
+            }
         });
 
         foundRefs.removeIf(ref -> ref == null || !ref.isValid());
         foundRefs.sort(Comparator.comparingInt(ref -> getCitizenNpcRefPriority(ref, citizen)));
         return foundRefs;
+    }
+
+    private boolean isRefBoundToAnotherCitizen(@Nonnull Ref<EntityStore> ref, @Nonnull String citizenId) {
+        for (CitizenData other : citizens.values()) {
+            if (other.getId().equals(citizenId)) {
+                continue;
+            }
+            if (ref.equals(other.getNpcRef())) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private int getCitizenNpcRefPriority(@Nonnull Ref<EntityStore> ref, @Nonnull CitizenData citizen) {
@@ -620,7 +717,13 @@ public class CitizensManager {
             return 1;
         }
 
-        return 2;
+        NPCEntity npc = ref.getStore().getComponent(ref, NPCEntity.getComponentType());
+        String roleName = npc != null ? (npc.getRole() != null ? npc.getRole().getRoleName() : npc.getRoleName()) : null;
+        if (roleName != null && roleName.startsWith("HyCitizens_" + citizen.getId() + "_")) {
+            return 2;
+        }
+
+        return 3;
     }
 
     private void removeDuplicateCitizenNpcRefs(@Nonnull World world,
@@ -672,25 +775,53 @@ public class CitizensManager {
 
     private void startFollowCitizenScheduler() {
         followCitizenTask.scheduleAtFixedRate("citizens-follow", () -> {
+            Map<UUID, List<CitizenData>> byWorld = new HashMap<>();
             for (CitizenData citizen : citizens.values()) {
-                try {
-                    tickStandaloneFollowCitizen(citizen);
-                    tickCitizenState(citizen);
-                } catch (Exception e) {
-                    getLogger().atWarning().log("Tick error for citizen " + citizen.getId() + ": " + e.getMessage());
+                byWorld.computeIfAbsent(citizen.getWorldUUID(), ignored -> new ArrayList<>()).add(citizen);
+            }
+            for (Map.Entry<UUID, List<CitizenData>> entry : byWorld.entrySet()) {
+                World world = Universe.get().getWorld(entry.getKey());
+                if (world == null || !world.isAlive()) {
+                    continue;
                 }
+                List<CitizenData> worldCitizens = entry.getValue();
+                world.execute(() -> {
+                    for (CitizenData citizen : worldCitizens) {
+                        try {
+                            tickStandaloneFollowCitizen(citizen);
+                            tickCitizenState(citizen);
+                        } catch (Exception e) {
+                            getLogger().atWarning().log("Tick error for citizen " + citizen.getId() + ": " + e.getMessage());
+                        }
+                    }
+                });
             }
         }, FOLLOW_TICK_INTERVAL_MS, FOLLOW_TICK_INTERVAL_MS, TimeUnit.MILLISECONDS);
     }
 
     private void startMovementUnstickScheduler() {
         movementUnstickTask.scheduleAtFixedRate("citizens-unstick", () -> {
-            for (CitizenData citizen : citizens.values()) {
-                try {
-                    tickWanderUnstick(citizen);
-                } catch (Exception e) {
-                    getLogger().atWarning().log("Wander unstuck tick error for citizen " + citizen.getId() + ": " + e.getMessage());
+            Map<UUID, List<CitizenData>> snapshot;
+            synchronized (citizensByWorld) {
+                snapshot = new HashMap<>(citizensByWorld);
+            }
+
+            for (Map.Entry<UUID, List<CitizenData>> entry : snapshot.entrySet()) {
+                World world = Universe.get().getWorld(entry.getKey());
+                if (world == null || !world.isAlive()) {
+                    continue;
                 }
+
+                List<CitizenData> worldCitizens = entry.getValue();
+                world.execute(() -> {
+                    for (CitizenData citizen : worldCitizens) {
+                        try {
+                            tickWanderUnstick(citizen);
+                        } catch (Exception e) {
+                            getLogger().atWarning().log("Wander unstuck tick error for citizen " + citizen.getId() + ": " + e.getMessage());
+                        }
+                    }
+                });
             }
         }, WANDER_UNSTICK_TICK_INTERVAL_MS, WANDER_UNSTICK_TICK_INTERVAL_MS, TimeUnit.MILLISECONDS);
     }
@@ -763,6 +894,7 @@ public class CitizensManager {
     }
 
     public void shutdown() {
+        shuttingDown = true;
         skinUpdateTask.stop();
         rotateTask.stop();
         animationTask.stop();
@@ -772,6 +904,7 @@ public class CitizensManager {
         followCitizenTask.stop();
         movementUnstickTask.stop();
         npcRefReconcileTask.stop();
+        citizensByWorldTask.stop();
 
         pendingRespawnTasks.values().forEach(task -> task.cancel(false));
         pendingRespawnTasks.clear();
@@ -808,9 +941,14 @@ public class CitizensManager {
         pendingDeferredCitizenSaveTask = null;
         pendingDeferredCitizenSaves.clear();
 
-        for (CitizenData citizen : citizens.values()) {
-            cancelAllPendingLookResets(citizen);
-            saveCitizen(citizen);
+        config.beginBatch();
+        try {
+            for (CitizenData citizen : citizens.values()) {
+                cancelAllPendingLookResets(citizen);
+                saveCitizen(citizen);
+            }
+        } finally {
+            config.endBatch();
         }
 
         pendingHologramRemovals.clear();
@@ -818,6 +956,10 @@ public class CitizensManager {
         pendingNpcRemovalTasks.clear();
         standaloneFollowSessions.clear();
         wanderRecoveryStates.clear();
+    }
+
+    public boolean isShuttingDown() {
+        return shuttingDown;
     }
 
     private void loadAllCitizens() {
@@ -834,10 +976,16 @@ public class CitizensManager {
 
         // Get all citizen IDs from the nested "citizens" map
         Set<String> citizenIds = config.getKeys("citizens");
+        Set<UUID> seenNpcUuids = new HashSet<>();
 
         for (String citizenId : citizenIds) {
             CitizenData citizen = loadCitizen(citizenId);
             if (citizen != null) {
+                UUID npcUuid = citizen.getSpawnedUUID();
+                if (npcUuid != null && !seenNpcUuids.add(npcUuid)) {
+                    citizen.setSpawnedUUID(null);
+                    saveCitizen(citizen, false);
+                }
                 citizens.put(citizenId, citizen);
 
                 if (!citizen.getGroup().isEmpty()) {
@@ -1110,6 +1258,7 @@ public class CitizensManager {
             getLogger().atWarning().log("Failed to load citizen: " + name + ". Failed to get model ID.");
             return null;
         }
+        modelId = RoleGenerator.normalizeModelId(modelId);
 
         UUID worldUUID = config.getUUID(basePath + ".model-world-uuid");
         if (worldUUID == null) {
@@ -2058,32 +2207,34 @@ public class CitizensManager {
 
             boolean npcSpawned = citizen.getNpcRef() != null && citizen.getNpcRef().isValid();
 
-            // Only write role file if role-relevant data actually changed
-            boolean roleChanged = roleGenerator.generateRoleIfChanged(citizen);
+            if (!shuttingDown) {
+                // Only write role file if role-relevant data actually changed
+                boolean roleChanged = roleGenerator.generateRoleIfChanged(citizen);
 
-            addGroupHierarchy(citizen.getGroup());
-            cleanupUnusedGroups();
+                addGroupHierarchy(citizen.getGroup());
+                cleanupUnusedGroups();
 
-            // This is needed due to a Hytale bug
-            // Also, we only respawn sometimes due to a bug that can occur causing double spawning
-            if (npcSpawned && roleChanged && respawnIfRoleChanged) {
-                UUID expectedNpcUuid = citizen.getSpawnedUUID();
-                HytaleServer.SCHEDULED_EXECUTOR.schedule(() -> {
-                    if (expectedNpcUuid == null || !expectedNpcUuid.equals(citizen.getSpawnedUUID())) {
-                        return;
-                    }
+                // This is needed due to a Hytale bug
+                // Also, we only respawn sometimes due to a bug that can occur causing double spawning
+                if (npcSpawned && roleChanged && respawnIfRoleChanged) {
+                    UUID expectedNpcUuid = citizen.getSpawnedUUID();
+                    HytaleServer.SCHEDULED_EXECUTOR.schedule(() -> {
+                        if (expectedNpcUuid == null || !expectedNpcUuid.equals(citizen.getSpawnedUUID())) {
+                            return;
+                        }
 
-                    if (isCitizenSpawning(citizen.getId())) {
-                        return;
-                    }
+                        if (isCitizenSpawning(citizen.getId())) {
+                            return;
+                        }
 
-                    Ref<EntityStore> npcRef = citizen.getNpcRef();
-                    if (npcRef == null || !npcRef.isValid()) {
-                        return;
-                    }
+                        Ref<EntityStore> npcRef = citizen.getNpcRef();
+                        if (npcRef == null || !npcRef.isValid()) {
+                            return;
+                        }
 
-                    updateSpawnedCitizen(citizen, false);
-                }, 5, TimeUnit.SECONDS);
+                        updateSpawnedCitizen(citizen, false);
+                    }, 5, TimeUnit.SECONDS);
+                }
             }
         } finally {
             config.endBatch();
@@ -2131,36 +2282,13 @@ public class CitizensManager {
             saveCitizen(citizen);
     }
 
-    public void updateCitizenNPCItems(CitizenData citizen) {
-        if (citizen.getSpawnedUUID() == null || citizen.getNpcRef() == null || !citizen.getNpcRef().isValid()) {
+    public void updateEntityItems(@Nonnull Store<EntityStore> store, @Nonnull Ref<EntityStore> ref, @Nonnull CitizenData citizen) {
+        if (!ref.isValid()) {
             return;
         }
-
-        NPCEntity npcEntity = citizen.getNpcRef().getStore().getComponent(citizen.getNpcRef(), NPCEntity.getComponentType());
-        if (npcEntity == null) {
-            return;
-        }
-
-        EntityStatMap statMap = null;
-
-        // Get current max health
-        float maxHealth = 100;
-        if (npcEntity.getReference() != null) {
-            statMap = npcEntity.getReference().getStore().getComponent(npcEntity.getReference(), EntityStatsModule.get().getEntityStatMapComponentType());
-            if (statMap != null) {
-                EntityStatValue maxHealthValue = statMap.get(DefaultEntityStatTypes.getHealth());
-                if (maxHealthValue != null) {
-                    maxHealth = maxHealthValue.getMax();
-                }
-            }
-        }
-
-
-        Ref<EntityStore> npcRef = citizen.getNpcRef();
-        Store<EntityStore> store = npcRef.getStore();
 
         // Item in hand
-        InventoryComponent.Hotbar hotbar = store.getComponent(npcRef, InventoryComponent.Hotbar.getComponentType());
+        InventoryComponent.Hotbar hotbar = store.getComponent(ref, InventoryComponent.Hotbar.getComponentType());
         if (hotbar != null) {
             if (citizen.getNpcHand() == null) {
                 hotbar.getInventory().setItemStackForSlot((short) 0, null);
@@ -2170,7 +2298,7 @@ public class CitizensManager {
         }
 
         // Armor
-        InventoryComponent.Armor armor = store.getComponent(npcRef, InventoryComponent.Armor.getComponentType());
+        InventoryComponent.Armor armor = store.getComponent(ref, InventoryComponent.Armor.getComponentType());
         if (armor != null) {
             // Set helmet
             if (citizen.getNpcHelmet() == null) {
@@ -2200,8 +2328,66 @@ public class CitizensManager {
                 armor.getInventory().setItemStackForSlot((short) 3, new ItemStack(citizen.getNpcLeggings()));
             }
         }
+    }
 
-        EntityStatMap finalStatMap = statMap;
+    public void applyCitizenComponentsToEntity(@Nonnull Store<EntityStore> store,
+                                               @Nonnull Ref<EntityStore> ref,
+                                               @Nonnull CitizenData citizen) {
+        if (!ref.isValid()) {
+            return;
+        }
+
+        store.putComponent(ref, CitizenNpcIdentityComponent.getComponentType(),
+                new CitizenNpcIdentityComponent(citizen.getId()));
+        ensureSafeModelComponent(ref);
+
+        if (citizen.isPlayerModel()) {
+            PlayerSkin skinToUse = citizen.getCachedSkin();
+            if (skinToUse == null) {
+                skinToUse = determineSkin(citizen);
+            }
+            if (skinToUse == null) {
+                skinToUse = SkinUtilities.createDefaultSkin();
+            }
+            applyPlayerModelAppearance(ref, citizen, skinToUse);
+        }
+
+        applyDamageInvulnerability(store, ref, citizen);
+        applyHealthOverride(ref, citizen);
+        setInteractionComponent(store, ref, citizen);
+        applyNpcNameplateComponent(store, ref, citizen);
+        updateEntityItems(store, ref, citizen);
+    }
+
+    public void updateCitizenNPCItems(CitizenData citizen) {
+        if (citizen.getSpawnedUUID() == null || citizen.getNpcRef() == null || !citizen.getNpcRef().isValid()) {
+            return;
+        }
+
+        NPCEntity npcEntity = citizen.getNpcRef().getStore().getComponent(citizen.getNpcRef(), NPCEntity.getComponentType());
+        if (npcEntity == null) {
+            return;
+        }
+
+        EntityStatMap statMap = null;
+
+        // Get current max health
+        float maxHealth = 100;
+        if (npcEntity.getReference() != null) {
+            statMap = npcEntity.getReference().getStore().getComponent(npcEntity.getReference(), EntityStatsModule.get().getEntityStatMapComponentType());
+            if (statMap != null) {
+                EntityStatValue maxHealthValue = statMap.get(DefaultEntityStatTypes.getHealth());
+                if (maxHealthValue != null) {
+                    maxHealth = maxHealthValue.getMax();
+                }
+            }
+        }
+
+        Ref<EntityStore> npcRef = citizen.getNpcRef();
+        Store<EntityStore> store = npcRef.getStore();
+
+        updateEntityItems(store, npcRef, citizen);
+
         float finalMaxHealth = maxHealth;
 
         HytaleServer.SCHEDULED_EXECUTOR.schedule(() -> {
@@ -2210,14 +2396,26 @@ public class CitizensManager {
                 return;
             }
 
-            // Update health after applying armor
-            if (npcEntity.getReference() != null && finalStatMap != null) {
-                EntityStatValue healthValue = finalStatMap.get(DefaultEntityStatTypes.getHealth());
-                if (healthValue != null) {
-                    float healthDifference = healthValue.getMax() - finalMaxHealth;
-                    setHealthValueClamped(finalStatMap, healthValue.get() + healthDifference);
+            world.execute(() -> {
+                Ref<EntityStore> currentRef = citizen.getNpcRef();
+                if (currentRef == null || !currentRef.isValid()) {
+                    return;
                 }
-            }
+                if (citizen.isOverrideHealth()) {
+                    applyHealthOverride(currentRef, citizen);
+                    return;
+                }
+                EntityStatMap currentStatMap = currentRef.getStore().getComponent(currentRef, EntityStatsModule.get().getEntityStatMapComponentType());
+                if (currentStatMap != null) {
+                    EntityStatValue healthValue = currentStatMap.get(DefaultEntityStatTypes.getHealth());
+                    if (healthValue != null) {
+                        float healthDifference = healthValue.getMax() - finalMaxHealth;
+                        if (Math.abs(healthDifference) > 0.001f) {
+                            setHealthValueClamped(currentStatMap, Math.max(1.0f, healthValue.get() + healthDifference));
+                        }
+                    }
+                }
+            });
         }, 200, TimeUnit.MILLISECONDS);
     }
 
@@ -2291,10 +2489,7 @@ public class CitizensManager {
             queued[0] = true;
 
             world.execute(() -> {
-                long chunkIndex = ChunkUtil.indexChunkFromBlock(citizen.getPosition().x, citizen.getPosition().z);
-                WorldChunk chunk = world.getChunkIfLoaded(chunkIndex);
-
-                if (chunk == null) {
+                if (!isPositionChunkLoadedAndTicking(world, citizen.getPosition())) {
                     queued[0] = false;
                     return;
                 }
@@ -2333,24 +2528,42 @@ public class CitizensManager {
                                              @Nonnull Ref<EntityStore> resolvedRef,
                                              boolean save,
                                              boolean deferSave) {
+        UUID previousSpawnedUuid = citizen.getSpawnedUUID();
+        List<UUID> previousHolograms = new ArrayList<>(citizen.getHologramLineUuids());
+
         bindCitizenEntityRef(citizen, resolvedRef);
         ensureSafeModelComponent(resolvedRef);
 
         TransformComponent transformComponent =
                 resolvedRef.getStore().getComponent(resolvedRef, TransformComponent.getComponentType());
-        if (transformComponent != null && transformComponent.getPosition() != null) {
-            citizen.setCurrentPosition(new Vector3d(transformComponent.getPosition()));
-            if (transformComponent.getRotation() != null) {
-                citizen.setCurrentRotation(transformComponent.getRotation());
+        boolean shouldSnapIdleToHome = "IDLE".equals(citizen.getMovementBehavior().getType())
+                && (citizen.getScheduleConfig() == null || !citizen.getScheduleConfig().isEnabled())
+                && !ScriptManager.get().hasFollowPlayerScript(citizen)
+                && citizen.getPosition() != null;
+        if (transformComponent != null) {
+            if (shouldSnapIdleToHome) {
+                Vector3d homePos = new Vector3d(citizen.getPosition());
+                Rotation3f homeRot = RotationUtil.toRotation(citizen.getRotation());
+                transformComponent.setPosition(homePos);
+                transformComponent.setRotation(homeRot);
+                citizen.setCurrentPosition(homePos);
+                citizen.setCurrentRotation(homeRot);
+            } else if (transformComponent.getPosition() != null) {
+                citizen.setCurrentPosition(new Vector3d(transformComponent.getPosition()));
+                if (transformComponent.getRotation() != null) {
+                    citizen.setCurrentRotation(transformComponent.getRotation());
+                }
             }
+        }
+        NPCEntity resolvedNpcEntity = resolvedRef.getStore().getComponent(resolvedRef, NPCEntity.getComponentType());
+        if (resolvedNpcEntity != null && citizen.getPosition() != null
+                && (citizen.getScheduleConfig() == null || !citizen.getScheduleConfig().isEnabled())) {
+            resolvedNpcEntity.setLeashPoint(citizen.getPosition());
         }
 
         World world = Universe.get().getWorld(citizen.getWorldUUID());
         if (world != null && patrolManager != null) {
-            Vector3d moveTargetPosition = citizen.getCurrentPosition() != null
-                    ? citizen.getCurrentPosition()
-                    : citizen.getPosition();
-            patrolManager.ensureMoveTargetNow(citizen, world, moveTargetPosition);
+            patrolManager.ensureMoveTargetNow(citizen, world, null);
         }
 
         if (!refreshSpawnedCitizenAppearance(citizen) && citizen.isPlayerModel()) {
@@ -2364,10 +2577,12 @@ public class CitizensManager {
             scheduleTemporaryNametagRecovery(citizen, save || deferSave, deferSave);
         } else {
             cancelPendingTemporaryNametagRecovery(citizen.getId());
-            updateSpawnedCitizenHologram(citizen, save || deferSave, deferSave);
+            boolean saveHologramChange = save || (deferSave && !previousHolograms.isEmpty());
+            updateSpawnedCitizenHologram(citizen, saveHologramChange, deferSave);
         }
         updateCitizenNPCItems(citizen);
         triggerAnimations(citizen, "DEFAULT");
+        promoteCitizenToDesiredRoleIfNeeded(citizen);
 
         if (scheduleManager != null) {
             scheduleManager.refreshCitizen(citizen);
@@ -2377,13 +2592,15 @@ public class CitizensManager {
             patrolManager.startPatrol(citizen.getId(), citizen.getPathConfig().getPluginPatrolPath());
         }
 
-        if (deferSave) {
+        if (deferSave && (!Objects.equals(previousSpawnedUuid, citizen.getSpawnedUUID())
+                || !Objects.equals(previousHolograms, citizen.getHologramLineUuids()))) {
             saveCitizenDeferred(citizen);
         }
     }
 
     public void bindCitizenEntityRef(@Nonnull CitizenData citizen, @Nonnull Ref<EntityStore> ref) {
         citizen.setNpcRef(ref);
+        citizen.resetNametagTransformTracking();
         cancelPendingNpcSpawnRetry(citizen.getId());
         ref.getStore().putComponent(ref, CitizenNpcIdentityComponent.getComponentType(),
                 new CitizenNpcIdentityComponent(citizen.getId()));
@@ -2403,6 +2620,7 @@ public class CitizensManager {
     public void clearCitizenEntityRef(@Nonnull CitizenData citizen) {
         citizen.setSpawnedUUID(null);
         citizen.setNpcRef(null);
+        citizen.resetNametagTransformTracking();
         cancelPendingTemporaryNametagRecovery(citizen.getId());
     }
 
@@ -2655,12 +2873,13 @@ public class CitizensManager {
             return;
         }
 
-        roleGenerator.generateRoleIfChanged(citizen);
+        boolean roleChanged = roleGenerator.generateRoleIfChanged(citizen);
         String roleName = roleGenerator.getRoleName(citizen);
 
         int roleIndex = NPCPlugin.get().getIndex(roleName);
         if (roleIndex == Integer.MIN_VALUE) {
             roleGenerator.forceRoleGeneration(citizen);
+            roleChanged = true;
             roleIndex = NPCPlugin.get().getIndex(roleName);
             if (roleIndex == Integer.MIN_VALUE) {
                 getLogger().atWarning().log("Role not registered yet: " + roleName);
@@ -2669,6 +2888,7 @@ public class CitizensManager {
         }
 
         int finalRoleIndex = roleIndex;
+        boolean finalRoleChanged = roleChanged;
         World world = Universe.get().getWorld(citizen.getWorldUUID());
         if (world == null) {
             return;
@@ -2681,10 +2901,15 @@ public class CitizensManager {
             }
 
             boolean needsMoveTarget = usesMarkerDrivenRole(citizen);
-            Vector3d initialPosition = citizen.getCurrentPosition() != null ? citizen.getCurrentPosition() : citizen.getPosition();
+            if (!finalRoleChanged && roleName.equals(npcEntity.getRole().getRoleName())) {
+                if (needsMoveTarget && patrolManager != null) {
+                    patrolManager.ensureMoveTargetNow(citizen, world, null);
+                }
+                return;
+            }
 
             if (needsMoveTarget && patrolManager != null) {
-                patrolManager.ensureMoveTargetNow(citizen, world, initialPosition);
+                patrolManager.ensureMoveTargetNow(citizen, world, null);
             }
 
             RoleChangeSystem.requestRoleChange(npcRef, npcEntity.getRole(), finalRoleIndex, true, npcRef.getStore());
@@ -2695,7 +2920,7 @@ public class CitizensManager {
                         patrolManager.ensureMoveTargetNow(
                                 citizen,
                                 world,
-                                initialPosition
+                                null
                         );
                     }
                 }), 100, TimeUnit.MILLISECONDS);
@@ -2760,8 +2985,7 @@ public class CitizensManager {
             }
 
             if (patrolManager != null) {
-                Vector3d markerPosition = citizen.getCurrentPosition() != null ? citizen.getCurrentPosition() : citizen.getPosition();
-                patrolManager.ensureMoveTargetNow(citizen, world, markerPosition);
+                patrolManager.ensureMoveTargetNow(citizen, world, null);
             }
 
             RoleChangeSystem.requestRoleChange(liveRef, npcEntity.getRole(), desiredRoleIndex, true, liveRef.getStore());
@@ -2773,10 +2997,19 @@ public class CitizensManager {
                         Ref<EntityStore> currentRef = citizen.getNpcRef();
                         if (currentRef != null && currentRef.isValid()) {
                             ensureSafeModelComponent(currentRef);
+                            if (patrolManager != null) {
+                                patrolManager.ensureMoveTargetNow(citizen, currentWorld, null);
+                                if (shouldAutoStartPluginPatrol(citizen) && !patrolManager.isPatrolling(citizen.getId())) {
+                                    patrolManager.startPatrol(citizen.getId(), citizen.getPathConfig().getPluginPatrolPath());
+                                }
+                            }
+                            if (scheduleManager != null) {
+                                scheduleManager.refreshCitizen(citizen);
+                            }
                         }
                     });
                 }
-            }, 50, TimeUnit.MILLISECONDS);
+            }, 100, TimeUnit.MILLISECONDS);
         });
     }
 
@@ -2790,7 +3023,8 @@ public class CitizensManager {
             return null;
         }
 
-        ModelAsset modelAsset = ModelAsset.getAssetMap().getAsset(citizen.getModelId());
+        String modelId = RoleGenerator.normalizeModelId(citizen.getModelId());
+        ModelAsset modelAsset = ModelAsset.getAssetMap().getAsset(modelId);
         if (modelAsset == null) {
             getLogger().atWarning().log("Unable to create spawn model for citizen '" + citizen.getId() + "': unknown model '" + citizen.getModelId() + "'.");
             return null;
@@ -2863,14 +3097,20 @@ public class CitizensManager {
             return;
         }
 
-        if (!citizensCurrentlySpawning.add(citizen.getId())) {
+        World world = Universe.get().getWorld(citizen.getWorldUUID());
+        if (world == null) {
+            cancelPendingNpcSpawnRetry(citizen.getId());
+            citizensCurrentlySpawning.remove(citizen.getId());
+            getLogger().atWarning().log("Failed to spawn citizen NPC: " + citizen.getName() + ". Failed to find world. Try updating the citizen's position.");
             return;
         }
 
-        World world = Universe.get().getWorld(citizen.getWorldUUID());
-        if (world == null) {
-            citizensCurrentlySpawning.remove(citizen.getId());
-            getLogger().atWarning().log("Failed to spawn citizen NPC: " + citizen.getName() + ". Failed to find world. Try updating the citizen's position.");
+        if (!world.isInThread()) {
+            world.execute(() -> spawnCitizenNPCInternal(citizen, save, attempt));
+            return;
+        }
+
+        if (!citizensCurrentlySpawning.add(citizen.getId())) {
             return;
         }
 
@@ -2892,6 +3132,11 @@ public class CitizensManager {
 
                 restoreResolvedCitizenState(citizen, existingRef, save);
             });
+            return;
+        }
+
+        if (!isPositionChunkLoadedAndTicking(world, citizen.getPosition())) {
+            citizensCurrentlySpawning.remove(citizen.getId());
             return;
         }
 
@@ -2917,7 +3162,11 @@ public class CitizensManager {
                 citizen.getPosition(),
                 RotationUtil.toRotation(citizen.getRotation()),
                 spawnModel,
-                (npcComponent, holder, store) -> npcComponent.setInitialModelScale(scale),
+                (npcComponent, holder, store) -> {
+                    npcComponent.setInitialModelScale(scale);
+                    holder.putComponent(CitizenNpcIdentityComponent.getComponentType(),
+                            new CitizenNpcIdentityComponent(citizen.getId()));
+                },
                 null
         );
 
@@ -2932,7 +3181,11 @@ public class CitizensManager {
                         citizen.getPosition(),
                         RotationUtil.toRotation(citizen.getRotation()),
                         spawnModel,
-                        (npcComponent, holder, store) -> npcComponent.setInitialModelScale(scale),
+                        (npcComponent, holder, store) -> {
+                            npcComponent.setInitialModelScale(scale);
+                            holder.putComponent(CitizenNpcIdentityComponent.getComponentType(),
+                                    new CitizenNpcIdentityComponent(citizen.getId()));
+                        },
                         null
                 );
             }
@@ -2965,7 +3218,7 @@ public class CitizensManager {
 
         bindCitizenEntityRef(citizen, ref);
         if (patrolManager != null) {
-            patrolManager.ensureMoveTargetNow(citizen, world, citizen.getPosition());
+            patrolManager.ensureMoveTargetNow(citizen, world, null);
         }
         promoteCitizenToDesiredRoleIfNeeded(citizen);
         if (save) {
@@ -3034,11 +3287,8 @@ public class CitizensManager {
             return;
         }
 
-        long chunkIndex = ChunkUtil.indexChunkFromBlock(citizen.getPosition().x, citizen.getPosition().z);
-        WorldChunk chunk = world.getChunkIfLoaded(chunkIndex);
-        if (chunk == null) {
+        if (!isPositionChunkLoadedAndTicking(world, citizen.getPosition())) {
             citizensCurrentlySpawning.remove(citizen.getId());
-            getLogger().atInfo().log("Failed to spawn player model for citizen NPC: " + citizen.getName() + ". The world chunk is unloaded.");
             return;
         }
 
@@ -3050,7 +3300,10 @@ public class CitizensManager {
                 citizen.getPosition(),
                 RotationUtil.toRotation(citizen.getRotation()),
                 playerModel,
-                null,
+                (npcComponent, holder, store) -> holder.putComponent(
+                        CitizenNpcIdentityComponent.getComponentType(),
+                        new CitizenNpcIdentityComponent(citizen.getId())
+                ),
                 null
         );
 
@@ -3065,7 +3318,10 @@ public class CitizensManager {
                         citizen.getPosition(),
                         RotationUtil.toRotation(citizen.getRotation()),
                         playerModel,
-                        null,
+                        (npcComponent, holder, store) -> holder.putComponent(
+                                CitizenNpcIdentityComponent.getComponentType(),
+                                new CitizenNpcIdentityComponent(citizen.getId())
+                        ),
                         null
                 );
             }
@@ -3085,6 +3341,7 @@ public class CitizensManager {
 
         if (skinToUse != null) {
             PlayerSkinComponent skinComponent = new PlayerSkinComponent(skinToUse);
+            skinComponent.setNetworkOutdated();
             store.putComponent(ref, PlayerSkinComponent.getComponentType(), skinComponent);
         }
 
@@ -3100,7 +3357,7 @@ public class CitizensManager {
 
         bindCitizenEntityRef(citizen, ref);
         if (patrolManager != null) {
-            patrolManager.ensureMoveTargetNow(citizen, world, citizen.getPosition());
+            patrolManager.ensureMoveTargetNow(citizen, world, null);
         }
         promoteCitizenToDesiredRoleIfNeeded(citizen);
         if (save) {
@@ -3134,15 +3391,12 @@ public class CitizensManager {
 
         int healthIndex = DefaultEntityStatTypes.getHealth();
         EntityStatValue healthStat = statMap.get(healthIndex);
-
-        if (!citizen.isOverrideHealth()) {
-            if (healthStat != null) {
-                statMap.removeModifier(healthIndex, "hycitizens_max_health");
-            }
+        if (healthStat == null) {
             return;
         }
 
-        if (healthStat == null) {
+        statMap.removeModifier(healthIndex, "hycitizens_max_health");
+        if (!citizen.isOverrideHealth()) {
             return;
         }
 
@@ -3312,7 +3566,7 @@ public class CitizensManager {
             return true;
         }
 
-        ref.getStore().addComponent(ref, CitizenNametagComponent.getComponentType(),
+        ref.getStore().putComponent(ref, CitizenNametagComponent.getComponentType(),
                 new CitizenNametagComponent(citizenId, lineIndex));
         return true;
     }
@@ -3708,7 +3962,9 @@ public class CitizensManager {
         }
         newModel = withSafeAnimationSetMap(newModel);
 
-        npcRef.getStore().putComponent(npcRef, PlayerSkinComponent.getComponentType(), new PlayerSkinComponent(sanitizedSkin));
+        PlayerSkinComponent skinComponent = new PlayerSkinComponent(sanitizedSkin);
+        skinComponent.setNetworkOutdated();
+        npcRef.getStore().putComponent(npcRef, PlayerSkinComponent.getComponentType(), skinComponent);
         npcRef.getStore().putComponent(npcRef, ModelComponent.getComponentType(), new ModelComponent(newModel));
 
         PersistentModel persistentModel = npcRef.getStore().getComponent(npcRef, PersistentModel.getComponentType());
@@ -3722,6 +3978,42 @@ public class CitizensManager {
         }
     }
 
+    public void refreshSpawnedCitizenInstances(@Nonnull CitizenData citizen, @Nullable PlayerSkin skin) {
+        if (!citizen.isPlayerModel()) {
+            return;
+        }
+
+        PlayerSkin skinToUse = skin != null ? skin : citizen.getCachedSkin();
+        if (skinToUse == null) {
+            skinToUse = determineSkin(citizen);
+        }
+        if (skinToUse == null) {
+            skinToUse = SkinUtilities.createDefaultSkin();
+        } else {
+            skinToUse = SkinUtilities.sanitizeSkin(skinToUse);
+        }
+
+        PlayerSkin finalSkin = skinToUse;
+        if (Universe.get() == null || Universe.get().getWorlds() == null) {
+            return;
+        }
+
+        for (World world : Universe.get().getWorlds().values()) {
+            if (world == null) {
+                continue;
+            }
+            world.execute(() -> {
+                List<Ref<EntityStore>> refs = findExistingCitizenNpcRefs(world.getEntityStore().getStore(), citizen);
+                for (Ref<EntityStore> ref : refs) {
+                    if (ref != null && ref.isValid()) {
+                        applyPlayerModelAppearance(ref, citizen, finalSkin);
+                        applyCitizenComponentsToEntity(ref.getStore(), ref, citizen);
+                    }
+                }
+            });
+        }
+    }
+
     public boolean refreshSpawnedCitizenAppearance(@Nonnull CitizenData citizen) {
         if (!citizen.isPlayerModel()) {
             return false;
@@ -3732,22 +4024,7 @@ public class CitizensManager {
             return false;
         }
 
-        UUID spawnedUuid = citizen.getSpawnedUUID();
-        if (spawnedUuid == null) {
-            return false;
-        }
-
-        World world = Universe.get().getWorld(citizen.getWorldUUID());
-        if (world == null) {
-            return false;
-        }
-
-        Ref<EntityStore> npcRef = world.getEntityRef(spawnedUuid);
-        if (npcRef == null || !npcRef.isValid()) {
-            return false;
-        }
-
-        world.execute(() -> applyPlayerModelAppearance(npcRef, citizen, cachedSkin));
+        refreshSpawnedCitizenInstances(citizen, cachedSkin);
         return true;
     }
 
@@ -3775,7 +4052,7 @@ public class CitizensManager {
                 if (save) {
                     saveCitizen(citizen);
                 }
-                refreshSpawnedCitizenAppearance(citizen);
+                refreshSpawnedCitizenInstances(citizen, cachedSkin);
             }
             return;
         }
@@ -3790,15 +4067,7 @@ public class CitizensManager {
                         saveCitizen(citizen);
                     }
 
-                    if (citizen.getSpawnedUUID() != null) {
-                        World world = Universe.get().getWorld(citizen.getWorldUUID());
-                        if (world != null) {
-                            Ref<EntityStore> npcRef = world.getEntityRef(citizen.getSpawnedUUID());
-                            if (npcRef != null && npcRef.isValid()) {
-                                world.execute(() -> applyPlayerModelAppearance(npcRef, citizen, skin));
-                            }
-                        }
-                    }
+                    refreshSpawnedCitizenInstances(citizen, skin);
                 }
             });
             return;
@@ -3808,60 +4077,15 @@ public class CitizensManager {
             if (save) {
                 saveCitizen(citizen);
             }
-            refreshSpawnedCitizenAppearance(citizen);
+            refreshSpawnedCitizenInstances(citizen, cachedSkin);
         }
     }
 
     public void applySkinPreview(CitizenData citizen, PlayerSkin skin) {
-        if (citizen.getSpawnedUUID() != null) {
-            World world = Universe.get().getWorld(citizen.getWorldUUID());
-            if (world != null) {
-                Ref<EntityStore> npcRef = world.getEntityRef(citizen.getSpawnedUUID());
-                if (npcRef != null && npcRef.isValid()) {
-                    world.execute(() -> {
-                        PlayerSkin sanitizedSkin = SkinUtilities.sanitizeSkin(skin);
-                        float scale = Math.max((float) 0.01, citizen.getScale());
-                        Model newModel = null;
-                        try {
-                            newModel = CosmeticsModule.get().createModel(sanitizedSkin, scale);
-                        } catch (Exception e) {
-                            getLogger().atWarning().log("Failed to create skin model while previewing skin for citizen '" + citizen.getId() + "': " + e.getMessage());
-                        }
-
-                        if (newModel == null) {
-                            try {
-                                PlayerSkin defaultSkin = SkinUtilities.createDefaultSkin();
-                                newModel = CosmeticsModule.get().createModel(defaultSkin, scale);
-                                sanitizedSkin = defaultSkin;
-                            } catch (Exception e) {
-                                getLogger().atWarning().log("Failed to create fallback skin model for preview on citizen '" + citizen.getId() + "': " + e.getMessage());
-                            }
-                        }
-
-                        if (newModel == null) {
-                            getLogger().atWarning().log("Failed to create skin model while previewing skin for citizen '" + citizen.getId() + "'.");
-                            return;
-                        }
-                        newModel = withSafeAnimationSetMap(newModel);
-
-                        PlayerSkinComponent skinComponent = new PlayerSkinComponent(sanitizedSkin);
-                        npcRef.getStore().putComponent(npcRef, PlayerSkinComponent.getComponentType(), skinComponent);
-                        ModelComponent modelComponent = new ModelComponent(newModel);
-                        npcRef.getStore().putComponent(npcRef, ModelComponent.getComponentType(), modelComponent);
-
-                        PersistentModel persistentModel = npcRef.getStore().getComponent(npcRef, PersistentModel.getComponentType());
-                        if (persistentModel != null) {
-                            persistentModel.setModelReference(new Model.ModelReference(
-                                    newModel.getModelAssetId(),
-                                    scale,
-                                    newModel.getRandomAttachmentIds(),
-                                    newModel.getAnimationSetMap() == null
-                            ));
-                        }
-                    });
-                }
-            }
+        if (!citizen.isPlayerModel() || skin == null) {
+            return;
         }
+        refreshSpawnedCitizenInstances(citizen, skin);
     }
 
     public void updateCitizenSkinFromPlayer(CitizenData citizen, PlayerRef playerRef, boolean save) {
@@ -3963,9 +4187,7 @@ public class CitizensManager {
                 queued[0] = true;
                 world.execute(() -> {
                     Vector3d anchorPosition = getNametagAnchorPosition(citizen);
-                    long chunkIndex = ChunkUtil.indexChunkFromBlock(anchorPosition.x, anchorPosition.z);
-                    WorldChunk chunk = world.getChunkIfLoaded(chunkIndex);
-                    if (chunk == null) {
+                    if (!isPositionChunkLoadedAndTicking(world, anchorPosition)) {
                         queued[0] = false;
                         return;
                     }
@@ -4017,6 +4239,7 @@ public class CitizensManager {
                     spawned[0] = true;
                     futureRef[0].cancel(false);
                     citizen.getHologramLineUuids().clear();
+                    citizen.resetNametagTransformTracking();
 
                     for (int i = 0; i < holders.size(); i++) {
                         citizen.getHologramLineUuids().add(spawnedUuids.get(i));
@@ -4141,6 +4364,7 @@ public class CitizensManager {
 
     public void despawnCitizenHologram(CitizenData citizen) {
         hologramsCurrentlySpawning.remove(citizen.getId());
+        citizen.resetNametagTransformTracking();
         if (citizen.getHologramLineUuids() == null || citizen.getHologramLineUuids().isEmpty()) {
             return;
         }
@@ -4398,9 +4622,7 @@ public class CitizensManager {
 
         world.execute(() -> {
             Vector3d anchorPosition = getNametagAnchorPosition(citizen);
-            long chunkIndex = ChunkUtil.indexChunkFromBlock(anchorPosition.x, anchorPosition.z);
-            WorldChunk chunk = world.getChunkIfLoaded(chunkIndex);
-            if (chunk == null) {
+            if (!isPositionChunkLoadedAndTicking(world, anchorPosition)) {
                 // Chunk not loaded, just save it
                 if (save) {
                     persistCitizen(citizen, deferSave);
@@ -4512,21 +4734,23 @@ public class CitizensManager {
 
         Store<EntityStore> store = world.getEntityStore().getStore();
         Query<EntityStore> query = CitizenNametagComponent.getComponentType();
-        Map<Integer, Ref<EntityStore>> resolvedRefs = new ConcurrentHashMap<>();
+        Map<Integer, Ref<EntityStore>> resolvedRefs = new HashMap<>();
 
-        store.forEachEntityParallel(query, (index, archetypeChunk, cb) -> {
-            CitizenNametagComponent nametagComponent =
-                    archetypeChunk.getComponent(index, CitizenNametagComponent.getComponentType());
-            if (nametagComponent == null || !citizen.getId().equals(nametagComponent.getCitizenId())) {
-                return;
+        store.forEachChunk(query, (chunk, cb) -> {
+            for (int index = 0; index < chunk.size(); index++) {
+                CitizenNametagComponent nametagComponent =
+                        chunk.getComponent(index, CitizenNametagComponent.getComponentType());
+                if (nametagComponent == null || !citizen.getId().equals(nametagComponent.getCitizenId())) {
+                    continue;
+                }
+
+                Ref<EntityStore> ref = chunk.getReferenceTo(index);
+                if (ref == null || !ref.isValid()) {
+                    continue;
+                }
+
+                resolvedRefs.put(nametagComponent.getLineIndex(), ref);
             }
-
-            Ref<EntityStore> ref = archetypeChunk.getReferenceTo(index);
-            if (ref == null || !ref.isValid()) {
-                return;
-            }
-
-            resolvedRefs.put(nametagComponent.getLineIndex(), ref);
         });
 
         if (resolvedRefs.isEmpty()) {
@@ -4923,6 +5147,125 @@ public class CitizensManager {
         return nametagRef != null && nametagRef.isValid() ? nametagRef : null;
     }
 
+    private void resetCitizenLookForPlayerImmediate(@Nonnull CitizenData citizen, @Nonnull UUID playerUuid, @Nonnull World world) {
+        cancelPendingLookReset(citizen, playerUuid);
+
+        if (!citizen.lastLookDirections.containsKey(playerUuid)) {
+            return;
+        }
+
+        PlayerRef playerRef = Universe.get().getPlayer(playerUuid);
+        if (!isPlayerRefValid(playerRef)) {
+            citizen.lastLookDirections.remove(playerUuid);
+            citizen.lastBodyDirections.remove(playerUuid);
+            citizen.bodyTurningStates.remove(playerUuid);
+            return;
+        }
+
+        if (citizen.getSpawnedUUID() == null || citizen.getNpcRef() == null || !citizen.getNpcRef().isValid()) {
+            citizen.lastLookDirections.remove(playerUuid);
+            citizen.lastBodyDirections.remove(playerUuid);
+            citizen.bodyTurningStates.remove(playerUuid);
+            return;
+        }
+
+        Store<EntityStore> store = citizen.getNpcRef().getStore();
+        if (store == null) {
+            return;
+        }
+
+        NetworkId citizenNetworkId = store.getComponent(citizen.getNpcRef(), NetworkId.getComponentType());
+        TransformComponent npcTransformComponent = store.getComponent(citizen.getNpcRef(), TransformComponent.getComponentType());
+        if (citizenNetworkId == null || npcTransformComponent == null) {
+            citizen.lastLookDirections.remove(playerUuid);
+            citizen.lastBodyDirections.remove(playerUuid);
+            citizen.bodyTurningStates.remove(playerUuid);
+            return;
+        }
+
+        Vector3f baseRotation = RotationUtil.toVector3f(npcTransformComponent.getRotation());
+        Direction baseLookDirection = toPacketDirection(baseRotation, true);
+        Direction baseBodyDirection = toPacketDirection(baseRotation, true);
+        sendRotationUpdate(citizenNetworkId, playerRef, baseLookDirection, baseBodyDirection);
+
+        citizen.lastLookDirections.remove(playerUuid);
+        citizen.lastBodyDirections.remove(playerUuid);
+        citizen.bodyTurningStates.remove(playerUuid);
+    }
+
+    public boolean isCitizenWalking(@Nonnull CitizenData citizen) {
+        if (citizen.getSpawnedUUID() == null || citizen.getNpcRef() == null || !citizen.getNpcRef().isValid()) {
+            return false;
+        }
+
+        if (patrolManager != null && patrolManager.isPatrolling(citizen.getId()) && !patrolManager.isPatrolPaused(citizen.getId())) {
+            return true;
+        }
+
+        if (standaloneFollowSessions.containsKey(citizen.getId())) {
+            return true;
+        }
+
+        if (citizen.getCurrentScheduleRuntimeState() != ScheduleRuntimeState.INACTIVE) {
+            return true;
+        }
+
+        long now = System.currentTimeMillis();
+        if (now - citizen.getLastMotionDetectedTime() < 400L) {
+            return true;
+        }
+
+        Store<EntityStore> store = citizen.getNpcRef().getStore();
+        if (store == null) {
+            return false;
+        }
+
+        NPCEntity npcEntity = store.getComponent(citizen.getNpcRef(), NPCEntity.getComponentType());
+        if (npcEntity != null) {
+            PathManager pathManager = npcEntity.getPathManager();
+            if (pathManager != null && pathManager.isFollowingPath()) {
+                citizen.setLastMotionDetectedTime(now);
+                return true;
+            }
+        }
+
+        Velocity vel = store.getComponent(citizen.getNpcRef(), Velocity.getComponentType());
+        if (vel != null) {
+            Vector3d v = vel.getVelocity();
+            if (v != null && (v.x * v.x + v.z * v.z) > 0.002) {
+                citizen.setLastMotionDetectedTime(now);
+                return true;
+            }
+        }
+
+        StateSupport stateSupport = store.getComponent(citizen.getNpcRef(), StateSupport.getComponentType());
+        if (stateSupport != null) {
+            String stateName = stateSupport.getStateName();
+            if (stateName != null && !stateName.isEmpty() && !stateName.equalsIgnoreCase("Idle")) {
+                citizen.setLastMotionDetectedTime(now);
+                return true;
+            }
+        }
+
+        TransformComponent transform = store.getComponent(citizen.getNpcRef(), TransformComponent.getComponentType());
+        if (transform != null) {
+            Vector3d currentPos = transform.getPosition();
+            Vector3d lastPos = citizen.getLastMotionCheckPosition();
+            if (lastPos != null) {
+                double dx = currentPos.x - lastPos.x;
+                double dz = currentPos.z - lastPos.z;
+                if ((dx * dx + dz * dz) > 0.0004) {
+                    citizen.setLastMotionDetectedTime(now);
+                    citizen.setLastMotionCheckPosition(new Vector3d(currentPos));
+                    return true;
+                }
+            }
+            citizen.setLastMotionCheckPosition(new Vector3d(currentPos));
+        }
+
+        return false;
+    }
+
     private boolean shouldRotateCitizenTowardsPlayer(@Nonnull CitizenData citizen, @Nonnull PlayerRef playerRef) {
         if (!isPlayerRefValid(playerRef)) {
             return false;
@@ -4936,7 +5279,11 @@ public class CitizensManager {
             return false;
         }
 
-        if (!"IDLE".equals(citizen.getMovementBehavior().getType())) {
+        if (isCitizenWalking(citizen)) {
+            return false;
+        }
+
+        if (citizen.getCurrentScheduleRuntimeState() != ScheduleRuntimeState.INACTIVE) {
             return false;
         }
 
@@ -5345,14 +5692,30 @@ public class CitizensManager {
         if (citizen.getNpcRef() == null || !citizen.getNpcRef().isValid())
             return;
 
+        boolean foundActionDefault = false;
         for (AnimationBehavior ab : citizen.getAnimationBehaviors()) {
             if (ab.getType().equals(type)) {
+                if (ab.getAnimationSlot() == 0) {
+                    foundActionDefault = true;
+                }
                 World world = Universe.get().getWorld(citizen.getWorldUUID());
                 if (world != null) {
                     world.execute(() -> {
                         playAnimationForCitizen(citizen, ab.getAnimationName(), ab.getAnimationSlot(), ab);
                     });
                 }
+            }
+        }
+
+        if ("DEFAULT".equals(type) && !foundActionDefault) {
+            World world = Universe.get().getWorld(citizen.getWorldUUID());
+            if (world != null) {
+                world.execute(() -> {
+                    Ref<EntityStore> npcRef = citizen.getNpcRef();
+                    if (npcRef != null && npcRef.isValid()) {
+                        AnimationUtils.stopAnimation(npcRef, AnimationSlot.Action, npcRef.getStore());
+                    }
+                });
             }
         }
     }
@@ -5793,7 +6156,7 @@ public class CitizensManager {
         if (citizen.isTakesDamage()) {
             store.removeComponentIfExists(ref, Invulnerable.getComponentType());
         } else {
-            store.addComponent(ref, Invulnerable.getComponentType());
+            store.ensureComponent(ref, Invulnerable.getComponentType());
         }
     }
 
@@ -6129,6 +6492,21 @@ public class CitizensManager {
 
     @Nullable
     private Vector3d getCitizenPositionSnapshot(@Nonnull CitizenData citizen) {
+        Ref<EntityStore> npcRef = citizen.getNpcRef();
+        if (npcRef != null && npcRef.isValid()) {
+            try {
+                TransformComponent transform = npcRef.getStore().getComponent(npcRef, TransformComponent.getComponentType());
+                if (transform != null && transform.getPosition() != null) {
+                    Vector3d livePos = new Vector3d(transform.getPosition());
+                    citizen.setCurrentPosition(livePos);
+                    if (transform.getRotation() != null) {
+                        citizen.setCurrentRotation(transform.getRotation());
+                    }
+                    return livePos;
+                }
+            } catch (Exception ignored) {
+            }
+        }
         Vector3d currentPosition = citizen.getCurrentPosition();
         if (currentPosition != null) {
             return currentPosition;
