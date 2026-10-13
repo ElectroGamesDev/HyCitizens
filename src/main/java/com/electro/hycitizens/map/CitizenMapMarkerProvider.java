@@ -10,6 +10,7 @@ import com.hypixel.hytale.protocol.FormattedMessage;
 import com.hypixel.hytale.protocol.packets.worldmap.ContextMenuItem;
 import com.hypixel.hytale.protocol.packets.worldmap.MapMarker;
 import com.hypixel.hytale.protocol.packets.worldmap.MapMarkerComponent;
+import com.hypixel.hytale.protocol.packets.worldmap.MapMarkerIconSize;
 import com.hypixel.hytale.server.core.entity.entities.Player;
 import com.hypixel.hytale.server.core.universe.PlayerRef;
 import com.hypixel.hytale.server.core.universe.world.World;
@@ -95,7 +96,9 @@ public final class CitizenMapMarkerProvider implements WorldMapManager.MarkerPro
                 markerImage,
                 PositionUtil.toTransformPacket(transform),
                 (ContextMenuItem[]) null,
-                (MapMarkerComponent[]) null
+                (MapMarkerComponent[]) null,
+                MapMarkerIconSize.Default,
+                null
         );
     }
 

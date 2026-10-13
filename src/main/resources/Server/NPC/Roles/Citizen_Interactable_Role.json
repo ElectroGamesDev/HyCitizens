@@ -1,43 +1,12 @@
 {
-  "Type": "Generic",
-  "MotionControllerList": [
-    {
-      "Type": "Walk"
-    }
-  ],
-  "Appearance": "Player",
-  "MaxHealth": { "Compute": "MaxHealth" },
-  "Parameters": {
-    "MaxHealth": {
-      "Value": 100,
-      "Description": "Max health for the NPC"
-    }
-  },
-  "InteractionInstruction": {
-      "Instructions": [
-        {
-          "Continue": true,
-          "Sensor": {
-            "Type": "Any"
-          },
-          "Actions": [
-            {
-              "Type": "SetInteractable",
-              "Interactable": true
-            }
-          ]
-        },
-        {
-          "Sensor": {
-            "Type": "HasInteracted"
-          },
-          "Actions": [
-            {
-              "Type": "CitizenInteraction"
-            }
-          ]
-        }
-      ]
-    },
-    "NameTranslationKey": "Citizen"
+    "Type":  "Variant",
+    "Reference":  "Template_Citizen",
+    "Modify":  {
+                   "DefaultPlayerAttitude":  "Ignore",
+                   "WanderRadius":  1,
+                   "MaxHealth":  100,
+                   "NameTranslationKey":  "Citizen",
+                   "WakingIdleBehaviorComponent":  "Component_Instruction_Stationary_Idle",
+                   "RetaliateOnDamage":  false
+               }
 }

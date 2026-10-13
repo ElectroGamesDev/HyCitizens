@@ -6900,13 +6900,15 @@ public class CitizensUI {
             openFactionsGUI(playerRef, store, citizen);
         });
 
-        page.addEventListener("delete-faction-btn", CustomUIEventBindingType.Activating, event -> {
-            if (!initialFactionId.isEmpty()) {
-                plugin.getCitizensManager().deleteFactionDefinition(initialFactionId);
-                playerRef.sendMessage(Message.raw("Faction deleted!").color(Color.GREEN));
-            }
-            openFactionsGUI(playerRef, store, citizen);
-        });
+        if (!creating) {
+            page.addEventListener("delete-faction-btn", CustomUIEventBindingType.Activating, event -> {
+                if (!initialFactionId.isEmpty()) {
+                    plugin.getCitizensManager().deleteFactionDefinition(initialFactionId);
+                    playerRef.sendMessage(Message.raw("Faction deleted!").color(Color.GREEN));
+                }
+                openFactionsGUI(playerRef, store, citizen);
+            });
+        }
 
         page.addEventListener("cancel-btn", CustomUIEventBindingType.Activating, event ->
                 openFactionsGUI(playerRef, store, citizen));

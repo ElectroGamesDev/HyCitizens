@@ -1,5 +1,6 @@
 package com.electro.hycitizens.map;
 
+import com.electro.hycitizens.roles.RoleGenerator;
 import com.hypixel.hytale.assetstore.AssetPack;
 import com.hypixel.hytale.server.core.asset.AssetModule;
 
@@ -120,6 +121,7 @@ final class CitizenNpcPortraitResolver {
         if (modelId == null || modelId.isBlank()) {
             return null;
         }
+        modelId = RoleGenerator.normalizeModelId(modelId);
 
         ensureIndexed();
         if (AVAILABLE_PORTRAITS.isEmpty()) {
@@ -214,7 +216,7 @@ final class CitizenNpcPortraitResolver {
             return "Undead";
         }
         if (lower.contains("void") || lower.contains("spawn_void") || lower.contains("crawler_void")
-                || lower.contains("eye_void") || lower.contains("spectre_void") || lower.contains("necromancer_void")) {
+                || lower.contains("eye_void") || lower.contains("spectre_void") || lower.contains("void_spectre") || lower.contains("necromancer_void")) {
             return "Voidspawn";
         }
         if (lower.contains("golem") || lower.contains("spark") || lower.contains("elemental")) {

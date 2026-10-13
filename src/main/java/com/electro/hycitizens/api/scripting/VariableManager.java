@@ -88,8 +88,13 @@ public class VariableManager {
         if (flushExecutor != null) {
             flushExecutor.shutdown();
             try {
-                flushExecutor.awaitTermination(1, TimeUnit.SECONDS);
-            } catch (InterruptedException ignored) {}
+                if (!flushExecutor.awaitTermination(1, TimeUnit.SECONDS)) {
+                    flushExecutor.shutdownNow();
+                }
+            } catch (InterruptedException ignored) {
+                flushExecutor.shutdownNow();
+                Thread.currentThread().interrupt();
+            }
         }
         // Final synchronous flush
         flushDirtyVariables();

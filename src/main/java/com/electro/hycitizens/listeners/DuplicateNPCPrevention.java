@@ -14,6 +14,7 @@ import com.hypixel.hytale.component.query.Query;
 import com.hypixel.hytale.component.system.RefSystem;
 import com.hypixel.hytale.server.core.entity.UUIDComponent;
 import com.hypixel.hytale.server.core.modules.entity.component.TransformComponent;
+import com.hypixel.hytale.server.core.modules.entity.damage.DeathComponent;
 import com.hypixel.hytale.server.core.universe.world.World;
 import com.hypixel.hytale.server.core.universe.world.storage.EntityStore;
 import com.hypixel.hytale.server.npc.entities.NPCEntity;
@@ -46,21 +47,29 @@ public class DuplicateNPCPrevention extends RefSystem<EntityStore> {
             return;
         }
 
-        Role role = npc.getRole();
-        if (role == null) {
-            return;
-        }
-
-        String roleName = role.getRoleName();
-        String citizenKey = extractCitizenKey(ref, store, roleName);
+        String roleName = npc.getRole() != null ? npc.getRole().getRoleName() : npc.getRoleName();
+        String citizenKey = extractCitizenKey(ref, store, roleName, reason == AddReason.LOAD);
         if (citizenKey == null) {
             return;
         }
 
-        Ref<EntityStore> existingRef = this.activeCitizenRoles.get(citizenKey);
-        if (existingRef != null && !existingRef.isValid()) {
-            this.activeCitizenRoles.remove(citizenKey, existingRef);
+        String worldKey = getWorldKey(store);
+        String scopedKey = worldKey + ":" + citizenKey;
+
+        Ref<EntityStore> existingRef = this.activeCitizenRoles.get(scopedKey);
+        if (existingRef != null && (!existingRef.isValid() || existingRef.getStore().getComponent(existingRef, DeathComponent.getComponentType()) != null)) {
+            this.activeCitizenRoles.remove(scopedKey, existingRef);
             existingRef = null;
+        }
+
+        CitizensManager citizensManager = HyCitizensPlugin.get().getCitizensManager();
+        CitizenData citizen = citizensManager != null ? citizensManager.getCitizen(citizenKey) : null;
+        if (existingRef == null && citizen != null) {
+            Ref<EntityStore> citizenNpcRef = citizen.getNpcRef();
+            if (citizenNpcRef != null && citizenNpcRef.isValid()
+                    && citizenNpcRef.getStore().getComponent(citizenNpcRef, DeathComponent.getComponentType()) == null) {
+                existingRef = citizenNpcRef;
+            }
         }
 
         if (existingRef != null && !isSameEntity(existingRef, ref)) {
@@ -68,12 +77,14 @@ public class DuplicateNPCPrevention extends RefSystem<EntityStore> {
             return;
         }
 
-        this.activeCitizenRoles.put(citizenKey, ref);
+        this.activeCitizenRoles.put(scopedKey, ref);
 
-        CitizensManager citizensManager = HyCitizensPlugin.get().getCitizensManager();
-        if (citizensManager != null) {
-            CitizenData citizen = citizensManager.getCitizen(citizenKey);
-            if (citizen != null) {
+        if (citizensManager != null && citizen != null) {
+            World world = store.getExternalData() != null ? store.getExternalData().getWorld() : null;
+            UUID worldUuid = (world != null && world.getWorldConfig() != null) ? world.getWorldConfig().getUuid() : null;
+            boolean isPrimaryWorld = worldUuid != null && worldUuid.equals(citizen.getWorldUUID());
+
+            if (isPrimaryWorld) {
                 citizen.setNpcRef(ref);
                 UUIDComponent uuidComponent = store.getComponent(ref, UUIDComponent.getComponentType());
                 if (uuidComponent != null) {
@@ -86,14 +97,17 @@ public class DuplicateNPCPrevention extends RefSystem<EntityStore> {
                         citizen.setCurrentRotation(transformComponent.getRotation());
                     }
                 }
-                PatrolManager patrolManager = citizensManager.getPatrolManager();
-                if (patrolManager != null) {
-                    World world = store.getExternalData().getWorld();
-                    if (world != null) {
-                        patrolManager.ensureMoveTargetNow(citizen, world, null);
-                    }
-                }
             }
+
+            commandBuffer.run(s -> {
+                if (!ref.isValid()) {
+                    return;
+                }
+                citizensManager.applyCitizenComponentsToEntity(s, ref, citizen);
+                if (isPrimaryWorld && !citizensManager.isCitizenSpawning(citizen.getId())) {
+                    citizensManager.restoreResolvedCitizenStateDeferredSave(citizen, ref);
+                }
+            });
         }
     }
 
@@ -104,21 +118,32 @@ public class DuplicateNPCPrevention extends RefSystem<EntityStore> {
             return;
         }
 
-        Role role = npc.getRole();
-        if (role == null) {
-            return;
-        }
-
-        String roleName = role.getRoleName();
-        String citizenKey = extractCitizenKey(ref, store, roleName);
+        String roleName = npc.getRole() != null ? npc.getRole().getRoleName() : npc.getRoleName();
+        String citizenKey = extractCitizenKey(ref, store, roleName, false);
         if (citizenKey == null) {
             return;
         }
 
-        Ref<EntityStore> existingRef = this.activeCitizenRoles.get(citizenKey);
+        String worldKey = getWorldKey(store);
+        String scopedKey = worldKey + ":" + citizenKey;
+
+        Ref<EntityStore> existingRef = this.activeCitizenRoles.get(scopedKey);
         if (existingRef != null && isSameEntity(existingRef, ref)) {
-            this.activeCitizenRoles.remove(citizenKey);
+            this.activeCitizenRoles.remove(scopedKey);
         }
+    }
+
+    private String getWorldKey(@Nonnull Store<EntityStore> store) {
+        if (store.getExternalData() != null && store.getExternalData().getWorld() != null) {
+            World world = store.getExternalData().getWorld();
+            if (world.getWorldConfig() != null && world.getWorldConfig().getUuid() != null) {
+                return world.getWorldConfig().getUuid().toString();
+            }
+            if (world.getName() != null) {
+                return world.getName();
+            }
+        }
+        return "global";
     }
 
     @Nonnull
@@ -128,15 +153,26 @@ public class DuplicateNPCPrevention extends RefSystem<EntityStore> {
     }
 
     private boolean isTrackedCitizenRole(@Nonnull String roleName) {
-        return roleName.startsWith("HyCitizens_") || roleName.startsWith("Citizens_");
+        return roleName.startsWith("HyCitizens_") || roleName.startsWith("Citizens_") || roleName.startsWith("Citizen_");
     }
 
-    private String extractCitizenKey(Ref<EntityStore> ref, Store<EntityStore> store, String roleName) {
+    private String extractCitizenKey(Ref<EntityStore> ref, Store<EntityStore> store, String roleName, boolean allowLegacyPositionMatch) {
         if (ref != null && store != null) {
             CitizenNpcIdentityComponent identityComponent =
                     store.getComponent(ref, CitizenNpcIdentityComponent.getComponentType());
             if (identityComponent != null && !identityComponent.getCitizenId().isBlank()) {
                 return identityComponent.getCitizenId();
+            }
+
+            UUIDComponent uuidComponent = store.getComponent(ref, UUIDComponent.getComponentType());
+            if (uuidComponent != null && uuidComponent.getUuid() != null) {
+                CitizensManager citizensManager = HyCitizensPlugin.get().getCitizensManager();
+                if (citizensManager != null) {
+                    CitizenData matched = citizensManager.getCitizenBySpawnedUUID(uuidComponent.getUuid());
+                    if (matched != null) {
+                        return matched.getId();
+                    }
+                }
             }
         }
 
@@ -144,8 +180,46 @@ public class DuplicateNPCPrevention extends RefSystem<EntityStore> {
             return null;
         }
 
-        Matcher matcher = UUID_PATTERN.matcher(roleName);
-        return matcher.find() ? matcher.group() : roleName;
+        if (roleName.startsWith("HyCitizens_") || roleName.startsWith("Citizens_")) {
+            Matcher matcher = UUID_PATTERN.matcher(roleName);
+            return matcher.find() ? matcher.group() : roleName;
+        }
+
+        if (allowLegacyPositionMatch && roleName.startsWith("Citizen_") && ref != null && store != null) {
+            CitizensManager citizensManager = HyCitizensPlugin.get().getCitizensManager();
+            if (citizensManager != null) {
+                TransformComponent transform = store.getComponent(ref, TransformComponent.getComponentType());
+                if (transform != null && transform.getPosition() != null) {
+                    Vector3d pos = transform.getPosition();
+                    World world = store.getExternalData() != null ? store.getExternalData().getWorld() : null;
+                    UUID worldUuid = (world != null && world.getWorldConfig() != null) ? world.getWorldConfig().getUuid() : null;
+                    CitizenData closestCitizen = null;
+                    double closestDistSq = 2.25;
+                    for (CitizenData c : citizensManager.getAllCitizens()) {
+                        if (worldUuid != null && !worldUuid.equals(c.getWorldUUID())) {
+                            continue;
+                        }
+                        if (c.getSpawnedUUID() != null) {
+                            continue;
+                        }
+                        Vector3d cPos = c.getPosition();
+                        double dx = pos.x - cPos.x;
+                        double dy = pos.y - cPos.y;
+                        double dz = pos.z - cPos.z;
+                        double distSq = dx * dx + dy * dy + dz * dz;
+                        if (distSq < closestDistSq) {
+                            closestDistSq = distSq;
+                            closestCitizen = c;
+                        }
+                    }
+                    if (closestCitizen != null) {
+                        return closestCitizen.getId();
+                    }
+                }
+            }
+        }
+
+        return null;
     }
 
     private boolean isSameEntity(@Nonnull Ref<EntityStore> first, @Nonnull Ref<EntityStore> second) {

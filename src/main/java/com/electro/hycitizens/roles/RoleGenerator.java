@@ -11,6 +11,8 @@ import javax.annotation.Nullable;
 import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Collection;
 import java.util.LinkedHashSet;
@@ -45,20 +47,18 @@ public class RoleGenerator {
             "Root_NPC_Bear_Polar_Attack",
             "Root_NPC_Crawler_Void_Attack",
             "Root_NPC_Fox_Attack",
-            "Root_NPC_Goblin_Ogre_Attack",
+            "Root_NPC_Goblin_Scrapper_Club_Attack",
+            "Root_NPC_Goblin_Guardian_Attack",
+            "Root_NPC_Goblin_Miner_Attack",
+            "Root_NPC_Goblin_Feastmaster_Melee",
+            "Root_NPC_Void_Spectre_Charge",
             "Root_NPC_Hyena_Attack",
             "Root_NPC_Rat_Attack",
             "Root_NPC_Scorpion_Attack",
             "Root_NPC_Snake_Attack",
             "Root_NPC_Spider_Attack",
             "Root_NPC_Golem_Crystal_Attack",
-            "Root_NPC_Golem_Crystal_Earth_Attack",
-            "Root_NPC_Golem_Crystal_Flame_Attack",
-            "Root_NPC_Golem_Crystal_Frost_Attack",
-            "Root_NPC_Golem_Crystal_Sand_Attack",
-            "Root_NPC_Golem_Crystal_Thunder_Attack",
             "Root_NPC_Golem_Firesteel_Attack",
-            "Root_NPC_Hedera_BasicAttacks",
             "Root_NPC_Skeleton_Burnt_Lancer_Attack",
             "Root_NPC_Skeleton_Burnt_Soldier_Attack",
             "Root_NPC_Skeleton_Fighter_Attack",
@@ -135,6 +135,7 @@ public class RoleGenerator {
             Map.entry("Golem_Crystal_Sand", "Root_NPC_Golem_Crystal_Attack"),
             Map.entry("Golem_Crystal_Thunder", "Root_NPC_Golem_Crystal_Attack"),
             Map.entry("Golem_Firesteel", "Root_NPC_Golem_Firesteel_Attack"),
+            Map.entry("Hedera", DEFAULT_ATTACK_INTERACTION),
             Map.entry("Horse", DEFAULT_ATTACK_INTERACTION),
             Map.entry("Horse_Skeleton", DEFAULT_ATTACK_INTERACTION),
             Map.entry("Horse_Skeleton_Armored", DEFAULT_ATTACK_INTERACTION),
@@ -219,7 +220,9 @@ public class RoleGenerator {
             Map.entry("Tamed_Mosshorn_Plain", DEFAULT_ATTACK_INTERACTION),
             Map.entry("Tamed_Ram", DEFAULT_ATTACK_INTERACTION),
             Map.entry("Tamed_Warthog", DEFAULT_ATTACK_INTERACTION),
-            Map.entry("Template_Goblin_Ogre_Tutorial", "Root_NPC_Goblin_Ogre_Attack"),
+            Map.entry("Goblin_Scrapper", "Root_NPC_Goblin_Scrapper_Club_Attack"),
+            Map.entry("Goblin_Glutton", DEFAULT_ATTACK_INTERACTION),
+            Map.entry("Void_Spectre", "Root_NPC_Void_Spectre_Charge"),
             Map.entry("Template_Intelligent", DEFAULT_ATTACK_INTERACTION),
             Map.entry("Template_Predator", DEFAULT_ATTACK_INTERACTION),
             Map.entry("Template_Scarak_Broodmother", "NPC_Rubble_Throw"),
@@ -343,12 +346,27 @@ public class RoleGenerator {
     }
 
     @Nonnull
+    public static String normalizeModelId(@Nonnull String modelId) {
+        if ("Spectre_Void".equalsIgnoreCase(modelId)) {
+            return "Void_Spectre";
+        }
+        if ("Goblin_Hermit".equalsIgnoreCase(modelId) || "Goblin_Scavenger".equalsIgnoreCase(modelId)) {
+            return "Goblin_Scrapper";
+        }
+        if ("Goblin_Ogre".equalsIgnoreCase(modelId)) {
+            return "Goblin_Glutton";
+        }
+        return modelId;
+    }
+
+    @Nonnull
     public static String resolveAttackInteraction(@Nonnull String modelId) {
         if ("Player".equalsIgnoreCase(modelId)) {
             return DEFAULT_ATTACK_INTERACTION;
         }
 
-        String normalizedModel = normalizeAttackKey(modelId);
+        String normalizedId = normalizeModelId(modelId);
+        String normalizedModel = normalizeAttackKey(normalizedId);
         String exactMatch = findMappedAttack(normalizedModel, true);
         if (exactMatch != null) {
             return exactMatch;
@@ -554,14 +572,12 @@ public class RoleGenerator {
         boolean isPatrol = "PATROL".equals(moveType);
         boolean isFollowCitizen = "FOLLOW_CITIZEN".equals(moveType);
         boolean isFollowPlayer = "FOLLOW_PLAYER".equals(moveType);
-        if (isIdle) {
+        if (isIdle || isFollowPlayer) {
             return generateIdleRole(citizen);
         } else if (isPatrol) {
             return generatePatrolRole(citizen);
-        } else if (isFollowCitizen || isFollowPlayer) {
-            float followDistance = isFollowPlayer
-                    ? ScriptManager.get().getFollowPlayerMinDistance(citizen.getId())
-                    : citizen.getFollowDistance();
+        } else if (isFollowCitizen) {
+            float followDistance = citizen.getFollowDistance();
             float followStopDistance = getFollowStopDistance(followDistance);
             return generateMoveTargetRole(citizen, citizen.getMovementBehavior().getWalkSpeed(), followStopDistance,
                     Math.max(followStopDistance + 0.25f, Math.min(1.4f, followDistance + 0.35f)));
@@ -576,10 +592,9 @@ public class RoleGenerator {
         boolean interactable = HyCitizensPlugin.get().getCitizensManager().hasFKeyActions(citizen);
         String attitude = citizen.getAttitude();
         boolean isWander = "WANDER".equals(moveType) || "WANDER_CIRCLE".equals(moveType) || "WANDER_RECT".equals(moveType);
+        int radius = getEffectiveRadius(citizen);
 
-        if (isWander) {
-            int radius = getEffectiveRadius(citizen);
-
+        if (isWander && radius > 0) {
             String base = switch (attitude) {
                 case "NEUTRAL" -> "Citizen_Wander_Neutral_R" + radius;
                 case "AGGRESSIVE" -> "Citizen_Wander_Aggressive_R" + radius;
@@ -587,7 +602,11 @@ public class RoleGenerator {
             };
             return interactable ? base + "_Interactable_Role" : base + "_Role";
         } else {
-            return interactable ? "Citizen_Interactable_Role" : "Citizen_Role";
+            return switch (attitude) {
+                case "NEUTRAL" -> interactable ? "Citizen_Idle_Neutral_Interactable_Role" : "Citizen_Idle_Neutral_Role";
+                case "AGGRESSIVE" -> interactable ? "Citizen_Idle_Aggressive_Interactable_Role" : "Citizen_Idle_Aggressive_Role";
+                default -> interactable ? "Citizen_Interactable_Role" : "Citizen_Role";
+            };
         }
     }
 
@@ -603,40 +622,19 @@ public class RoleGenerator {
 
     @Nonnull
     private JsonObject generateIdleRole(@Nonnull CitizenData citizen) {
-        JsonObject role = new JsonObject();
-        role.addProperty("Type", "Generic");
-        role.addProperty("Appearance", citizen.getModelId());
-
-        // MotionControllerList
-        JsonArray motionControllers = new JsonArray();
-        JsonObject walkController = new JsonObject();
-        walkController.addProperty("Type", "Walk");
-        motionControllers.add(walkController);
-        role.add("MotionControllerList", motionControllers);
-
-        // MaxHealth via Compute
-        JsonObject maxHealthCompute = new JsonObject();
-        maxHealthCompute.addProperty("Compute", "MaxHealth");
-        role.add("MaxHealth", maxHealthCompute);
-
-        // Parameters
-        JsonObject parameters = new JsonObject();
-        JsonObject maxHealthParam = new JsonObject();
-        maxHealthParam.addProperty("Value", 100);
-        maxHealthParam.addProperty("Description", "Max health for the NPC");
-        parameters.add("MaxHealth", maxHealthParam);
-        role.add("Parameters", parameters);
-
-        // KnockbackScale
-        //role.addProperty("KnockbackScale", citizen.getKnockbackScale());
-        role.addProperty("KnockbackScale", 0);
-
-        JsonArray instructions = new JsonArray();
-        instructions.add(new JsonObject());
-        role.add("Instructions", instructions);
-
-        role.addProperty("NameTranslationKey", citizen.getNameTranslationKey());
-
+        boolean hasFollowScript = ScriptManager.get().hasFollowPlayerScript(citizen)
+                || "FOLLOW_PLAYER".equals(citizen.getMovementBehavior().getType());
+        float followSpeed = ScriptManager.get().getConfiguredFollowPlayerSpeed(citizen, citizen.getMovementBehavior().getWalkSpeed());
+        float followDistance = ScriptManager.get().getConfiguredFollowPlayerMinDistance(citizen, citizen.getFollowDistance());
+        float followStopDistance = hasFollowScript
+                ? Math.max(0.5f, followDistance)
+                : getFollowStopDistance(followDistance);
+        float slowDownDistance = hasFollowScript
+                ? Math.max(followStopDistance + 0.5f, followDistance + 1.0f)
+                : Math.max(followStopDistance + 0.25f, Math.min(1.4f, followDistance + 0.35f));
+        JsonObject role = generateMoveTargetRole(citizen, followSpeed, followStopDistance, slowDownDistance);
+        JsonObject modify = role.getAsJsonObject("Modify");
+        modify.addProperty("WanderRadius", 1);
         return role;
     }
 
@@ -674,10 +672,11 @@ public class RoleGenerator {
         JsonObject role = generateVariantRole(citizen);
         JsonObject modify = role.getAsJsonObject("Modify");
         modify.addProperty("MaxSpeed", MARKER_ROLE_MAX_SPEED);
+        modify.addProperty("WakingIdleBehaviorComponent", "Component_Instruction_Stationary_Idle");
         modify.addProperty("FollowPatrolPath", false);
         modify.addProperty("PatrolPathName", "");
         modify.addProperty("Patrol", false);
-        modify.addProperty("PatrolWanderDistance", 0.0f);
+        modify.addProperty("PatrolWanderDistance", 1.0f);
         modify.addProperty("FollowMoveTarget", true);
         modify.addProperty("MoveTargetStopDistance", Math.max(0.05f, stopDistance));
         modify.addProperty("MoveTargetSlowDownDistance", Math.max(stopDistance + 0.25f, slowDownDistance));
@@ -694,13 +693,24 @@ public class RoleGenerator {
     private JsonObject generateScheduleWanderRole(@Nonnull CitizenData citizen, @Nonnull ScheduleEntry entry) {
         JsonObject role = generateVariantRole(citizen);
         JsonObject modify = role.getAsJsonObject("Modify");
-        modify.addProperty("WanderRadius", entry.getWanderRadius());
+        modify.addProperty("WanderRadius", Math.max(1, entry.getWanderRadius()));
         modify.addProperty("MaxSpeed", entry.getTravelSpeed());
         modify.addProperty("FollowPatrolPath", false);
         modify.addProperty("PatrolPathName", "");
         modify.addProperty("Patrol", false);
-        modify.addProperty("PatrolWanderDistance", 0.0f);
+        modify.addProperty("PatrolWanderDistance", 1.0f);
         return role;
+    }
+
+    @Nonnull
+    public static String sanitizeAttackInteraction(@Nullable String attackInteraction) {
+        if (attackInteraction == null || attackInteraction.isBlank()) {
+            return DEFAULT_ATTACK_INTERACTION;
+        }
+        if ("Root_NPC_Hedera_BasicAttacks".equalsIgnoreCase(attackInteraction.trim())) {
+            return DEFAULT_ATTACK_INTERACTION;
+        }
+        return attackInteraction;
     }
 
     @Nonnull
@@ -714,39 +724,48 @@ public class RoleGenerator {
 //        }
 
         JsonObject modify = new JsonObject();
-        modify.addProperty("DefaultPlayerAttitude", mapPlayerAttitude(citizen.getAttitude()));
-        modify.addProperty("WanderRadius", citizen.getMovementBehavior().getWanderRadius());
+        String playerAttitude = mapPlayerAttitude(citizen.getAttitude());
+        String npcAttitude = mapNpcAttitude(citizen.getDefaultNpcAttitude());
+        boolean retaliateOnDamage = !"Ignore".equalsIgnoreCase(playerAttitude) || !"Ignore".equalsIgnoreCase(npcAttitude);
+        modify.addProperty("DefaultPlayerAttitude", playerAttitude);
+        modify.addProperty("RetaliateOnDamage", retaliateOnDamage);
+        modify.addProperty("WanderRadius", Math.max(1, (int) Math.ceil(citizen.getMovementBehavior().getWanderRadius())));
 
         DetectionConfig detection = citizen.getDetectionConfig();
-        modify.addProperty("ViewRange", detection.getViewRange());
+        modify.addProperty("ViewRange", Math.max(0.1f, detection.getViewRange()));
         modify.addProperty("ViewSector", detection.getViewSector());
-        modify.addProperty("HearingRange", detection.getHearingRange());
-        modify.addProperty("AbsoluteDetectionRange", detection.getAbsoluteDetectionRange());
-        modify.addProperty("AlertedRange", detection.getAlertedRange());
+        modify.addProperty("HearingRange", Math.max(0.1f, detection.getHearingRange()));
+        modify.addProperty("AbsoluteDetectionRange", Math.max(0.1f, detection.getAbsoluteDetectionRange()));
+        modify.addProperty("AlertedRange", Math.max(0.1f, detection.getAlertedRange()));
         modify.addProperty("ChanceToBeAlertedWhenReceivingCallForHelp", detection.getChanceToBeAlertedWhenReceivingCallForHelp());
-        modify.addProperty("InvestigateRange", detection.getInvestigateRange());
-        modify.add("AlertedTime", rangeArray(detection.getAlertedTimeMin(), detection.getAlertedTimeMax()));
-        modify.add("ConfusedTimeRange", rangeArray(detection.getConfusedTimeMin(), detection.getConfusedTimeMax()));
-        modify.add("SearchTimeRange", rangeArray(detection.getSearchTimeMin(), detection.getSearchTimeMax()));
+        modify.addProperty("InvestigateRange", Math.max(0.1f, detection.getInvestigateRange()));
+        modify.add("AlertedTime", rangeArray(Math.max(0.1f, detection.getAlertedTimeMin()), Math.max(0.1f, detection.getAlertedTimeMax())));
+        modify.add("ConfusedTimeRange", rangeArray(Math.max(0.1f, detection.getConfusedTimeMin()), Math.max(0.1f, detection.getConfusedTimeMax())));
+        modify.add("SearchTimeRange", rangeArray(Math.max(0.1f, detection.getSearchTimeMin()), Math.max(0.1f, detection.getSearchTimeMax())));
 
         modify.addProperty("KnockbackScale", citizen.getKnockbackScale());
-        modify.addProperty("Appearance", citizen.getModelId());
+        modify.addProperty("Appearance", normalizeModelId(citizen.getModelId()));
         modify.addProperty("DefaultNPCAttitude", mapNpcAttitude(citizen.getDefaultNpcAttitude()));
 
         modify.addProperty("MaxHealth", 100);
         modify.addProperty("MaxSpeed", citizen.getMovementBehavior().getWalkSpeed());
         modify.addProperty("RunThreshold", citizen.getRunThreshold());
+        modify.addProperty("FollowMoveTarget", true);
 
-        modify.addProperty("LeashDistance", citizen.getLeashDistance());
-        modify.addProperty("LeashMinPlayerDistance", citizen.getLeashMinPlayerDistance());
-        modify.addProperty("HardLeashDistance", citizen.getHardLeashDistance());
-        modify.add("LeashTimer", rangeArray(citizen.getLeashTimerMin(), citizen.getLeashTimerMax()));
+        modify.addProperty("LeashDistance", Math.max(0.1f, citizen.getLeashDistance()));
+        modify.addProperty("LeashMinPlayerDistance", Math.max(0.1f, citizen.getLeashMinPlayerDistance()));
+        modify.addProperty("HardLeashDistance", Math.max(0.1f, citizen.getHardLeashDistance()));
+        modify.add("LeashTimer", rangeArray(Math.max(0.1f, citizen.getLeashTimerMin()), Math.max(0.1f, citizen.getLeashTimerMax())));
 
         CombatConfig combat = citizen.getCombatConfig();
-        modify.addProperty("Attack", combat.getAttackType());
-        modify.addProperty("AttackDistance", combat.getAttackDistance());
+        String sanitizedAttack = sanitizeAttackInteraction(combat.getAttackType());
+        if (!sanitizedAttack.equals(combat.getAttackType())) {
+            combat.setAttackType(sanitizedAttack);
+        }
+        modify.addProperty("Attack", sanitizedAttack);
+        modify.addProperty("AttackDistance", Math.max(0.1f, combat.getAttackDistance()));
         modify.addProperty("ChaseRelativeSpeed", combat.getChaseSpeed());
-        modify.addProperty("CombatBehaviorDistance", combat.getCombatBehaviorDistance());
+        modify.addProperty("CombatBehaviorDistance", Math.max(0.1f, combat.getCombatBehaviorDistance()));
         modify.addProperty("CombatRelativeTurnSpeed", combat.getCombatRelativeTurnSpeed());
         modify.addProperty("CombatDirectWeight", combat.getCombatDirectWeight());
         modify.addProperty("CombatStrafeWeight", combat.getCombatStrafeWeight());
@@ -758,22 +777,22 @@ public class RoleGenerator {
         modify.addProperty("BlockAbility", combat.getBlockAbility());
         modify.addProperty("BlockProbability", combat.getBlockProbability());
         modify.addProperty("CombatFleeIfTooCloseDistance", combat.getCombatFleeIfTooCloseDistance());
-        modify.addProperty("TargetRange", combat.getTargetRange());
-        modify.add("DesiredAttackDistanceRange", rangeArray(combat.getDesiredAttackDistanceMin(), combat.getDesiredAttackDistanceMax()));
-        modify.add("AttackPauseRange", rangeArray(combat.getAttackPauseMin(), combat.getAttackPauseMax()));
-        modify.add("CombatStrafingDurationRange", rangeArray(combat.getCombatStrafingDurationMin(), combat.getCombatStrafingDurationMax()));
-        modify.add("CombatStrafingFrequencyRange", rangeArray(combat.getCombatStrafingFrequencyMin(), combat.getCombatStrafingFrequencyMax()));
-        modify.add("CombatAttackPreDelay", rangeArray(combat.getCombatAttackPreDelayMin(), combat.getCombatAttackPreDelayMax()));
-        modify.add("CombatAttackPostDelay", rangeArray(combat.getCombatAttackPostDelayMin(), combat.getCombatAttackPostDelayMax()));
-        modify.add("CombatBackOffDistanceRange", rangeArray(combat.getBackOffDistance(), combat.getBackOffDistance()));
-        modify.add("CombatBackOffDurationRange", rangeArray(combat.getBackOffDurationMin(), combat.getBackOffDurationMax()));
-        modify.add("TargetSwitchTimer", rangeArray(combat.getTargetSwitchTimerMin(), combat.getTargetSwitchTimerMax()));
+        modify.addProperty("TargetRange", Math.max(0.1f, combat.getTargetRange()));
+        modify.add("DesiredAttackDistanceRange", rangeArray(Math.max(0.1f, combat.getDesiredAttackDistanceMin()), Math.max(0.1f, combat.getDesiredAttackDistanceMax())));
+        modify.add("AttackPauseRange", rangeArray(Math.max(0.1f, combat.getAttackPauseMin()), Math.max(0.1f, combat.getAttackPauseMax())));
+        modify.add("CombatStrafingDurationRange", rangeArray(Math.max(0.1f, combat.getCombatStrafingDurationMin()), Math.max(0.1f, combat.getCombatStrafingDurationMax())));
+        modify.add("CombatStrafingFrequencyRange", rangeArray(Math.max(0.1f, combat.getCombatStrafingFrequencyMin()), Math.max(0.1f, combat.getCombatStrafingFrequencyMax())));
+        modify.add("CombatAttackPreDelay", rangeArray(Math.max(0.1f, combat.getCombatAttackPreDelayMin()), Math.max(0.1f, combat.getCombatAttackPreDelayMax())));
+        modify.add("CombatAttackPostDelay", rangeArray(Math.max(0.1f, combat.getCombatAttackPostDelayMin()), Math.max(0.1f, combat.getCombatAttackPostDelayMax())));
+        modify.add("CombatBackOffDistanceRange", rangeArray(Math.max(0.1f, combat.getBackOffDistance()), Math.max(0.1f, combat.getBackOffDistance())));
+        modify.add("CombatBackOffDurationRange", rangeArray(Math.max(0.1f, combat.getBackOffDurationMin()), Math.max(0.1f, combat.getBackOffDurationMax())));
+        modify.add("TargetSwitchTimer", rangeArray(Math.max(0.1f, combat.getTargetSwitchTimerMin()), Math.max(0.1f, combat.getTargetSwitchTimerMax())));
 
         PathConfig pathConfig = citizen.getPathConfig();
         modify.addProperty("FollowPatrolPath", pathConfig.isFollowPath());
         modify.addProperty("PatrolPathName", pathConfig.getPathName());
         modify.addProperty("Patrol", pathConfig.isPatrol());
-        modify.addProperty("PatrolWanderDistance", pathConfig.getPatrolWanderDistance());
+        modify.addProperty("PatrolWanderDistance", Math.max(1.0f, pathConfig.getPatrolWanderDistance()));
 
         modify.addProperty("ApplySeparation", citizen.isApplySeparation());
         addStringArray(modify, "Weapons", citizen.getWeapons());
@@ -799,18 +818,8 @@ public class RoleGenerator {
         addStringArrayIfNotEmpty(modify, "FlockArray", citizen.getFlockArray());
         addStringArray(modify, "DisableDamageGroups", citizen.getDisableDamageGroups());
 
-        JsonObject nameTranslationCompute = new JsonObject();
-        nameTranslationCompute.addProperty("Compute", "NameTranslationKey");
-        modify.add("NameTranslationKey", nameTranslationCompute);
+        modify.addProperty("NameTranslationKey", citizen.getNameTranslationKey());
         role.add("Modify", modify);
-
-        // Keep translation as a parameter to drive the NameTranslationKey compute.
-        JsonObject parameters = new JsonObject();
-        JsonObject translationParam = new JsonObject();
-        translationParam.addProperty("Value", citizen.getNameTranslationKey());
-        translationParam.addProperty("Description", "Translation key for NPC name display");
-        parameters.add("NameTranslationKey", translationParam);
-        role.add("Parameters", parameters);
 
         return role;
     }
@@ -953,26 +962,33 @@ public class RoleGenerator {
     }
 
     public void writeRoleFile(@Nonnull String roleName, @Nonnull String content) {
-        int oldIndex = roleIndices.getOrDefault(roleName, Integer.MIN_VALUE);
-        boolean allowUpdate = oldIndex != Integer.MIN_VALUE;
+        File roleFile = new File(generatedRolesDir, roleName + ".json");
+        boolean diskContentChanged = true;
+        if (roleFile.exists()) {
+            try {
+                String existingContent = Files.readString(roleFile.toPath(), StandardCharsets.UTF_8);
+                if (content.equals(existingContent)) {
+                    diskContentChanged = false;
+                }
+            } catch (IOException ignored) {
+            }
+        }
 
-        int newIndex = GeneratedAssetReloader.registerNpcBuilderFromJson(roleName, content, allowUpdate);
+        if (diskContentChanged) {
+            try (FileWriter writer = new FileWriter(roleFile, StandardCharsets.UTF_8)) {
+                writer.write(content);
+            } catch (IOException e) {
+                getLogger().atSevere().log("[HyCitizens] Failed to write role file for " + roleName + ": " + e.getMessage());
+            }
+        }
 
+        int newIndex = GeneratedAssetReloader.registerNpcBuilderFromJson(roleName, content, true);
         if (newIndex != Integer.MIN_VALUE) {
             roleIndices.put(roleName, newIndex);
             return;
         }
 
         getLogger().atWarning().log("[HyCitizens] Programmatic registration failed for " + roleName + ", falling back to file-based");
-
-        File roleFile = new File(generatedRolesDir, roleName + ".json");
-        try (FileWriter writer = new FileWriter(roleFile)) {
-            writer.write(content);
-        } catch (IOException e) {
-            getLogger().atSevere().log("[HyCitizens] Failed to write role file for " + roleName + ": " + e.getMessage());
-            return;
-        }
-
         GeneratedAssetReloader.reloadNpcBuilderFile(roleFile.toPath());
     }
 
@@ -1017,6 +1033,22 @@ public class RoleGenerator {
 
         if (newContent.equals(previousContent)) {
             return false;
+        }
+
+        File roleFile = new File(generatedRolesDir, roleName + ".json");
+        if (previousContent == null && roleFile.exists()) {
+            try {
+                String diskContent = Files.readString(roleFile.toPath(), StandardCharsets.UTF_8);
+                if (newContent.equals(diskContent)) {
+                    lastGeneratedContent.put(roleName, newContent);
+                    int index = GeneratedAssetReloader.registerNpcBuilderFromJson(roleName, newContent, false);
+                    if (index != Integer.MIN_VALUE) {
+                        roleIndices.put(roleName, index);
+                    }
+                    return false;
+                }
+            } catch (IOException ignored) {
+            }
         }
 
         writeRoleFile(roleName, newContent);

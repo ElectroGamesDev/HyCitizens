@@ -2,6 +2,7 @@ package com.electro.hycitizens.listeners;
 
 import com.electro.hycitizens.HyCitizensPlugin;
 import com.electro.hycitizens.api.scripting.ScriptManager;
+import com.electro.hycitizens.components.CitizenNpcIdentityComponent;
 import com.electro.hycitizens.events.CitizenDeathEvent;
 import com.electro.hycitizens.interactions.CitizenInteraction;
 import com.electro.hycitizens.models.*;
@@ -290,6 +291,17 @@ public class EntityDamageListener extends DamageEventSystem {
     private CitizenData findCitizenByEntity(@Nonnull List<CitizenData> citizens,
                                             @Nullable Ref<EntityStore> entityRef,
                                             @Nullable UUID entityUuid) {
+        if (entityRef != null && entityRef.isValid()) {
+            CitizenNpcIdentityComponent identityComponent =
+                    entityRef.getStore().getComponent(entityRef, CitizenNpcIdentityComponent.getComponentType());
+            if (identityComponent != null) {
+                CitizenData citizen = plugin.getCitizensManager().getCitizen(identityComponent.getCitizenId());
+                if (citizen != null) {
+                    return citizen;
+                }
+            }
+        }
+
         for (CitizenData citizen : citizens) {
             if (entityRef != null && entityRef.isValid()
                     && citizen.getNpcRef() != null

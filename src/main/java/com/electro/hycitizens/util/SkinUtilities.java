@@ -586,12 +586,15 @@ public class SkinUtilities {
             sanitized.underwear = sanitizeAttachment(sanitized.underwear, registry.getUnderwear(), registry, "Blue");
             if (sanitized.underwear == null) sanitized.underwear = "Suit.Blue";
 
+            sanitized.face = migrateLegacyPartId(sanitized.face);
             if (sanitized.face == null || !registry.getFaces().containsKey(sanitized.face)) {
                 sanitized.face = "Face_Neutral";
             }
+            sanitized.ears = migrateLegacyPartId(sanitized.ears);
             if (sanitized.ears == null || !registry.getEars().containsKey(sanitized.ears)) {
                 sanitized.ears = "Default";
             }
+            sanitized.mouth = migrateLegacyPartId(sanitized.mouth);
             if (sanitized.mouth == null || !registry.getMouths().containsKey(sanitized.mouth)) {
                 sanitized.mouth = "Mouth_Default";
             }
@@ -627,16 +630,92 @@ public class SkinUtilities {
                 if (!isValidAttachment(registry.getFacialHairs(), sanitized.facialHair, registry)) sanitized.facialHair = null;
                 if (!isValidAttachment(registry.getOverpants(), sanitized.overpants, registry)) sanitized.overpants = null;
                 if (!isValidAttachment(registry.getOvertops(), sanitized.overtop, registry)) sanitized.overtop = null;
+                if (!isValidAttachment(registry.getPants(), sanitized.pants, registry)) sanitized.pants = "CostumePants.Black";
+                if (!isValidAttachment(registry.getUndertops(), sanitized.undertop, registry)) sanitized.undertop = "Wide_Neck_Shirt.Black";
+                if (!isValidAttachment(registry.getShoes(), sanitized.shoes, registry)) sanitized.shoes = "BasicShoes_Shiny.Black";
+                if (!isValidAttachment(registry.getEyebrows(), sanitized.eyebrows, registry)) sanitized.eyebrows = "Medium.BrownDark";
+                if (!isValidAttachment(registry.getHaircuts(), sanitized.haircut, registry)) sanitized.haircut = "Morning.BrownDark";
 
                 try {
                     cosmeticsModule.validateSkin(sanitized);
-                } catch (Exception fallbackEx) {
-                    sanitized = createDefaultSkin();
+                } catch (Exception retryEx) {
+                    sanitized.headAccessory = null;
+                    try {
+                        cosmeticsModule.validateSkin(sanitized);
+                    } catch (Exception fallbackEx) {
+                        sanitized = createDefaultSkin();
+                    }
                 }
             }
         }
 
         return sanitized;
+    }
+
+    private static final Map<String, String> LEGACY_PART_ID_MAP = Map.of(
+            "Mouth_Makeup", "Mouth_Makeup_Dark",
+            "Face_MakeUp_HeavyEyeliner", "Face_MakeUp_Mascara",
+            "Tshirt_Logo", "TShirt",
+            "BasicShoes_Buckle", "BasicShoes",
+            "BasicShoes_Strap", "BasicShoes"
+    );
+
+    private static final Map<String, List<String>> LEGACY_COLOR_ALIASES = Map.of(
+            "Default", List.of("White", "Black", "Grey", "01"),
+            "Charcoal", List.of("Grey", "GreyDark", "Iron_Black", "Black"),
+            "Blond", List.of("Yellow", "Honey", "BrownLight", "Blond"),
+            "Silver", List.of("Grey", "White", "Silver"),
+            "Gold", List.of("Yellow", "Orange", "Gold")
+    );
+
+    @Nullable
+    public static String migrateLegacyPartId(@Nullable String partId) {
+        if (partId == null) {
+            return null;
+        }
+        return LEGACY_PART_ID_MAP.getOrDefault(partId, partId);
+    }
+
+    @Nullable
+    private static String resolveValidColor(@Nullable String requestedColor, @Nonnull List<String> validColors) {
+        if (requestedColor == null || requestedColor.isBlank() || validColors.isEmpty()) {
+            return null;
+        }
+        if (validColors.contains(requestedColor)) {
+            return requestedColor;
+        }
+        List<String> aliases = LEGACY_COLOR_ALIASES.get(requestedColor);
+        if (aliases != null) {
+            for (String alias : aliases) {
+                if (validColors.contains(alias)) {
+                    return alias;
+                }
+            }
+        }
+        if (requestedColor.contains("+")) {
+            for (String subColor : requestedColor.split("\\+")) {
+                String trimmed = subColor.trim();
+                if (!trimmed.isEmpty()) {
+                    if (validColors.contains(trimmed)) {
+                        return trimmed;
+                    }
+                    List<String> subAliases = LEGACY_COLOR_ALIASES.get(trimmed);
+                    if (subAliases != null) {
+                        for (String alias : subAliases) {
+                            if (validColors.contains(alias)) {
+                                return alias;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        for (String valid : validColors) {
+            if (valid.equalsIgnoreCase(requestedColor)) {
+                return valid;
+            }
+        }
+        return null;
     }
 
     public static boolean isValidAttachment(
@@ -684,7 +763,32 @@ public class SkinUtilities {
             return "Morning.BrownDark";
         }
         String sanitized = sanitizeAttachment(rawHaircut, registry.getHaircuts(), registry, "BrownDark");
-        return sanitized != null ? sanitized : "Morning.BrownDark";
+        if (sanitized == null) {
+            return "Morning.BrownDark";
+        }
+        if (headAccessory != null) {
+            String[] headParts = headAccessory.split("\\.", -1);
+            PlayerSkinPart headPart = registry.getHeadAccessories().get(headParts[0]);
+            if (headPart != null && headPart.getHeadAccessoryType() == PlayerSkinPart.HeadAccessoryType.HalfCovering) {
+                String[] hairParts = sanitized.split("\\.", -1);
+                PlayerSkinPart hairPart = registry.getHaircuts().get(hairParts[0]);
+                if (hairPart != null && hairPart.doesRequireGenericHaircut()) {
+                    String genericHairId = "Generic" + hairPart.getHairType();
+                    String hairColor = hairParts.length > 1 ? hairParts[1] : "BrownDark";
+                    if (!isValidAttachment(registry.getHaircuts(), genericHairId + "." + hairColor, registry)) {
+                        String fallbackGeneric = sanitizeAttachment(genericHairId + "." + hairColor, registry.getHaircuts(), registry, "BrownDark");
+                        if (fallbackGeneric != null) {
+                            String[] resolvedGenericParts = fallbackGeneric.split("\\.", -1);
+                            if (resolvedGenericParts.length > 1) {
+                                return hairParts[0] + "." + resolvedGenericParts[1];
+                            }
+                        }
+                        return "Morning.BrownDark";
+                    }
+                }
+            }
+        }
+        return sanitized;
     }
 
     @Nonnull
@@ -733,7 +837,7 @@ public class SkinUtilities {
         }
 
         String[] parts = rawValue.split("\\.", -1);
-        String partId = parts[0];
+        String partId = migrateLegacyPartId(parts[0]);
 
         PlayerSkinPart part = registryMap.get(partId);
         if (part == null) {
@@ -759,12 +863,11 @@ public class SkinUtilities {
             return resolvedVariant != null ? (partId + "." + fallbackColor + "." + resolvedVariant) : partId;
         }
 
-        String resolvedTexture;
-        if (requestedTexture != null && validColors.contains(requestedTexture)) {
-            resolvedTexture = requestedTexture;
-        } else if (validColors.contains(fallbackColor)) {
-            resolvedTexture = fallbackColor;
-        } else {
+        String resolvedTexture = resolveValidColor(requestedTexture, validColors);
+        if (resolvedTexture == null) {
+            resolvedTexture = resolveValidColor(fallbackColor, validColors);
+        }
+        if (resolvedTexture == null) {
             resolvedTexture = validColors.get(0);
         }
 
