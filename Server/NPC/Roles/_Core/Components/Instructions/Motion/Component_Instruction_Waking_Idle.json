@@ -1,0 +1,49 @@
+{
+  "Type": "Component",
+  "Class": "Instruction",
+  "Interface": "Hytale.Instruction.Idle",
+  "Parameters": {
+    "WanderRadius": {
+      "Value": 10,
+      "Description": "General wander radius."
+    }
+  },
+  "Content": {
+    "Weight": 15,
+    "Instructions": [
+      {
+        "BodyMotion": {
+          "Type": "Sequence",
+          "Motions": [
+            {
+              "Type": "Sequence",
+              "Looped": true,
+              "Motions": [
+                {
+                  "Type": "Timer",
+                  "Time": [ 2, 4 ],
+                  "Motion": {
+                    "Type": "WanderInCircle",
+                    "Radius": { "Compute": "WanderRadius" },
+                    "MaxHeadingChange": 60,
+                    "RelativeSpeed": 0.3,
+                    "MinWalkTime": 1,
+                    "RelaxedMoveConstraints": false
+                  }
+                },
+                {
+                  "$Comment": "TODO: mb we want to expose the do nothing range, but it means more params to the interface",
+                  "Type": "Timer",
+                  "Time": [ 3, 5 ],
+                  "Motion": {
+                    "Type": "Nothing"
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      }
+    ]
+  }
+}

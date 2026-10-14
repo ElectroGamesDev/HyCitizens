@@ -436,8 +436,7 @@ public class ScheduleManager {
             citizensManager.stopCitizenMovement(citizen.getId());
             citizensManager.stopCitizenPatrol(citizen.getId());
             boolean roleNeedsMoveTarget = "PATROL".equals(citizen.getMovementBehavior().getType())
-                    || "FOLLOW_CITIZEN".equals(citizen.getMovementBehavior().getType())
-                    || "FOLLOW_PLAYER".equals(citizen.getMovementBehavior().getType());
+                    || "FOLLOW_CITIZEN".equals(citizen.getMovementBehavior().getType());
             switchCitizenRole(citizen, baseRoleName, roleNeedsMoveTarget);
 
             if (patrolShouldBeRunning) {

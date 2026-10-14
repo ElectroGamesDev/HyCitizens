@@ -150,6 +150,10 @@ public class EntityDeathListener extends DeathSystems.OnDeathSystem {
                 plugin.getCitizensManager().scheduleCitizenRespawn(foundCitizen, (long)(foundCitizen.getRespawnDelaySeconds() * 1000));
             }
         }
+
+        if (ref.isValid()) {
+            commandBuffer.tryRemoveEntity(ref, RemoveReason.REMOVE);
+        }
     }
 
     private void handleDeathDrops(@Nonnull CitizenData citizen, @Nonnull DeathConfig dc, Vector3d position, @Nonnull Store<EntityStore> store) {

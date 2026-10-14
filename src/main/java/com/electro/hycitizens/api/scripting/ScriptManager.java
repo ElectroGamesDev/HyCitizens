@@ -181,10 +181,7 @@ public class ScriptManager {
                 World world = Universe.get().getWorld(citizen.getWorldUUID());
                 Store<EntityStore> store = world != null ? world.getEntityStore().getStore() : null;
                 stopFollowingPlayer(citizen, "PLAYER_DISCONNECT", playerRef, store);
-                MovementBehavior mb = new MovementBehavior("IDLE", 2.0f, 0.0f, 0.0f, 0.0f);
-                citizen.setMovementBehavior(mb);
                 HyCitizensPlugin.get().getCitizensManager().stopCitizenMovement(citizenId);
-                HyCitizensPlugin.get().getCitizensManager().updateCitizenRoleImmediately(citizen);
             } else {
                 followingPlayers.remove(citizenId);
             }
@@ -299,6 +296,10 @@ public class ScriptManager {
     public float getFollowPlayerMinDistance(String citizenId) {
         FollowPlayerState state = followingPlayers.get(citizenId);
         return state != null ? (float) state.minDistance : 2.0f;
+    }
+
+    public boolean isFollowingPlayer(String citizenId) {
+        return citizenId != null && followingPlayers.containsKey(citizenId);
     }
 
     public boolean hasFollowPlayerScript(CitizenData citizen) {
@@ -1000,48 +1001,48 @@ public class ScriptManager {
                 followingPlayers.remove(citizenId);
                 continue;
             }
-                if (HyCitizensPlugin.get().getCitizensManager().isCitizenInAiBusyState(citizen)) {
-                    continue;
+            if (HyCitizensPlugin.get().getCitizensManager().isCitizenInAiBusyState(citizen)) {
+                continue;
+            }
+            PlayerRef player = Universe.get().getPlayer(followState.playerUuid);
+            if (player == null || !player.isValid() || player.getWorldUuid() == null || !player.getWorldUuid().equals(citizen.getWorldUUID())) {
+                stopFollowingPlayer(citizen, "PLAYER_DISCONNECT", null, store);
+                MovementBehavior mb = new MovementBehavior("IDLE", 2.0f, 0.0f, 0.0f, 0.0f);
+                citizen.setMovementBehavior(mb);
+                HyCitizensPlugin.get().getCitizensManager().stopCitizenMovement(citizenId);
+                continue;
+            }
+            Vector3d pPos = player.getTransform().getPosition();
+            Ref<EntityStore> playerRef = player.getReference();
+            if (playerRef != null && playerRef.isValid()) {
+                TransformComponent playerTransform = playerRef.getStore().getComponent(playerRef, TransformComponent.getComponentType());
+                if (playerTransform != null && playerTransform.getPosition() != null) {
+                    pPos = playerTransform.getPosition();
                 }
-                PlayerRef player = Universe.get().getPlayer(followState.playerUuid);
-                if (player == null || !player.isValid() || player.getWorldUuid() == null || !player.getWorldUuid().equals(citizen.getWorldUUID())) {
-                    stopFollowingPlayer(citizen, "PLAYER_DISCONNECT", null, store);
+            }
+            Vector3d cPos = citizen.getCurrentPosition() != null ? citizen.getCurrentPosition() : citizen.getPosition();
+            Ref<EntityStore> npcRef = citizen.getNpcRef();
+            if (npcRef != null && npcRef.isValid()) {
+                TransformComponent npcTransform = npcRef.getStore().getComponent(npcRef, TransformComponent.getComponentType());
+                if (npcTransform != null && npcTransform.getPosition() != null) {
+                    cPos = npcTransform.getPosition();
+                    citizen.setCurrentPosition(new Vector3d(cPos));
+                }
+            }
+            double dist = cPos.distance(pPos);
+
+            if (dist > followState.maxDistance) {
+                if (followState.hardStopOnMaxDistance) {
+                    stopFollowingPlayer(citizen, "MAX_DISTANCE", player, store);
                     MovementBehavior mb = new MovementBehavior("IDLE", 2.0f, 0.0f, 0.0f, 0.0f);
                     citizen.setMovementBehavior(mb);
                     HyCitizensPlugin.get().getCitizensManager().stopCitizenMovement(citizenId);
-                    continue;
-                }
-                Vector3d pPos = player.getTransform().getPosition();
-                Ref<EntityStore> playerRef = player.getReference();
-                if (playerRef != null && playerRef.isValid()) {
-                    TransformComponent playerTransform = playerRef.getStore().getComponent(playerRef, TransformComponent.getComponentType());
-                    if (playerTransform != null && playerTransform.getPosition() != null) {
-                        pPos = playerTransform.getPosition();
-                    }
-                }
-                Vector3d cPos = citizen.getCurrentPosition() != null ? citizen.getCurrentPosition() : citizen.getPosition();
-                Ref<EntityStore> npcRef = citizen.getNpcRef();
-                if (npcRef != null && npcRef.isValid()) {
-                    TransformComponent npcTransform = npcRef.getStore().getComponent(npcRef, TransformComponent.getComponentType());
-                    if (npcTransform != null && npcTransform.getPosition() != null) {
-                        cPos = npcTransform.getPosition();
-                        citizen.setCurrentPosition(new Vector3d(cPos));
-                    }
-                }
-                double dist = cPos.distance(pPos);
-
-                if (dist > followState.maxDistance) {
-                    if (followState.hardStopOnMaxDistance) {
-                        stopFollowingPlayer(citizen, "MAX_DISTANCE", player, store);
-                        MovementBehavior mb = new MovementBehavior("IDLE", 2.0f, 0.0f, 0.0f, 0.0f);
-                        citizen.setMovementBehavior(mb);
-                        HyCitizensPlugin.get().getCitizensManager().stopCitizenMovement(citizenId);
-                    } else {
-                        HyCitizensPlugin.get().getCitizensManager().stopCitizenMovement(citizenId);
-                    }
                 } else {
-                    HyCitizensPlugin.get().getCitizensManager().updateCitizenMoveTarget(citizenId, pPos);
+                    HyCitizensPlugin.get().getCitizensManager().stopCitizenMovement(citizenId);
                 }
+            } else {
+                HyCitizensPlugin.get().getCitizensManager().updateCitizenMoveTarget(citizenId, pPos);
+            }
         }
 
         final double cellSize = 16.0;
@@ -2326,20 +2327,11 @@ public class ScriptManager {
                 double maxDistance = maxDistanceNum != null ? maxDistanceNum.doubleValue() : 15.0;
 
                 CitizenData citizen = context.getCitizen();
-                float configuredSpeed = getConfiguredFollowPlayerSpeed(citizen, citizen.getMovementBehavior().getWalkSpeed());
-                float configuredMinDist = getConfiguredFollowPlayerMinDistance(citizen, citizen.getFollowDistance());
-
                 MovementBehavior mb = new MovementBehavior("FOLLOW_PLAYER", (float) speed, 1f, 1f, 1f);
                 citizen.setMovementBehavior(mb);
 
                 HyCitizensPlugin.get().getCitizensManager().stopCitizenPatrol(citizen.getId());
                 followingPlayers.put(citizen.getId(), new FollowPlayerState(context.getPlayer().getUuid(), speed, minDistance, maxDistance, hardStop));
-
-                boolean roleConfigChanged = Math.abs(configuredSpeed - (float) speed) > 0.01f
-                        || Math.abs(configuredMinDist - (float) minDistance) > 0.01f;
-                if (roleConfigChanged) {
-                    HyCitizensPlugin.get().getCitizensManager().updateCitizenRoleImmediately(citizen);
-                }
 
                 PlayerRef player = context.getPlayer();
                 Vector3d pPos = player.getTransform().getPosition();
@@ -2386,7 +2378,6 @@ public class ScriptManager {
 
                 MovementBehavior mb = new MovementBehavior("WANDER", speed, radius, radius, radius);
                 citizen.setMovementBehavior(mb);
-                HyCitizensPlugin.get().getCitizensManager().updateCitizenRoleImmediately(citizen);
                 return CompletableFuture.completedFuture(null);
             }
         });
@@ -2405,7 +2396,6 @@ public class ScriptManager {
                 MovementBehavior mb = new MovementBehavior("PATROL", speed, 0f, 0f, 0f);
                 citizen.setMovementBehavior(mb);
                 HyCitizensPlugin.get().getCitizensManager().startCitizenPatrol(citizen.getId(), pathName);
-                HyCitizensPlugin.get().getCitizensManager().updateCitizenRoleImmediately(citizen);
                 return CompletableFuture.completedFuture(null);
             }
         });

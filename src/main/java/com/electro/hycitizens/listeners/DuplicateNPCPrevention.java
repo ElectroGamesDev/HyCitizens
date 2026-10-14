@@ -73,7 +73,9 @@ public class DuplicateNPCPrevention extends RefSystem<EntityStore> {
         }
 
         if (existingRef != null && !isSameEntity(existingRef, ref)) {
-            commandBuffer.removeEntity(ref, RemoveReason.REMOVE);
+            if (ref.isValid()) {
+                commandBuffer.tryRemoveEntity(ref, RemoveReason.REMOVE);
+            }
             return;
         }
 

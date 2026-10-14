@@ -501,7 +501,7 @@ public class ChunkPreLoadListener {
             return;
         }
 
-        if (!plugin.getCitizensManager().isPositionChunkLoadedAndTicking(world, citizen.getPosition())) {
+        if (!plugin.getCitizensManager().isCitizenChunkLoaded(world, citizen)) {
             return;
         }
 
