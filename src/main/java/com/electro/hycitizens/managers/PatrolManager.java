@@ -1,5 +1,6 @@
 package com.electro.hycitizens.managers;
 
+import com.electro.hycitizens.api.scripting.ScriptManager;
 import com.electro.hycitizens.models.CitizenData;
 import com.electro.hycitizens.models.PatrolPath;
 import com.electro.hycitizens.models.PatrolWaypoint;
@@ -11,9 +12,11 @@ import com.hypixel.hytale.math.vector.Rotation3f;
 import org.joml.Vector3d;
 import com.hypixel.hytale.server.core.HytaleServer;
 import com.hypixel.hytale.server.core.entity.UUIDComponent;
+import com.hypixel.hytale.server.core.entity.entities.ProjectileComponent;
 import com.hypixel.hytale.server.core.modules.entity.component.BoundingBox;
 import com.hypixel.hytale.server.core.modules.entity.component.Intangible;
 import com.hypixel.hytale.server.core.modules.entity.component.TransformComponent;
+import com.hypixel.hytale.server.core.modules.entity.tracker.NetworkId;
 import com.hypixel.hytale.server.core.universe.Universe;
 import com.hypixel.hytale.server.core.universe.world.World;
 import com.hypixel.hytale.server.core.universe.world.storage.EntityStore;
@@ -385,15 +388,17 @@ public class PatrolManager {
 
     private void spawnMoveTarget(@Nonnull CitizenData citizen, @Nonnull World world, @Nonnull Vector3d position) {
         try {
-            if (!citizensManager.isPositionChunkLoadedAndTicking(world, position)) {
-                return;
-            }
-
             Holder<EntityStore> holder = EntityStore.REGISTRY.newHolder();
+
+            ProjectileComponent projectile = new ProjectileComponent("Projectile");
+            holder.putComponent(ProjectileComponent.getComponentType(), projectile);
+
             holder.putComponent(TransformComponent.getComponentType(), new TransformComponent(position, new Rotation3f()));
             holder.ensureComponent(UUIDComponent.getComponentType());
-            holder.putComponent(Intangible.getComponentType(), Intangible.INSTANCE);
-            holder.putComponent(BoundingBox.getComponentType(), new BoundingBox(new Box(-0.1, 0.0, -0.1, 0.1, 0.2, 0.1)));
+            holder.addComponent(NetworkId.getComponentType(),
+                    new NetworkId(world.getEntityStore().getStore().getExternalData().takeNextNetworkId()));
+
+            projectile.initialize();
 
             Ref<EntityStore> targetRef = world.getEntityStore().getStore().addEntity(holder, AddReason.SPAWN);
             if (targetRef == null || !targetRef.isValid()) {
@@ -419,9 +424,6 @@ public class PatrolManager {
     private Ref<EntityStore> ensureMoveTarget(@Nonnull CitizenData citizen, @Nonnull World world, @Nonnull Vector3d position) {
         Ref<EntityStore> targetRef = moveTargets.get(citizen.getId());
         if (targetRef != null && targetRef.isValid() && targetRef.getStore() == world.getEntityStore().getStore()) {
-            if (targetRef.getStore().getComponent(targetRef, BoundingBox.getComponentType()) == null) {
-                targetRef.getStore().putComponent(targetRef, BoundingBox.getComponentType(), new BoundingBox(new Box(-0.1, 0.0, -0.1, 0.1, 0.2, 0.1)));
-            }
             TransformComponent targetTransform = targetRef.getStore().getComponent(targetRef, TransformComponent.getComponentType());
             if (targetTransform != null) {
                 targetTransform.setPosition(new Vector3d(position.x, position.y, position.z));
@@ -475,7 +477,7 @@ public class PatrolManager {
         if ("PATROL".equals(citizen.getMovementBehavior().getType())) {
             return true;
         }
-        if ("FOLLOW_PLAYER".equals(citizen.getMovementBehavior().getType())) {
+        if (ScriptManager.get().isFollowingPlayer(citizen.getId())) {
             return true;
         }
         if ("FOLLOW_CITIZEN".equals(citizen.getMovementBehavior().getType())
@@ -499,28 +501,17 @@ public class PatrolManager {
             if (path != null && !path.getWaypoints().isEmpty()) {
                 int idx = Math.max(0, Math.min(session.waypointIndex, path.getWaypoints().size() - 1));
                 Vector3d wpPos = path.getWaypoints().get(idx).toVector3d();
-                long wpChunkIndex = ChunkUtil.indexChunkFromBlock(wpPos.x, wpPos.z);
-                if (world.getChunkStore().getChunkReference(wpChunkIndex) != null) {
-                    ensureMoveTarget(citizen, world, wpPos);
-                    return;
-                }
+                ensureMoveTarget(citizen, world, wpPos);
+                return;
             }
         }
 
-        if (position != null) {
-            long chunkIndex = ChunkUtil.indexChunkFromBlock(position.x, position.z);
-            if (world.getChunkStore().getChunkReference(chunkIndex) != null) {
-                ensureMoveTarget(citizen, world, new Vector3d(position.x, position.y, position.z));
-            }
-            return;
+        Vector3d targetPosition = position;
+        if (targetPosition == null) {
+            targetPosition = citizen.getCurrentPosition() != null ? citizen.getCurrentPosition() : citizen.getPosition();
         }
-
-        Ref<EntityStore> existingTarget = moveTargets.get(citizen.getId());
-        if (existingTarget != null && existingTarget.isValid() && existingTarget.getStore() == world.getEntityStore().getStore()) {
-            if (existingTarget.getStore().getComponent(existingTarget, BoundingBox.getComponentType()) == null) {
-                existingTarget.getStore().putComponent(existingTarget, BoundingBox.getComponentType(), new BoundingBox(new Box(-0.1, 0.0, -0.1, 0.1, 0.2, 0.1)));
-            }
-            bindMoveTarget(citizen, existingTarget);
+        if (targetPosition != null) {
+            ensureMoveTarget(citizen, world, new Vector3d(targetPosition.x, targetPosition.y, targetPosition.z));
         }
     }
 

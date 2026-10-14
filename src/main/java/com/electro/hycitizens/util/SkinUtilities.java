@@ -164,26 +164,48 @@ public class SkinUtilities {
         return fetchSkinInternal(username, false);
     }
 
-    @Nullable
-    private static PlayerSkin getOnlinePlayerSkin(@Nonnull String username) {
-        try {
-            PlayerRef playerRef = Universe.get().getPlayer(username, NameMatching.EXACT_IGNORE_CASE);
-            if (playerRef == null) {
-                return null;
-            }
-
-            Ref<EntityStore> ref = playerRef.getReference();
-            if (ref != null && ref.isValid()) {
-                PlayerSkinComponent skinComponent = ref.getStore().getComponent(ref, PlayerSkinComponent.getComponentType());
-                if (skinComponent != null) {
-                    return skinComponent.getPlayerSkin();
-                }
-            }
-        } catch (Exception e) {
-            return null;
+    @Nonnull
+    private static CompletableFuture<PlayerSkin> getOnlinePlayerSkinAsync(@Nonnull String username) {
+        if (Universe.get() == null || Universe.get().getPlayers() == null) {
+            return CompletableFuture.completedFuture(null);
         }
 
-        return null;
+        PlayerRef matchedRef = null;
+        for (PlayerRef playerRef : Universe.get().getPlayers()) {
+            if (playerRef != null && username.equalsIgnoreCase(playerRef.getUsername())) {
+                matchedRef = playerRef;
+                break;
+            }
+        }
+
+        if (matchedRef == null) {
+            return CompletableFuture.completedFuture(null);
+        }
+
+        UUID worldUuid = matchedRef.getWorldUuid();
+        World world = worldUuid != null ? Universe.get().getWorld(worldUuid) : null;
+        if (world == null || !world.isAlive()) {
+            return CompletableFuture.completedFuture(null);
+        }
+
+        CompletableFuture<PlayerSkin> future = new CompletableFuture<>();
+        final PlayerRef finalRef = matchedRef;
+        world.execute(() -> {
+            try {
+                Ref<EntityStore> ref = finalRef.getReference();
+                if (ref != null && ref.isValid()) {
+                    PlayerSkinComponent skinComponent = ref.getStore().getComponent(ref, PlayerSkinComponent.getComponentType());
+                    if (skinComponent != null) {
+                        future.complete(skinComponent.getPlayerSkin());
+                        return;
+                    }
+                }
+                future.complete(null);
+            } catch (Throwable t) {
+                future.complete(null);
+            }
+        });
+        return future;
     }
 
     @Nonnull
@@ -200,20 +222,30 @@ public class SkinUtilities {
         getLogger().atInfo().log("[HyCitizens] " + (forceApi ? "Refreshing" : "Fetching") + " skin for '" + username + "'...");
 
         if (!forceApi) {
-            PlayerSkin onlineSkin = getOnlinePlayerSkin(username);
-            if (onlineSkin != null) {
-                getLogger().atInfo().log("[HyCitizens] Found skin from online player.");
-                return CompletableFuture.completedFuture(onlineSkin);
-            }
+            return getOnlinePlayerSkinAsync(username)
+                    .thenCompose(onlineSkin -> {
+                        if (onlineSkin != null) {
+                            getLogger().atInfo().log("[HyCitizens] Found skin from online player.");
+                            return CompletableFuture.completedFuture(onlineSkin);
+                        }
+                        return fetchFromHytlSkin(username, false)
+                                .thenCompose(result -> {
+                                    if (result != null) {
+                                        return CompletableFuture.completedFuture(result);
+                                    }
+                                    getLogger().atInfo().log("[HyCitizens] Hytl.skin failed, falling back to PlayerDB...");
+                                    return fetchFromPlayerDB(username, false);
+                                });
+                    });
         }
 
-        return fetchFromHytlSkin(username, forceApi)
+        return fetchFromHytlSkin(username, true)
                 .thenCompose(result -> {
                     if (result != null) {
                         return CompletableFuture.completedFuture(result);
                     }
                     getLogger().atInfo().log("[HyCitizens] Hytl.skin failed, falling back to PlayerDB...");
-                    return fetchFromPlayerDB(username, forceApi);
+                    return fetchFromPlayerDB(username, true);
                 });
     }
 

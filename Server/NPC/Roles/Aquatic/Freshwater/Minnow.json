@@ -1,0 +1,23 @@
+{
+  "Type": "Variant",
+  "Reference": "Template_Swimming_Passive",
+  "Modify": {
+    "Appearance": "Minnow",
+    "FlockArray": [
+      "Minnow"
+    ],
+    "DropList": "Drop_Minnow",
+    "MaxHealth": 15,
+    "IsMemory": true,
+    "MemoriesCategory": "Freshwater",
+    "NameTranslationKey": {
+      "Compute": "NameTranslationKey"
+    }
+  },
+  "Parameters": {
+    "NameTranslationKey": {
+      "Value": "server.npcRoles.Minnow.name",
+      "Description": "Translation key for NPC name display"
+    }
+  }
+}

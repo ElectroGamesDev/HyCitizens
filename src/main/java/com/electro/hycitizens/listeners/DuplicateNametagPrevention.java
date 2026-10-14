@@ -38,7 +38,9 @@ public class DuplicateNametagPrevention extends RefSystem<EntityStore> {
         String identityKey = getWorldKey(store) + ":" + nametagComponent.getCitizenId() + ":" + nametagComponent.getLineIndex();
         Ref<EntityStore> existingRef = this.activeNametags.get(identityKey);
         if (existingRef != null && existingRef.isValid() && !existingRef.equals(ref)) {
-            commandBuffer.removeEntity(ref, RemoveReason.REMOVE);
+            if (ref.isValid()) {
+                commandBuffer.tryRemoveEntity(ref, RemoveReason.REMOVE);
+            }
             return;
         }
 

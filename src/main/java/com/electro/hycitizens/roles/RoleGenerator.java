@@ -967,7 +967,7 @@ public class RoleGenerator {
         if (roleFile.exists()) {
             try {
                 String existingContent = Files.readString(roleFile.toPath(), StandardCharsets.UTF_8);
-                if (content.equals(existingContent)) {
+                if (content.replace("\r\n", "\n").equals(existingContent.replace("\r\n", "\n"))) {
                     diskContentChanged = false;
                 }
             } catch (IOException ignored) {
@@ -982,14 +982,16 @@ public class RoleGenerator {
             }
         }
 
-        int newIndex = GeneratedAssetReloader.registerNpcBuilderFromJson(roleName, content, true);
+        int newIndex = GeneratedAssetReloader.registerNpcBuilderFromJson(roleName, content, diskContentChanged);
         if (newIndex != Integer.MIN_VALUE) {
             roleIndices.put(roleName, newIndex);
             return;
         }
 
-        getLogger().atWarning().log("[HyCitizens] Programmatic registration failed for " + roleName + ", falling back to file-based");
-        GeneratedAssetReloader.reloadNpcBuilderFile(roleFile.toPath());
+        if (diskContentChanged) {
+            getLogger().atWarning().log("[HyCitizens] Programmatic registration failed for " + roleName + ", falling back to file-based");
+            GeneratedAssetReloader.reloadNpcBuilderFile(roleFile.toPath());
+        }
     }
 
     public void deleteRoleFile(@Nonnull String citizenId) {
@@ -1039,7 +1041,7 @@ public class RoleGenerator {
         if (previousContent == null && roleFile.exists()) {
             try {
                 String diskContent = Files.readString(roleFile.toPath(), StandardCharsets.UTF_8);
-                if (newContent.equals(diskContent)) {
+                if (newContent.replace("\r\n", "\n").equals(diskContent.replace("\r\n", "\n"))) {
                     lastGeneratedContent.put(roleName, newContent);
                     int index = GeneratedAssetReloader.registerNpcBuilderFromJson(roleName, newContent, false);
                     if (index != Integer.MIN_VALUE) {
@@ -1089,7 +1091,7 @@ public class RoleGenerator {
 
     public void regenerateAllRoles(@Nonnull Collection<CitizenData> citizens) {
         for (CitizenData citizen : citizens) {
-            forceRoleGeneration(citizen);
+            generateRoleIfChanged(citizen);
         }
     }
 

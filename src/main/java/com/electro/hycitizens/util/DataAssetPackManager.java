@@ -55,6 +55,11 @@ public class DataAssetPackManager {
                 migrateFromOldDataPackStructure();
             }
 
+            // Cleanup any loose generated assets
+            if (Files.exists(DATA_PACK_PATH)) {
+                cleanupLooseGeneratedAssets();
+            }
+
             // Create manifest.json for HyCitizensData
             createManifest();
 
@@ -83,7 +88,6 @@ public class DataAssetPackManager {
     private static boolean hasOldDataPackStructure() {
         Path commonPath = DATA_PACK_PATH.resolve("Common");
         Path serverPath = DATA_PACK_PATH.resolve("Server");
-
         return Files.exists(commonPath) || Files.exists(serverPath);
     }
 
@@ -123,27 +127,36 @@ public class DataAssetPackManager {
             }
         }
 
-        // Delete old data pack structure
+        // Delete old Common folder
         Path commonPath = DATA_PACK_PATH.resolve("Common");
-        Path serverPath = DATA_PACK_PATH.resolve("Server");
-        Path manifestPath = DATA_PACK_PATH.resolve("manifest.json");
-
         if (Files.exists(commonPath)) {
             deleteDirectoryRecursively(commonPath);
             getLogger().atInfo().log("[HyCitizens] Removed old 'Common' folder");
         }
 
+        // Delete old Server folder so stale/unvalidated roles are not loaded by Hytale at boot
+        Path serverPath = DATA_PACK_PATH.resolve("Server");
         if (Files.exists(serverPath)) {
             deleteDirectoryRecursively(serverPath);
             getLogger().atInfo().log("[HyCitizens] Removed old 'Server' folder");
         }
+    }
 
-        if (Files.exists(manifestPath)) {
-            Files.delete(manifestPath);
-            getLogger().atInfo().log("[HyCitizens] Removed old manifest.json");
+    private static void cleanupLooseGeneratedAssets() {
+        cleanupDirectoryIfExists(DATA_PACK_PATH.resolve("generated_roles"));
+        cleanupDirectoryIfExists(DATA_PACK_PATH.resolve("generated_attitudes"));
+        cleanupDirectoryIfExists(DATA_PACK_PATH.resolve("generated_groups"));
+    }
+
+    private static void cleanupDirectoryIfExists(Path dir) {
+        if (!Files.exists(dir) || !Files.isDirectory(dir)) {
+            return;
         }
-
-        getLogger().atInfo().log("[HyCitizens] Migration complete - now using programmatic asset registration!");
+        try {
+            deleteDirectoryRecursively(dir);
+        } catch (IOException e) {
+            getLogger().atWarning().log("[HyCitizens] Failed cleaning directory " + dir + ": " + e.getMessage());
+        }
     }
 
     private static void deleteDirectoryRecursively(@Nonnull Path directory) throws IOException {

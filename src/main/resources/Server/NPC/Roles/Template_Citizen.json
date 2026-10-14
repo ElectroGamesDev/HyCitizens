@@ -1905,7 +1905,7 @@
                     },
                     {
                       "Type": "State",
-                      "State": "ReturnHome"
+                      "State": "Idle"
                     }
                   ]
                 }

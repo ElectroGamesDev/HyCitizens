@@ -488,11 +488,14 @@ public class CitizensManager {
                                 }
                             }
                             if (resolvedRef == null || !resolvedRef.isValid()) {
+                                if (!isCitizenChunkLoaded(world, citizen)) {
+                                    continue;
+                                }
                                 resolvedRef = findExistingCitizenNpcRef(world.getEntityStore().getStore(), citizen);
                             }
 
                             if (resolvedRef == null || !resolvedRef.isValid()) {
-                                if (!isPositionChunkLoadedAndTicking(world, citizen.getPosition())) {
+                                if (!isCitizenChunkLoaded(world, citizen)) {
                                     continue;
                                 }
 
@@ -831,7 +834,7 @@ public class CitizensManager {
             long now = System.currentTimeMillis();
 
             for (CitizenData citizen : citizens.values()) {
-                if (!citizen.isHealthRegenEnabled()) {
+                if (!citizen.isHealthRegenEnabled() || citizen.isAwaitingRespawn()) {
                     continue;
                 }
                 if (citizen.getNpcRef() == null || !citizen.getNpcRef().isValid()) {
@@ -859,8 +862,16 @@ public class CitizensManager {
                 }
 
                 world.execute(() -> {
+                    if (citizen.isAwaitingRespawn()) {
+                        return;
+                    }
+
                     Ref<EntityStore> npcRef = citizen.getNpcRef();
                     if (npcRef == null || !npcRef.isValid()) {
+                        return;
+                    }
+
+                    if (npcRef.getStore().getComponent(npcRef, DeathComponent.getComponentType()) != null) {
                         return;
                     }
 
@@ -875,6 +886,10 @@ public class CitizensManager {
                     }
 
                     float currentHealth = healthStat.get();
+                    if (currentHealth <= 0.0f) {
+                        return;
+                    }
+
                     float maxHealth = healthStat.getMax();
                     if (currentHealth >= maxHealth) {
                         return;
@@ -2538,6 +2553,7 @@ public class CitizensManager {
                 resolvedRef.getStore().getComponent(resolvedRef, TransformComponent.getComponentType());
         boolean shouldSnapIdleToHome = "IDLE".equals(citizen.getMovementBehavior().getType())
                 && (citizen.getScheduleConfig() == null || !citizen.getScheduleConfig().isEnabled())
+                && !ScriptManager.get().isFollowingPlayer(citizen.getId())
                 && !ScriptManager.get().hasFollowPlayerScript(citizen)
                 && citizen.getPosition() != null;
         if (transformComponent != null) {
@@ -5241,9 +5257,12 @@ public class CitizensManager {
         StateSupport stateSupport = store.getComponent(citizen.getNpcRef(), StateSupport.getComponentType());
         if (stateSupport != null) {
             String stateName = stateSupport.getStateName();
-            if (stateName != null && !stateName.isEmpty() && !stateName.equalsIgnoreCase("Idle")) {
-                citizen.setLastMotionDetectedTime(now);
-                return true;
+            if (stateName != null && !stateName.isEmpty()) {
+                String lower = stateName.toLowerCase(Locale.ROOT);
+                if (!lower.equals("idle") && !lower.startsWith("idle.")) {
+                    citizen.setLastMotionDetectedTime(now);
+                    return true;
+                }
             }
         }
 
